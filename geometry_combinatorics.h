@@ -2,24 +2,27 @@
 #include <math.h>
 #include "common.h"
 
+// TODO: These are 128 bit structs, they may take up a lot of space, maybe have
+// another one of 32 bits for small coordinates.
+// TODO: Also, how does this affect performance?
 typedef struct {
-    int x;
-    int y;
-} point_t;
+    int64_t x;
+    int64_t y;
+} vect2i_t;
 
 typedef struct {
     int n;
     uint32_t id;
-    point_t pts [1];
+    vect2i_t pts [1];
 } order_type_t;
 
 order_type_t *order_type_new (int n, memory_stack_t *stack)
 {
     order_type_t *ret;
     if (stack) {
-         ret = push_size (stack, sizeof(order_type_t)+(n-1)*sizeof(point_t));
+         ret = push_size (stack, sizeof(order_type_t)+(n-1)*sizeof(vect2i_t));
     } else {
-        ret = malloc(sizeof(order_type_t)+(n-1)*sizeof(point_t));
+        ret = malloc(sizeof(order_type_t)+(n-1)*sizeof(vect2i_t));
     }
     ret->n = n;
     ret->id = -1;
@@ -35,25 +38,25 @@ void print_order_type (order_type_t *ot)
         printf ("id: unknown\n");
     }
     while (i < ot->n) {
-        printf ("(%i,%i)\n", ot->pts[i].x, ot->pts[i].y);
+        printf ("(%"PRIi64",%"PRIi64")\n", ot->pts[i].x, ot->pts[i].y);
         i++;
     }
     printf ("\n");
 }
 
 typedef struct {
-    point_t v [2];
+    vect2i_t v [2];
 } segment_t;
 
 typedef struct {
-    point_t v [3];
+    vect2i_t v [3];
 } triangle_t;
 #define TRIANGLE(ot,a,b,c) (triangle_t){{ot->pts[a],ot->pts[b],ot->pts[c]}}
 void print_triangle (triangle_t *t)
 {
     int i = 0;
     while (i < 3) {
-        printf ("(%" PRIu8 ",%" PRIu8 ")\n", t->v[i].x, t->v[i].y);
+        printf ("(%" PRIi64 ",%" PRIi64 ")\n", t->v[i].x, t->v[i].y);
         i++;
     }
     printf ("\n");
@@ -65,18 +68,54 @@ typedef struct {
 } triangle_set_t;
 #define triangle_set_size(n) (sizeof(triangle_set_t)+(n-1)*sizeof(triangle_t))
 
-int area_2 (point_t a, point_t b, point_t c)
+typedef struct {
+    vect2i_t min;
+    vect2i_t max;
+} rectangle_t;
+
+rectangle_t rect_min_dim (vect2i_t min, vect2i_t dim)
+{
+    rectangle_t res;
+    res.min = min;
+    res.max = min;
+    return res;
+}
+
+#define max_edge(rect, res) max_min_edges(rect,res, NULL)
+#define min_edge(rect, res) max_min_edges(rect,NULL, res)
+void max_min_edges (rectangle_t rect, int64_t *max, int64_t *min)
+{
+    int64_t width = rect.max.x - rect.min.x;
+    int64_t height = rect.max.y - rect.min.y;
+    int64_t l_max, l_min;
+    if (width < height) {
+        l_max = height;
+        l_min = width;
+    } else {
+        l_min = height;
+        l_max = width;
+    }
+
+    if (max) {
+        *max = l_max;
+    }
+    if (min) {
+        *min = l_min;
+    }
+}
+
+int area_2 (vect2i_t a, vect2i_t b, vect2i_t c)
 {
     return ((int)b.x-(int)a.x)*((int)c.y-(int)a.y) - 
            ((int)c.x-(int)a.x)*((int)b.y-(int)a.y);
 }
 
-int left (point_t a, point_t b, point_t c)
+int left (vect2i_t a, vect2i_t b, vect2i_t c)
 {
     return area_2 (a, b, c) > 0;
 }
 
-int segments_intersect  (point_t s1p1, point_t s1p2, point_t s2p1, point_t s2p2)
+int segments_intersect  (vect2i_t s1p1, vect2i_t s1p2, vect2i_t s2p1, vect2i_t s2p2)
 {
     return
         (!left (s1p1, s1p2, s2p1) ^ !left (s1p1, s1p2, s2p2)) &&
@@ -88,7 +127,7 @@ int count_common_vertices (triangle_t *a, triangle_t *b)
     int i, j, res=0;
     for (i=0; i<3; i++) {
         for (j=0; j<3; j++) {
-            // The databese assures no two points with the same X or Y
+            // NOTE: The databese ensure no two points with the same X or Y
             // coordinate, so we can check only one.
             if (a->v[i].x == b->v[j].x) {
                 res++;
@@ -126,6 +165,38 @@ int is_thrackle (triangle_set_t *set)
         }
     }
     return 1;
+}
+
+void get_bounding_box (vect2i_t *pts, int n, rectangle_t *res)
+{
+    int64_t min_x, min_y, max_x, max_y;
+
+    min_x = max_x = pts[0].x;
+    min_y = max_y = pts[0].y;
+
+    int i=1;
+    while (i < n) {
+        if (pts[i].x < min_x) {
+            min_x = pts[i].x;
+        }
+
+        if (pts[i].y < min_y) {
+            min_y = pts[i].y;
+        }
+
+        if (pts[i].x > max_x) {
+            max_x = pts[i].x;
+        }
+
+        if (pts[i].y > max_y) {
+            max_y = pts[i].y;
+        }
+        i++;
+    }
+    res->min.x = min_x;
+    res->min.y = min_y;
+    res->max.x = max_x;
+    res->max.y = max_y;
 }
 
 void init_example_thrackle (triangle_set_t *res, order_type_t *ot)

@@ -23,13 +23,13 @@ typedef struct {
     double dy;
 } transf_t;
 
-void transform (point_t *p, transf_t *tr)
+void transform (vect2i_t *p, transf_t *tr)
 {
     p->x = tr->scale*(double)p->x+tr->dx;
     p->y = tr->scale*(255-(double)p->y)+tr->dy;
 }
 
-void draw_segment (cairo_t *cr, point_t p1, point_t p2, double line_width, transf_t *tr)
+void draw_segment (cairo_t *cr, vect2i_t p1, vect2i_t p2, double line_width, transf_t *tr)
 {
     cairo_set_line_width (cr, line_width);
 
@@ -42,7 +42,7 @@ void draw_segment (cairo_t *cr, point_t p1, point_t p2, double line_width, trans
 
 void draw_point (cairo_t *cr, double x, double y, transf_t *tr)
 {
-    point_t p;
+    vect2i_t p;
     p.x = x;
     p.y = y;
     transform (&p, tr);

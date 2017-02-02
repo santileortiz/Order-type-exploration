@@ -15,11 +15,7 @@
 #define WINDOW_HEIGHT 700
 #define WINDOW_WIDTH 700
 
-#if N<9
-#define MAX_COORD_VAL 255
-#else
-#define MAX_COORD_VAL 65535
-#endif
+#define CANVAS_SIZE 65535 // It's the size of the coordinate axis at 100% zoom
 
 typedef struct {
     float time_elapsed_ms;
@@ -110,10 +106,10 @@ typedef struct {
     entity_t entities[300];
 
     int num_points;
-    point_t pts[500]; // All figures on canvas are made of points here
+    vect2i_t pts[500]; // All figures on canvas are made of points here
 } app_state_t;
 
-int index_for_point_or_add (app_state_t *st, point_t p)
+int index_for_point_or_add (app_state_t *st, vect2i_t p)
 {
     int pt_index = 0;
     while (pt_index < st->num_points && st->pts[pt_index].x != p.x) {
@@ -144,7 +140,7 @@ void triangle_entity_add (app_state_t *st, triangle_t *t, vect3_t color)
     }
 }
 
-void segment_entity_add (app_state_t *st, point_t p1, point_t p2, vect3_t color)
+void segment_entity_add (app_state_t *st, vect2i_t p1, vect2i_t p2, vect3_t color)
 {
     assert (st->num_entities < ARRAY_SIZE(st->entities));
     entity_t *next_entity = &st->entities[st->num_entities];
@@ -158,7 +154,7 @@ void segment_entity_add (app_state_t *st, point_t p1, point_t p2, vect3_t color)
     next_entity->pts[1] = index_for_point_or_add (st, p2);
 }
 
-void point_entity_add (app_state_t *st, point_t p, vect3_t color)
+void point_entity_add (app_state_t *st, vect2i_t p, vect3_t color)
 {
     assert (st->num_entities < ARRAY_SIZE(st->entities));
     entity_t *next_entity = &st->entities[st->num_entities];
@@ -204,7 +200,7 @@ void draw_order_type (cairo_t *cr, order_type_t *ot)
     //}
 }
 
-void draw_segment (cairo_t *cr, point_t p1, point_t p2, double line_width)
+void draw_segment (cairo_t *cr, vect2i_t p1, vect2i_t p2, double line_width)
 {
     double r = line_width, n=0;
     cairo_device_to_user_distance (cr, &r, &n);
@@ -233,12 +229,12 @@ void draw_entities (app_state_t *st, cairo_t *cr)
         cairo_set_source_rgb (cr, entity->color.r, entity->color.g, entity->color.b);
         switch (entity->type) {
             case point: {
-                point_t p = st->pts[entity->pts[0]];
+                vect2i_t p = st->pts[entity->pts[0]];
                 draw_point (cr, p.x, p.y);
                 } break;
             case segment: {
-                point_t p1 = st->pts[entity->pts[0]];
-                point_t p2 = st->pts[entity->pts[1]];
+                vect2i_t p1 = st->pts[entity->pts[0]];
+                vect2i_t p2 = st->pts[entity->pts[1]];
                 draw_segment (cr, p1, p2, 1);
                 } break;
             case triangle: {
@@ -269,7 +265,7 @@ void new_view_port (app_graphics_t graphics, double zoom, vect2_t pt, view_port_
     vp->origin = pt;
 
     zoom = vp->zoom/100;
-    vp->scale_factor = (vp->min_edge-WINDOW_MARGIN)*zoom/MAX_COORD_VAL;
+    vp->scale_factor = (vp->min_edge-WINDOW_MARGIN)*zoom/CANVAS_SIZE;
 }
 
 void draw_view_area (cairo_t *cr, view_port_t *vp)
@@ -283,6 +279,7 @@ void draw_view_area (cairo_t *cr, view_port_t *vp)
 }
 
 /*
+    printf ("Zoom: %f\n", zoom);
  This function sets the view so that _pt_ (in order type coordinates) is in
  the lower left corner of the view area. _zoom_ is given as a percentage.
 
@@ -375,7 +372,7 @@ void update_and_render (app_graphics_t *graphics, app_input_t input)
         st->it_mode = iterate_order_type;
         st->user_number = -1;
 
-        st->max_zoom = 1000;
+        st->max_zoom = 300000;
         st->zoom = 100;
         st->zoom_changed = 0;
         st->old_zoom = 100;
@@ -532,7 +529,17 @@ void update_and_render (app_graphics_t *graphics, app_input_t input)
             st->click_coord[0] = input.ptr;
             if (st->time_since_button_press[0] > 0 && st->time_since_button_press[0] < st->double_click_time) {
                 // DOUBLE CLICK
-                printf ("Double click\n");
+                rectangle_t box;
+                get_bounding_box (st->ot->pts, st->ot->n, &box);
+                int64_t max;
+                max_edge (box, &max);
+                st->zoom = CANVAS_SIZE*100/((double)max);
+                vect2_t new_origin;
+                new_origin.x = (double)box.min.x-(max - (box.max.x-box.min.x))/2;
+                new_origin.y = (double)box.min.y-(max - (box.max.y-box.min.y))/2;
+                update_transform (*graphics, st->zoom, new_origin, &st->vp);
+                redraw = 1;
+
                 // We want to ignore this button press as an actual click, we
                 // use -10 to signal this.
                 st->time_since_button_press[0] = -10;
