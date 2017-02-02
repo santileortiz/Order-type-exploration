@@ -675,9 +675,6 @@ int main (void)
             strlen (title),
             title);
 
-    xcb_map_window (connection, window);
-    xcb_flush (connection);
-
     // Getting visual of root window (required to get a cairo surface)
     xcb_depth_iterator_t depth_iter;
     xcb_visualtype_t  *root_window_visual = NULL;
@@ -695,8 +692,22 @@ int main (void)
         }
     }
 
+    xcb_gcontext_t  gc = xcb_generate_id (connection);
+    xcb_pixmap_t backbuffer = xcb_generate_id (connection);
+    xcb_create_gc (connection, gc, window, 0, values);
+    xcb_create_pixmap (connection,
+            screen->root_depth,     /* depth of the screen */
+            backbuffer,  /* id of the pixmap */
+            window,
+            WINDOW_WIDTH,     /* pixel width of the window */
+            WINDOW_HEIGHT);  /* pixel height of the window */
+
+    xcb_map_window (connection, window);
+    xcb_flush (connection);
+
+
     // Create a cairo surface on window
-    cairo_surface_t *surface = cairo_xcb_surface_create (connection, window, root_window_visual, WINDOW_WIDTH, WINDOW_HEIGHT);
+    cairo_surface_t *surface = cairo_xcb_surface_create (connection, backbuffer, root_window_visual, WINDOW_WIDTH, WINDOW_HEIGHT);
     cairo_t *cr = cairo_create (surface);
 
     // ////////////////
@@ -736,9 +747,12 @@ int main (void)
                 case XCB_CONFIGURE_NOTIFY:
                     graphics.width = ((xcb_configure_notify_event_t*)event)->width;
                     graphics.height = ((xcb_configure_notify_event_t*)event)->height;
-                    cairo_xcb_surface_set_size (cairo_get_target (graphics.cr),
-                            graphics.width,
-                            graphics.height);
+                    xcb_free_pixmap (connection, backbuffer);
+                    backbuffer = xcb_generate_id (connection);
+                    xcb_create_pixmap (connection, screen->root_depth, backbuffer, window,
+                            graphics.width, graphics.height);
+                    cairo_xcb_surface_set_drawable (cairo_get_target (graphics.cr), backbuffer,
+                            graphics.width, graphics.height);
                     break;
                 case XCB_MOTION_NOTIFY:
                     app_input.ptr.x = ((xcb_motion_notify_event_t*)event)->event_x;
@@ -784,6 +798,15 @@ int main (void)
         } else {
             printf ("Frame missed! %f ms elapsed\n", time_elapsed);
         }
+
+        xcb_copy_area (connection,
+                backbuffer,  /* drawable we want to paste */
+                window, /* drawable on which we copy the previous Drawable */
+                gc,
+                0,0,0,0,
+                graphics.width,         /* pixel width of the region we want to copy */
+                graphics.height);      /* pixel height of the region we want to copy */
+
         clock_gettime(CLOCK_MONOTONIC, &end_ticks);
         //printf ("FPS: %f\n", 1000/time_elapsed_in_ms (&start_ticks, &end_ticks));
         start_ticks = end_ticks;
