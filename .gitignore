@@ -1,0 +1,4 @@
+*.swp
+otypes*
+perf.data*
+bin/*

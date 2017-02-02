@@ -1,0 +1,507 @@
+#if !defined(GEOMETRY_COMBINATORICS_H)
+#include <math.h>
+#include "common.h"
+
+typedef struct {
+    int x;
+    int y;
+} point_t;
+
+typedef struct {
+    int n;
+    uint32_t id;
+    point_t pts [1];
+} order_type_t;
+
+order_type_t *order_type_new (int n, memory_stack_t *stack)
+{
+    order_type_t *ret;
+    if (stack) {
+         ret = push_size (stack, sizeof(order_type_t)+(n-1)*sizeof(point_t));
+    } else {
+        ret = malloc(sizeof(order_type_t)+(n-1)*sizeof(point_t));
+    }
+    ret->n = n;
+    ret->id = -1;
+    return ret;
+}
+
+void print_order_type (order_type_t *ot)
+{
+    int i = 0;
+    if (ot->id != -1) {
+        printf ("id: %"PRIu32"\n", ot->id);
+    } else {
+        printf ("id: unknown\n");
+    }
+    while (i < ot->n) {
+        printf ("(%i,%i)\n", ot->pts[i].x, ot->pts[i].y);
+        i++;
+    }
+    printf ("\n");
+}
+
+typedef struct {
+    point_t v [2];
+} segment_t;
+
+typedef struct {
+    point_t v [3];
+} triangle_t;
+#define TRIANGLE(ot,a,b,c) (triangle_t){{ot->pts[a],ot->pts[b],ot->pts[c]}}
+void print_triangle (triangle_t *t)
+{
+    int i = 0;
+    while (i < 3) {
+        printf ("(%" PRIu8 ",%" PRIu8 ")\n", t->v[i].x, t->v[i].y);
+        i++;
+    }
+    printf ("\n");
+}
+
+typedef struct {
+    int k;
+    triangle_t e [1];
+} triangle_set_t;
+#define triangle_set_size(n) (sizeof(triangle_set_t)+(n-1)*sizeof(triangle_t))
+
+int area_2 (point_t a, point_t b, point_t c)
+{
+    return ((int)b.x-(int)a.x)*((int)c.y-(int)a.y) - 
+           ((int)c.x-(int)a.x)*((int)b.y-(int)a.y);
+}
+
+int left (point_t a, point_t b, point_t c)
+{
+    return area_2 (a, b, c) > 0;
+}
+
+int segments_intersect  (point_t s1p1, point_t s1p2, point_t s2p1, point_t s2p2)
+{
+    return
+        (!left (s1p1, s1p2, s2p1) ^ !left (s1p1, s1p2, s2p2)) &&
+        (!left (s2p1, s2p2, s1p1) ^ !left (s2p1, s2p2, s1p2));
+}
+
+int count_common_vertices (triangle_t *a, triangle_t *b)
+{
+    int i, j, res=0;
+    for (i=0; i<3; i++) {
+        for (j=0; j<3; j++) {
+            // The databese assures no two points with the same X or Y
+            // coordinate, so we can check only one.
+            if (a->v[i].x == b->v[j].x) {
+                res++;
+            }
+        }
+    }
+    return res;
+}
+
+int have_intersecting_segments (triangle_t *a, triangle_t *b)
+{
+    int i,j;
+    for (i=0; i<3; i++) {
+        for (j=0; j<3; j++) {
+            if (segments_intersect (a->v[i], a->v[(i+1)%3], b->v[j], b->v[(j+1)%3])) {
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+int is_thrackle (triangle_set_t *set)
+{
+    int i,j;
+    for (i=0; i<set->k; i++) {
+        for (j=i+1; j<set->k; j++) {
+            int common_vertices = count_common_vertices (&set->e[i], &set->e[j]);
+            if (common_vertices == 1) {
+                continue;
+            } else if (!have_intersecting_segments (&set->e[i], &set->e[j]) ||
+                common_vertices == 2) {
+                return 0;
+            }
+        }
+    }
+    return 1;
+}
+
+void init_example_thrackle (triangle_set_t *res, order_type_t *ot)
+{
+    if (res->k == 7) {
+        res->e[0] = TRIANGLE(ot, 0, 1, 6);
+        res->e[1] = TRIANGLE(ot, 0, 2, 3);
+        res->e[2] = TRIANGLE(ot, 0, 4, 5);
+        res->e[3] = TRIANGLE(ot, 6, 2, 5);
+        res->e[4] = TRIANGLE(ot, 6, 3, 4);
+        res->e[5] = TRIANGLE(ot, 1, 2, 4);
+        res->e[6] = TRIANGLE(ot, 1, 3, 5);
+    } else if (res->k == 8) {
+        res->e[0] = TRIANGLE(ot, 0, 2, 7);
+        res->e[1] = TRIANGLE(ot, 0, 3, 4);
+        res->e[2] = TRIANGLE(ot, 0, 5, 6);
+        res->e[3] = TRIANGLE(ot, 1, 2, 6);
+        res->e[4] = TRIANGLE(ot, 1, 3, 5);
+        res->e[5] = TRIANGLE(ot, 1, 4, 7);
+        res->e[6] = TRIANGLE(ot, 2, 4, 5);
+        res->e[7] = TRIANGLE(ot, 7, 3, 6);
+    }
+}
+
+int is_edge_disjoint_set (triangle_set_t *set)
+{
+    int i,j;
+    for (i=0; i<set->k; i++) {
+        for (j=i+1; j<set->k; j++) {
+            int common_vertices = count_common_vertices (&set->e[i], &set->e[j]);
+            if (common_vertices == 2) {
+                return 0;
+            }
+        }
+    }
+    return 1;
+}
+
+typedef union {
+    struct {
+        double x;
+        double y;
+    };
+    double E[2];
+} vect2_t;
+#define VECT2(x,y) ((vect2_t){{x,y}})
+
+double vect2_distance (vect2_t *v1, vect2_t *v2)
+{
+    return sqrt ((v1->x-v2->x)*(v1->x-v2->x) + (v1->y-v2->y)*(v1->y-v2->y));
+}
+
+typedef union {
+    struct {
+        double x;
+        double y;
+        double z;
+    };
+
+    struct {
+        double r;
+        double g;
+        double b;
+    };
+    double E[3];
+} vect3_t;
+#define VECT3(x,y,z) ((vect3_t){{x,y,z}})
+
+uint64_t binomial (int n, int k)
+{
+    uint64_t i, res = 1;
+    for (i=0; i<k; i++) {
+        res = (res*n)/(i+1);
+        n--;
+    }
+    return res;
+}
+
+//// Code used to test subset_it_seek
+//  subset_it_t *it = subset_it_new (8, 3, null);
+//  do {
+//      subset_it_print (it);
+//  }while (subset_it_next (it));
+//  printf ("\n");
+//  {
+//      int i=0;
+//      for (i=0; i<it->size; i++) {
+//          subset_it_seek (it, i);
+//          subset_it_print (it);
+//      }
+//  }
+//  subset_it_free (it);
+
+typedef struct {
+    int n; // size of the whole set
+    int k; // size of the subset
+    uint64_t id; // absolute id of current indices
+    uint64_t size; // total number of subsets
+    int *idx; // actual indexes
+
+    memory_stack_t *storage;
+
+    int *precomp;
+} subset_it_t;
+
+void subset_it_reset_idx (subset_it_t *it)
+{
+    int k = it->k;
+    while (0<k) {
+        k--;
+        it->idx[k] = k;
+    }
+}
+
+subset_it_t *subset_it_new (int n, int k, memory_stack_t *stack)
+{
+    subset_it_t *retval;
+    if (stack) {
+        retval = push_struct (stack, subset_it_t);
+        retval->idx = push_array (stack, k, int);
+        retval->storage = stack;
+    } else {
+        retval = malloc (sizeof(subset_it_t));
+        retval->idx = malloc (k*sizeof(int));
+        retval->storage = NULL;
+    }
+    retval->id = 0;
+    retval->k = k;
+    retval->n = n;
+    retval->size = binomial (n, k);
+    retval->precomp = NULL;
+    subset_it_reset_idx (retval);
+    return retval;
+}
+
+void subset_it_seek (subset_it_t *it, uint64_t id)
+{
+    if (id >= it->size) {
+        return;
+    }
+
+    it->id = id;
+    if (it->precomp) {
+        it->idx = &(it->precomp[id*it->k]);
+    } else {
+        int k = 0;
+        it->idx[0] = 0;
+
+        while (k < it->k) {
+            uint64_t subsets = binomial ((it->n)-(it->idx[k])-1, it->k-k-1);
+            //printf ("bin(%d, %d)\n", (it->n)-(it->idx[k])-1, it->k-k-1);
+            //printf ("k: %d, id: %ld, sus: %ld\n", k, id, subsets);
+            if (id >= subsets) {
+                id -= subsets;
+                it->idx[k]++;
+            } else {
+                if (k<it->k-1) {
+                    it->idx[k+1] = it->idx[k]+1;
+                }
+                k++;
+            }
+        }
+    }
+}
+
+int subset_it_next (subset_it_t *it) 
+{
+    if (it->id == it->size) {
+        return 0;
+    }
+
+    it->id++;
+    if (it->precomp) {
+        if (it->id < it->size) {
+            it->idx += it->k;
+            return 1;
+        } else {
+            return 0;
+        }
+    } else {
+        int j=it->k;
+        while (0<j) {
+            j--;
+            if (it->idx[j] < it->n-(it->k-j)) {
+                it->idx[j]++;
+                // Reset indexes counting from changed one
+                while (j<it->k-1) {
+                    it->idx[j+1] = it->idx[j]+1;
+                    j++;
+                }
+                return 1;
+            }
+        }
+        assert (it->id == it->size);
+        return 0;
+    }
+}
+
+// TODO: This is a slow if not precomputed, try to implement a proper prev
+// function in O(it->k).
+void subset_it_prev (subset_it_t *it)
+{
+    if (it->id > 0) {
+        it->id--;
+        if (it->precomp) {
+            it->idx -= it->k;
+        } else {
+            subset_it_seek (it, it->id);
+        }
+    } else {
+        return;
+    }
+}
+
+// NOTE: This function resets the iterator to id=0.
+int subset_it_precompute (subset_it_t *it)
+{
+    if (it->precomp) {
+        return 1;
+    }
+
+    int *precomp;
+
+    if (it->storage) {
+        precomp = push_array (it->storage, it->size*it->k, int);
+    } else {
+        precomp = malloc (sizeof(int)*it->size*it->k);
+    }
+
+    if (precomp) {
+        subset_it_seek (it, 0);
+        int *ptr = precomp;
+        do {
+            int k;
+            for (k=0; k<it->k; k++) {
+                *ptr = it->idx[k];
+                ptr++;
+            }
+        } while (subset_it_next (it));
+
+        if (!it->storage) {
+            free (it->idx);
+        }
+        it->id = 0;
+        it->idx = precomp;
+        it->precomp = precomp;
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
+void subset_it_print (subset_it_t *it)
+{
+    printf ("%lu: ", it->id);
+    int i;
+    for (i=0; i<it->k; i++) {
+        printf ("%d ", it->idx[i]);
+    }
+    printf ("\n");
+}
+
+void subset_it_free (subset_it_t *it)
+{
+    assert (it->storage == NULL);
+    if (it->precomp) {
+        free (it->precomp);
+    } else {
+        free (it->idx);
+    }
+    free (it);
+}
+
+// Automatic color palette:
+//
+// There are several way of doing this, using HSV with fixed SV and random Hue
+// incremented every PHI_INV seems good enough. If it ever stops being good,
+// research about perception based formats like CIELAB (LAB), and color
+// difference functions like CIE76, CIE94, CIEDE2000.
+
+#if 1
+vect3_t color_palette[13] = {
+    {{0.254902, 0.517647, 0.952941}}, //Google Blue
+    {{0.858824, 0.266667, 0.215686}}, //Google Red
+    {{0.956863, 0.705882, 0.000000}}, //Google Yellow
+    {{0.058824, 0.615686, 0.345098}}, //Google Green
+    {{0.666667, 0.274510, 0.733333}}, //Purple
+    {{1.000000, 0.435294, 0.258824}}, //Deep Orange
+    {{0.615686, 0.611765, 0.137255}}, //Lime
+    {{0.937255, 0.380392, 0.568627}}, //Pink
+    {{0.356863, 0.415686, 0.749020}}, //Indigo
+    {{0.000000, 0.670588, 0.752941}}, //Teal
+    {{0.756863, 0.090196, 0.352941}}, //Deep Pink
+    {{0.619608, 0.619608, 0.619608}}, //Gray
+    {{0.000000, 0.470588, 0.415686}}};//Deep Teal
+#else
+
+vect3_t color_palette[9] = {
+    {{0.945098, 0.345098, 0.329412}}, // red
+    {{0.364706, 0.647059, 0.854902}}, // blue
+    {{0.980392, 0.643137, 0.227451}}, // orange
+    {{0.376471, 0.741176, 0.407843}}, // green
+    {{0.945098, 0.486275, 0.690196}}, // pink
+    {{0.698039, 0.568627, 0.184314}}, // brown
+    {{0.698039, 0.462745, 0.698039}}, // purple
+    {{0.870588, 0.811765, 0.247059}}, // yellow
+    {{0.301961, 0.301961, 0.301961}}};// gray
+#endif
+
+#define PHI_INV 0.618033988749895
+#define COLOR_OFFSET 0.4
+
+void get_next_color (vect3_t *color)
+{
+    static double h = COLOR_OFFSET;
+    static int palette_idx = 0;
+
+    // Reset color palette
+    if (color == NULL) {
+        palette_idx = 0;
+        h = COLOR_OFFSET;
+        return;
+    }
+
+    if (palette_idx < ARRAY_SIZE(color_palette)) {
+        *color = color_palette[palette_idx];
+        palette_idx++;
+    } else {
+        double s = 0.99;
+        double v = 0.90;
+        h += PHI_INV;
+        if (h>1) {
+            h -= 1;
+        }
+
+        int h_i = (int)(h*6);
+        double frac = h*6 - h_i;
+
+        double m = v * (1 - s);
+        double desc = v * (1 - frac*s);
+        double asc = v * (1 - (1 - frac) * s);
+
+        switch (h_i) {
+            case 0:
+                color->r = v;
+                color->g = asc;
+                color->b = m;
+                break;
+            case 1:
+                color->r = desc;
+                color->g = v;
+                color->b = m;
+                break;
+            case 2:
+                color->r = m;
+                color->g = v;
+                color->b = asc;
+                break;
+            case 3:
+                color->r = m;
+                color->g = desc;
+                color->b = v;
+                break;
+            case 4:
+                color->r = asc;
+                color->g = m;
+                color->b = v;
+                break;
+            case 5:
+                color->r = v;
+                color->g = m;
+                color->b = desc;
+                break;
+        }
+    }
+}
+
+#define GEOMETRY_COMBINATORICS_H
+#endif
