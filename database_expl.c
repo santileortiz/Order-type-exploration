@@ -24,6 +24,8 @@
 typedef struct {
     float time_elapsed_ms;
 
+    int resizing;
+
     xcb_keycode_t keycode;
     uint16_t modifiers;
 
@@ -511,6 +513,17 @@ void update_and_render (app_graphics_t *graphics, app_input_t input)
         redraw = 1;
     }
 
+    // TODO: This is the only way I could think of to differentiate a drag
+    // inside the window, from a resize of the window.
+    // NOTE: I did it this way because while dragging to resize the window, on
+    // some frames the width and the height don't change and the pointer is
+    // inside the window (when shrinking).
+    static int resizing = 0;
+    if ((st->dragging[0] && resizing) ||
+            graphics->width != st->old_graphics.width || graphics->height != st->old_graphics.height) {
+        resizing = 1;
+    }
+
     // TODO: This is a very rudimentary implementation for detection of Click,
     // Double Click, and Dragging. See if it can be implemented cleanly with a
     // state machine.
@@ -527,15 +540,17 @@ void update_and_render (app_graphics_t *graphics, app_input_t input)
         } else {
             // button is being held
             if (st->dragging[0] || vect2_distance (&input.ptr, &st->click_coord[0]) > st->min_distance_for_drag) {
-                // DRAGGING
-                vect2_t new_origin;
-                new_origin.x = input.ptr.x - st->prev_input.ptr.x;
-                new_origin.y = -(input.ptr.y - st->prev_input.ptr.y);
-                cairo_device_to_user_distance (graphics->cr, &new_origin.x, &new_origin.y);
-                new_origin.x = st->vp.origin.x - new_origin.x;
-                new_origin.y = st->vp.origin.y + new_origin.y;
-                update_transform (*graphics, st->zoom, new_origin, &st->vp);
-                redraw = 1;
+                if (!resizing) {
+                    // DRAGGING
+                    vect2_t new_origin;
+                    new_origin.x = input.ptr.x - st->prev_input.ptr.x;
+                    new_origin.y = -(input.ptr.y - st->prev_input.ptr.y);
+                    cairo_device_to_user_distance (graphics->cr, &new_origin.x, &new_origin.y);
+                    new_origin.x = st->vp.origin.x - new_origin.x;
+                    new_origin.y = st->vp.origin.y + new_origin.y;
+                    update_transform (*graphics, st->zoom, new_origin, &st->vp);
+                    redraw = 1;
+                }
 
                 st->dragging[0] = 1;
                 st->time_since_button_press[0] = -10;
@@ -562,15 +577,18 @@ void update_and_render (app_graphics_t *graphics, app_input_t input)
                 st->time_since_button_press[0] = -1;
             }
         }
+        resizing = 0;
         st->dragging[0] = 0;
     }
     st->prev_input = input;
 
     if (redraw) {
+        cairo_t *cr = graphics->cr;
+        cairo_set_source_rgb (cr, 1, 1, 1);
+        cairo_paint (cr);
 
         if (st->old_graphics.width != graphics->width || st->old_graphics.height != graphics->height) {
             update_transform (*graphics, st->zoom, st->vp.origin, &st->vp);
-            
         } else if (st->zoom_changed) {
             view_port_t new_vp;
             vect2_t canvas_ptr = input.ptr;
@@ -620,9 +638,6 @@ void update_and_render (app_graphics_t *graphics, app_input_t input)
 
         redraw = 0;
 
-        cairo_t *cr = graphics->cr;
-        cairo_set_source_rgb (cr, 1, 1, 1);
-        cairo_paint (cr);
         draw_entities (st, cr);
         cairo_surface_flush (cairo_get_target(cr));
     }
@@ -705,8 +720,6 @@ int main (void)
     xcb_map_window (connection, window);
     xcb_flush (connection);
 
-
-    // Create a cairo surface on window
     cairo_surface_t *surface = cairo_xcb_surface_create (connection, backbuffer, root_window_visual, WINDOW_WIDTH, WINDOW_HEIGHT);
     cairo_t *cr = cairo_create (surface);
 
@@ -717,6 +730,8 @@ int main (void)
     graphics.cr = cr;
     graphics.width = WINDOW_WIDTH;
     graphics.height = WINDOW_HEIGHT;
+    uint16_t pixmap_width = WINDOW_WIDTH;
+    uint16_t pixmap_height = WINDOW_HEIGHT;
 
     float frame_rate = 60;
     float target_frame_length_ms = 1000/(frame_rate);
@@ -739,25 +754,35 @@ int main (void)
         app_input.mouse_down[0] = (XCB_KEY_BUT_MASK_BUTTON_1 & ptr_state->mask) ? 1 : 0;
         app_input.mouse_down[1] = (XCB_KEY_BUT_MASK_BUTTON_2 & ptr_state->mask) ? 1 : 0;
         app_input.mouse_down[2] = (XCB_KEY_BUT_MASK_BUTTON_3 & ptr_state->mask) ? 1 : 0;
-        app_input.ptr.x = ptr_state->win_x;
-        app_input.ptr.y = ptr_state->win_y;
+        if (ptr_state->win_x > 0 && ptr_state->win_x < graphics.width &&
+            ptr_state->win_y > 0 && ptr_state->win_y < graphics.height) {
+            app_input.ptr.x = ptr_state->win_x;
+            app_input.ptr.y = ptr_state->win_y;
+        }
         free (ptr_state);
         while ((event = xcb_poll_for_event (connection))) {
             switch (event->response_type) {
-                case XCB_CONFIGURE_NOTIFY:
-                    graphics.width = ((xcb_configure_notify_event_t*)event)->width;
-                    graphics.height = ((xcb_configure_notify_event_t*)event)->height;
-                    xcb_free_pixmap (connection, backbuffer);
-                    backbuffer = xcb_generate_id (connection);
-                    xcb_create_pixmap (connection, screen->root_depth, backbuffer, window,
-                            graphics.width, graphics.height);
-                    cairo_xcb_surface_set_drawable (cairo_get_target (graphics.cr), backbuffer,
-                            graphics.width, graphics.height);
-                    break;
-                case XCB_MOTION_NOTIFY:
+                case XCB_CONFIGURE_NOTIFY: {
+                    uint16_t new_width = ((xcb_configure_notify_event_t*)event)->width;
+                    uint16_t new_height = ((xcb_configure_notify_event_t*)event)->height;
+                    if (new_width > pixmap_width || new_height > pixmap_height) {
+                        pixmap_width = new_width;
+                        pixmap_height = new_height;
+                        xcb_free_pixmap (connection, backbuffer);
+                        backbuffer = xcb_generate_id (connection);
+                        xcb_create_pixmap (connection, screen->root_depth, backbuffer, window,
+                                pixmap_width, pixmap_height);
+                        cairo_xcb_surface_set_drawable (cairo_get_target (graphics.cr), backbuffer,
+                                pixmap_width, pixmap_height);
+                    }
+                    app_input.resizing = 1;
+                    graphics.width = new_width;
+                    graphics.height = new_height;
+                    } break;
+                case XCB_MOTION_NOTIFY: {
                     app_input.ptr.x = ((xcb_motion_notify_event_t*)event)->event_x;
                     app_input.ptr.y = ((xcb_motion_notify_event_t*)event)->event_y;
-                    break;
+                    } break;
                 case XCB_KEY_PRESS:
                     app_input.keycode = ((xcb_key_press_event_t*)event)->detail;
                     app_input.modifiers = ((xcb_key_press_event_t*)event)->state;
@@ -814,6 +839,7 @@ int main (void)
         xcb_flush (connection);
         app_input.keycode = 0;
         app_input.wheel = 1;
+        app_input.resizing = 0;
     }
 
     // These don't seem to free everything according to Valgrind, so we don't
