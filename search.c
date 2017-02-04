@@ -80,11 +80,11 @@ void count_thrackles (int k)
     subset_it_precompute (triangle_set_it);
 
     while (!db_is_eof()) {
-        BEGIN_TIME_BLOCK;
         db_next (ot);
         uint64_t count = 0;
-        subset_it_seek (triangle_set_it, 0);
+        subset_it_seek (triangle_set_it, 2);
         while (1) {
+            //BEGIN_WALL_CLOCK;
             int i;
             for (i=0; i<k; i++) {
                 subset_it_seek (triangle_it, triangle_set_it->idx[i]);
@@ -98,19 +98,19 @@ void count_thrackles (int k)
             if (is_thrackle(curr_set)) {
             //if (is_edge_disjoint_set(curr_set)) {
                 //printf ("\t\t");
-                //subset_it_print (triangle_set_it);
+                subset_it_print (triangle_set_it);
                 count++;
             }
             if (!subset_it_next (triangle_set_it)){
                 break;
             }
+            //PROBE_WALL_CLOCK("Triangle set loop");
         }
         printf ("%ld: %ld\n", id, count);
-        //if (id==2) {
-        //    return;
-        //}
+        if (id==0) {
+            return;
+        }
         id++;
-        END_TIME_BLOCK("Order type loop");
     }
     free (triangle_it);
     free (triangle_set_it);
@@ -123,6 +123,6 @@ int main ()
         return -1;
     }
 
-    get_thrackle_for_each_ot (8);
-    //count_thrackles (4);
+    //get_thrackle_for_each_ot (8);
+    count_thrackles (8);
 }

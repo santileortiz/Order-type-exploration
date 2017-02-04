@@ -72,7 +72,7 @@ void convex_ot (order_type_t *ot)
     }
 }
 
-#if 0
+#if 1
 
 #define PAGE_WIDTH 612
 #define PAGE_HEIGHT 729
@@ -81,14 +81,14 @@ void convex_ot (order_type_t *ot)
 #define X_MARGIN 10 //pt
 int main (void)
 {
-    FILE* file = fopen ("./cvx_all_thrackles_8.txt", "r");
+    FILE* file = fopen ("./out/n_7-ot_0-th_k_6.txt", "r");
     uint64_t th_id;
 
-    cairo_surface_t *surface = cairo_pdf_surface_create ("n_8-ot_0-th_n.pdf", PAGE_WIDTH, PAGE_HEIGHT);
+    cairo_surface_t *surface = cairo_pdf_surface_create ("./out/n_7-ot_0-th_k_6.pdf", PAGE_WIDTH, PAGE_HEIGHT);
     cairo_t *cr = cairo_create (surface);
 
-    int n = 8;
-    int k = 8;
+    int n = 7;
+    int k = 6;
 
     subset_it_t *triangle_it = subset_it_new (n, 3, NULL);
     subset_it_t *triangle_set_it = subset_it_new (triangle_it->size, k, NULL);

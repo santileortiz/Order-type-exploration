@@ -335,11 +335,44 @@ void update_transform_fixed_pt (app_graphics_t graphics, double zoom, vect2_t pt
     *new_vp = vp;
 }
 
-void set_n (app_state_t *st, int n)
+void focus_order_type (app_graphics_t *graphics, app_state_t *st)
+{
+    rectangle_t box;
+    get_bounding_box (st->ot->pts, st->ot->n, &box);
+    int64_t max;
+    max_edge (box, &max);
+    st->zoom = CANVAS_SIZE*100/((double)max);
+    vect2_t new_origin;
+    new_origin.x = (double)box.min.x-(max - (box.max.x-box.min.x))/2;
+    new_origin.y = (double)box.min.y-(max - (box.max.y-box.min.y))/2;
+    update_transform (*graphics, st->zoom, new_origin, &st->vp);
+}
+
+int get_tn_for_n (int n)
+{
+    switch (n) {
+        case 4:
+            return 1;
+        case 5:
+            return 2;
+        case 6:
+            return 4;
+        case 7:
+            return 7;
+        case 8:
+            return 8;
+        default:
+            printf ("Tn is unknown\n");
+            return 2;
+    }
+}
+
+void set_n (app_state_t *st, int n, app_graphics_t *graphics)
 {
     st->memory.used = 0; // Clears all storage
 
     st->n = n;
+    st->k = get_tn_for_n (st->n);
     st->ot = order_type_new (10, &st->memory);
     open_database (st->n);
     st->ot->n = st->n;
@@ -348,7 +381,9 @@ void set_n (app_state_t *st, int n)
     st->triangle_it = subset_it_new (st->n, 3, &st->memory);
     subset_it_precompute (st->triangle_it);
     st->triangle_set_it = subset_it_new (st->triangle_it->size, st->k, &st->memory);
+    focus_order_type (graphics, st);
 }
+
 
 int end_execution = 0;
 char redraw = 0;
@@ -365,14 +400,12 @@ void update_and_render (app_graphics_t *graphics, app_input_t input)
         memory_stack_init (&st->memory, st->storage_size-sizeof(app_state_t), memory+sizeof(app_state_t));
 
         st->n = 8;
-        st->k = 8;
-
-        set_n (st, st->n);
+        st->k = get_tn_for_n (st->n);
 
         st->it_mode = iterate_order_type;
         st->user_number = -1;
 
-        st->max_zoom = 300000;
+        st->max_zoom = 500000;
         st->zoom = 100;
         st->zoom_changed = 0;
         st->old_zoom = 100;
@@ -386,7 +419,8 @@ void update_and_render (app_graphics_t *graphics, app_input_t input)
         st->double_click_time = 100;
         st->min_distance_for_drag = 10;
 
-        update_transform (*graphics, 100, VECT2(0,0), &st->vp);
+        set_n (st, st->n, graphics);
+
         redraw = 1;
     }
 
@@ -469,7 +503,7 @@ void update_and_render (app_graphics_t *graphics, app_input_t input)
                         n=3;
                     }
                 }
-                set_n (st, n);
+                set_n (st, n, graphics);
             } else if (st->it_mode == iterate_triangle_set) {
                 if (XCB_KEY_BUT_MASK_SHIFT & input.modifiers
                         || input.keycode == 113) {
@@ -485,7 +519,7 @@ void update_and_render (app_graphics_t *graphics, app_input_t input)
                 db_seek (st->ot, st->user_number);
             } else if (st->it_mode == iterate_n) {
                 if (3 <= st->user_number && st->user_number <= 10) {
-                    set_n (st, st->user_number);
+                    set_n (st, st->user_number, graphics);
                 }
             } else if (st->it_mode == iterate_triangle_set) {
                 subset_it_seek (st->triangle_set_it, st->user_number);
@@ -529,15 +563,7 @@ void update_and_render (app_graphics_t *graphics, app_input_t input)
             st->click_coord[0] = input.ptr;
             if (st->time_since_button_press[0] > 0 && st->time_since_button_press[0] < st->double_click_time) {
                 // DOUBLE CLICK
-                rectangle_t box;
-                get_bounding_box (st->ot->pts, st->ot->n, &box);
-                int64_t max;
-                max_edge (box, &max);
-                st->zoom = CANVAS_SIZE*100/((double)max);
-                vect2_t new_origin;
-                new_origin.x = (double)box.min.x-(max - (box.max.x-box.min.x))/2;
-                new_origin.y = (double)box.min.y-(max - (box.max.y-box.min.y))/2;
-                update_transform (*graphics, st->zoom, new_origin, &st->vp);
+                focus_order_type (graphics, st);
                 redraw = 1;
 
                 // We want to ignore this button press as an actual click, we
@@ -557,10 +583,10 @@ void update_and_render (app_graphics_t *graphics, app_input_t input)
                     new_origin.y = st->vp.origin.y + new_origin.y;
                     update_transform (*graphics, st->zoom, new_origin, &st->vp);
                     redraw = 1;
-                }
 
-                st->dragging[0] = 1;
-                st->time_since_button_press[0] = -10;
+                    st->dragging[0] = 1;
+                    st->time_since_button_press[0] = -10;
+                }
             }
         }
     } else {
