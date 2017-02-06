@@ -20,7 +20,7 @@
 typedef struct {
     float time_elapsed_ms;
 
-    int resizing;
+    bool force_redraw;
 
     xcb_keycode_t keycode;
     uint16_t modifiers;
@@ -386,11 +386,11 @@ void set_n (app_state_t *st, int n, app_graphics_t *graphics)
 
 
 int end_execution = 0;
-char redraw = 0;
 
-void update_and_render (app_graphics_t *graphics, app_input_t input)
+bool update_and_render (app_graphics_t *graphics, app_input_t input)
 {
     static app_state_t *st = NULL;
+    char redraw = 0;
 
     if (!st) {
         int storage_size =  megabyte(60);
@@ -445,7 +445,7 @@ void update_and_render (app_graphics_t *graphics, app_input_t input)
             break;
         case 24: //KEY_Q
             end_execution = 1;
-            return;
+            return false;
         case 33: //KEY_P
             print_order_type (st->ot);
             break;
@@ -615,7 +615,7 @@ void update_and_render (app_graphics_t *graphics, app_input_t input)
     }
     st->prev_input = input;
 
-    if (redraw) {
+    if (redraw || input.force_redraw) {
         cairo_t *cr = graphics->cr;
         cairo_set_source_rgb (cr, 1, 1, 1);
         cairo_paint (cr);
@@ -673,6 +673,9 @@ void update_and_render (app_graphics_t *graphics, app_input_t input)
 
         draw_entities (st, cr);
         cairo_surface_flush (cairo_get_target(cr));
+        return true;
+    } else {
+        return false;
     }
 }
 
@@ -808,7 +811,6 @@ int main (void)
                         cairo_xcb_surface_set_drawable (cairo_get_target (graphics.cr), backbuffer,
                                 pixmap_width, pixmap_height);
                     }
-                    app_input.resizing = 1;
                     graphics.width = new_width;
                     graphics.height = new_height;
                     } break;
@@ -822,7 +824,8 @@ int main (void)
                     break;
                 case XCB_EXPOSE:
                     // We should tell which areas need exposing
-                    redraw = 1;
+                    printf ("cnt: %"PRIu16"\n", ((xcb_expose_event_t*)event)->count); 
+                    app_input.force_redraw = 1;
                     break;
                 case XCB_BUTTON_PRESS:
                     if (((xcb_key_press_event_t*)event)->detail == 4) {
@@ -844,8 +847,7 @@ int main (void)
 
         // TODO: How bad is this? should we actually measure it?
         app_input.time_elapsed_ms = target_frame_length_ms;
-        update_and_render (&graphics, app_input);
-
+        bool blit_needed = update_and_render (&graphics, app_input);
         clock_gettime (CLOCK_MONOTONIC, &end_ticks);
         float time_elapsed = time_elapsed_in_ms (&start_ticks, &end_ticks);
         if (time_elapsed < target_frame_length_ms) {
@@ -857,13 +859,15 @@ int main (void)
             printf ("Frame missed! %f ms elapsed\n", time_elapsed);
         }
 
-        xcb_copy_area (connection,
-                backbuffer,  /* drawable we want to paste */
-                window, /* drawable on which we copy the previous Drawable */
-                gc,
-                0,0,0,0,
-                graphics.width,         /* pixel width of the region we want to copy */
-                graphics.height);      /* pixel height of the region we want to copy */
+        if (blit_needed) {
+            xcb_copy_area (connection,
+                    backbuffer,  /* drawable we want to paste */
+                    window, /* drawable on which we copy the previous Drawable */
+                    gc,
+                    0,0,0,0,
+                    graphics.width,         /* pixel width of the region we want to copy */
+                    graphics.height);      /* pixel height of the region we want to copy */
+        }
 
         clock_gettime(CLOCK_MONOTONIC, &end_ticks);
         //printf ("FPS: %f\n", 1000/time_elapsed_in_ms (&start_ticks, &end_ticks));
@@ -872,7 +876,7 @@ int main (void)
         xcb_flush (connection);
         app_input.keycode = 0;
         app_input.wheel = 1;
-        app_input.resizing = 0;
+        app_input.force_redraw = 0;
     }
 
     // These don't seem to free everything according to Valgrind, so we don't
