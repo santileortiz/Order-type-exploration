@@ -9,6 +9,7 @@ typedef struct {
     int64_t x;
     int64_t y;
 } vect2i_t;
+#define VECT2i(x,y) ((vect2i_t){x,y})
 
 typedef struct {
     int n;
@@ -247,6 +248,14 @@ typedef union {
 double vect2_distance (vect2_t *v1, vect2_t *v2)
 {
     return sqrt ((v1->x-v2->x)*(v1->x-v2->x) + (v1->y-v2->y)*(v1->y-v2->y));
+}
+
+vect2_t v2_from_v2i (vect2i_t v)
+{
+    vect2_t res;
+    res.x = (double)v.x;
+    res.y = (double)v.y;
+    return res;
 }
 
 typedef union {

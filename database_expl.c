@@ -32,24 +32,31 @@ typedef struct {
 } app_input_t;
 
 typedef struct {
+    double scale;
+    double dx;
+    double dy;
+} transf_t;
+
+// canvas coordinates -> window pixels
+void transform (transf_t tr, vect2_t *p)
+{
+    p->x = tr.scale*p->x+tr.dx;
+    p->y = tr.scale*(CANVAS_SIZE-p->y)+tr.dy;
+}
+
+// window pixels -> canvas coordinates
+void transform_inv (transf_t tr, vect2_t *p)
+{
+    p->x = (p->x - tr.dx)/tr.scale;
+    p->y = (tr.scale*CANVAS_SIZE + tr.dy - p->y )/(tr.scale);
+}
+
+typedef struct {
     cairo_t *cr;
     uint16_t width;
     uint16_t height;
+    transf_t T;
 } app_graphics_t;
-
-// Contains information about the layout of the window, and the state of 
-// the view area (zoom, position). It's all that's needed to get the
-// transform of points from canvas space to windows space.
-
-typedef struct {
-    double min_edge;
-    double x_margin;
-    double y_margin;
-
-    double zoom;
-    vect2_t origin;
-    double scale_factor;
-} view_port_t;
 
 typedef enum {point, triangle, segment} entity_type;
 typedef struct {
@@ -82,8 +89,6 @@ typedef struct {
     double zoom;
     char zoom_changed;
     double old_zoom;
-    vect2_t origin;
-    view_port_t vp;
 
     iterator_mode_t it_mode;
     int64_t user_number;
@@ -167,82 +172,60 @@ void point_entity_add (app_state_t *st, vect2i_t p, vect3_t color)
     next_entity->pts[0] = index_for_point_or_add (st, p);
 }
 
-void draw_point (cairo_t *cr, double x, double y)
+void draw_point (app_graphics_t *graphics, vect2i_t p)
 {
-    double r = 5, n=0;
-    cairo_device_to_user_distance (cr, &r, &n);
-    cairo_arc (cr, x, y, r, 0, 2*M_PI);
+    cairo_t *cr = graphics->cr;
+    vect2_t p_dev = v2_from_v2i (p);
+    transform (graphics->T, &p_dev);
+    cairo_arc (cr, p_dev.x, p_dev.y, 5, 0, 2*M_PI);
     cairo_fill (cr);
 }
 
-void draw_order_type (cairo_t *cr, order_type_t *ot)
+void draw_segment (app_graphics_t *graphics, vect2i_t p1, vect2i_t p2, double line_width)
 {
-    cairo_set_source_rgb (cr, 0, 0, 0);
-    cairo_new_path (cr);
+    cairo_t *cr = graphics->cr;
+    cairo_set_line_width (cr, line_width);
 
-    int i=0;
-    while (i < ot->n) {
-        draw_point (cr, (double)ot->pts[i].x, (double)ot->pts[i].y);
-        i++;
-    }
+    vect2_t p1_dev = v2_from_v2i (p1);
+    transform (graphics->T, &p1_dev);
 
-    double r = 1, n=0;
-    cairo_device_to_user_distance (cr, &r, &n);
-    cairo_set_line_width (cr, r);
+    vect2_t p2_dev = v2_from_v2i (p2);
+    transform (graphics->T, &p2_dev);
 
-    //for (i=0; i<ot->n; i++) {
-    //    for (j=i+1; j<ot->n; j++) {
-    //        double x1, y1, x2, y2;
-    //        cairo_move_to (cr, (double)ot->pts[i].x, (double)ot->pts[i].y);
-    //        cairo_line_to (cr, (double)ot->pts[j].x, (double)ot->pts[j].y);
-    //        cairo_stroke (cr);
-    //    }
-    //}
-}
-
-void draw_segment (cairo_t *cr, vect2i_t p1, vect2i_t p2, double line_width)
-{
-    double r = line_width, n=0;
-    cairo_device_to_user_distance (cr, &r, &n);
-    cairo_set_line_width (cr, r);
-
-    cairo_move_to (cr, (double)p1.x, (double)p1.y);
-    cairo_line_to (cr, (double)p2.x, (double)p2.y);
+    cairo_move_to (cr, (double)p1_dev.x, (double)p1_dev.y);
+    cairo_line_to (cr, (double)p2_dev.x, (double)p2_dev.y);
     cairo_stroke (cr);
 }
 
-void draw_triangle (cairo_t *cr, triangle_t *t)
+void draw_triangle (app_graphics_t *graphics, triangle_t *t)
 {
-    cairo_new_path (cr);
-
-    draw_segment (cr, t->v[0], t->v[1], 3);
-    draw_segment (cr, t->v[1], t->v[2], 3);
-    draw_segment (cr, t->v[2], t->v[0], 3);
+    draw_segment (graphics, t->v[0], t->v[1], 3);
+    draw_segment (graphics, t->v[1], t->v[2], 3);
+    draw_segment (graphics, t->v[2], t->v[0], 3);
 }
 
-
-void draw_entities (app_state_t *st, cairo_t *cr)
+void draw_entities (app_state_t *st, app_graphics_t *graphics)
 {
     int i;
     for (i=0; i<st->num_entities; i++) {
         entity_t *entity = &st->entities[i];
-        cairo_set_source_rgb (cr, entity->color.r, entity->color.g, entity->color.b);
+        cairo_set_source_rgb (graphics->cr, entity->color.r, entity->color.g, entity->color.b);
         switch (entity->type) {
             case point: {
                 vect2i_t p = st->pts[entity->pts[0]];
-                draw_point (cr, p.x, p.y);
+                draw_point (graphics, p);
                 } break;
             case segment: {
                 vect2i_t p1 = st->pts[entity->pts[0]];
                 vect2i_t p2 = st->pts[entity->pts[1]];
-                draw_segment (cr, p1, p2, 1);
+                draw_segment (graphics, p1, p2, 1);
                 } break;
             case triangle: {
                 triangle_t t;
                 t.v[0] = st->pts[entity->pts[0]];
                 t.v[1] = st->pts[entity->pts[1]];
                 t.v[2] = st->pts[entity->pts[2]];
-                draw_triangle (cr, &t);
+                draw_triangle (graphics, &t);
                 } break;
             default:
                 invalid_code_path;
@@ -250,102 +233,39 @@ void draw_entities (app_state_t *st, cairo_t *cr)
     }
 }
 
-#define WINDOW_MARGIN 20
-void new_view_port (app_graphics_t graphics, double zoom, vect2_t pt, view_port_t *vp)
+// Here _pos_ represents the position in window pixels of the point
+// (0, CANVAS_SIZE) of the canvas. Measured from the top left corner.
+#define WINDOW_MARGIN 40
+void change_zoom (app_graphics_t *graphics, double zoom, vect2_t pt)
 {
-    if (graphics.height < graphics.width) {
-        vp->min_edge = (double)graphics.height;
-    } else {
-        vp->min_edge = (double)graphics.width;
-    }
-    vp->x_margin = ((double)graphics.width-vp->min_edge+WINDOW_MARGIN)/2;
-    vp->y_margin = ((double)graphics.height-vp->min_edge+WINDOW_MARGIN)/2;
-
-    vp->zoom = zoom;
-    vp->origin = pt;
-
-    zoom = vp->zoom/100;
-    vp->scale_factor = (vp->min_edge-WINDOW_MARGIN)*zoom/CANVAS_SIZE;
-}
-
-void draw_view_area (cairo_t *cr, view_port_t *vp)
-{
-    cairo_save (cr);
-    cairo_identity_matrix (cr);
-    cairo_rectangle (cr, vp->x_margin-0.5, vp->y_margin+0.5, vp->min_edge-WINDOW_MARGIN, vp->min_edge-WINDOW_MARGIN);
-    cairo_set_line_width (cr, 1);
-    cairo_stroke (cr);
-    cairo_restore (cr);
-}
-
-/*
-    printf ("Zoom: %f\n", zoom);
- This function sets the view so that _pt_ (in order type coordinates) is in
- the lower left corner of the view area. _zoom_ is given as a percentage.
-
-   +------------------+    
-   +------------------+    
-   |               W  |
-   |    +-------+     |     W: Window
-   |    |       |     |     A: View Area
-   |    |   A   |     |     o: position of _pt_
-   |    |       |     |
-   |    o-------+     |\
-   |                  || -> WINDOW_MARGIN
-   +------------------+/
-
-*/
-void update_transform (app_graphics_t graphics, double zoom, vect2_t pt, view_port_t *new_vp)
-{
-    cairo_matrix_t transf;
-    view_port_t vp;
-
-    new_view_port (graphics, zoom, pt, &vp);
-
-    //draw_view_area (graphics.cr, &vp);
-
-    cairo_matrix_init (&transf,
-            vp.scale_factor, 0,
-            0, -vp.scale_factor,
-            vp.x_margin-pt.x*vp.scale_factor, graphics.height-vp.y_margin+pt.y*vp.scale_factor);
-    cairo_set_matrix (graphics.cr, &transf);
-    *new_vp = vp;
-}
-
-void update_transform_fixed_pt (app_graphics_t graphics, double zoom, vect2_t pt, view_port_t *old_vp, view_port_t *new_vp)
-{
-    cairo_matrix_t transf;
-    view_port_t vp;
-
-    new_view_port (graphics, zoom, pt, &vp);
-
-    //draw_view_area (graphics.cr, &vp);
-
-    double dev_x = pt.x*old_vp->scale_factor+old_vp->x_margin-old_vp->origin.x*old_vp->scale_factor;
-    double dev_y = graphics.height - (pt.y*old_vp->scale_factor+old_vp->y_margin-old_vp->origin.y*old_vp->scale_factor);
-    cairo_matrix_init (&transf,
-            vp.scale_factor, 0,
-            0, -vp.scale_factor,
-            dev_x-pt.x*vp.scale_factor, dev_y+pt.y*vp.scale_factor);
-    cairo_set_matrix (graphics.cr, &transf);
-    
-    vp.origin.x = vp.x_margin;
-    vp.origin.y = graphics.height-vp.y_margin;
-    cairo_device_to_user (graphics.cr, &vp.origin.x, &vp.origin.y);
-    *new_vp = vp;
+    zoom = zoom/100;
+    double new_scale = (double)(graphics->height-2*WINDOW_MARGIN)*zoom/CANVAS_SIZE;
+    graphics->T.dy = pt.y - ((pt.y-graphics->T.dy)*new_scale/graphics->T.scale);
+    graphics->T.dx = pt.x - ((pt.x-graphics->T.dx)*new_scale/graphics->T.scale);
+    graphics->T.scale = new_scale;
 }
 
 void focus_order_type (app_graphics_t *graphics, app_state_t *st)
 {
     rectangle_t box;
     get_bounding_box (st->ot->pts, st->ot->n, &box);
-    int64_t max;
-    max_edge (box, &max);
-    st->zoom = CANVAS_SIZE*100/((double)max);
-    vect2_t new_origin;
-    new_origin.x = (double)box.min.x-(max - (box.max.x-box.min.x))/2;
-    new_origin.y = (double)box.min.y-(max - (box.max.y-box.min.y))/2;
-    update_transform (*graphics, st->zoom, new_origin, &st->vp);
+    double box_aspect_ratio = (double)(box.max.x-box.min.x)/(box.max.y-box.min.y);
+    double window_aspect_ratio = (double)(graphics->width)/(graphics->height);
+    double y_margin, x_margin;
+    if (box_aspect_ratio < window_aspect_ratio) {
+        st->zoom = CANVAS_SIZE*100/((double)(box.max.y - box.min.y));
+        graphics->T.scale = (graphics->height - 2*WINDOW_MARGIN)*st->zoom/(100*CANVAS_SIZE);
+        y_margin = WINDOW_MARGIN;
+        x_margin = (graphics->width - (box.max.x-box.min.x)*graphics->T.scale)/2;
+    } else {
+        st->zoom = CANVAS_SIZE*100/((double)(box.max.x - box.min.x));
+        graphics->T.scale = (graphics->width - 2*WINDOW_MARGIN)*st->zoom/(100*CANVAS_SIZE);
+        x_margin = WINDOW_MARGIN;
+        y_margin = (graphics->height - (box.max.y-box.min.y)*graphics->T.scale)/2;
+    }
+
+    graphics->T.dx = x_margin - (box.min.x)*graphics->T.scale;
+    graphics->T.dy = y_margin - (CANVAS_SIZE-box.max.y)*graphics->T.scale;
 }
 
 int get_tn_for_n (int n)
@@ -409,7 +329,6 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
         st->zoom = 100;
         st->zoom_changed = 0;
         st->old_zoom = 100;
-        st->origin = VECT2(0,0);
         st->app_is_initialized = 1;
         st->old_graphics = *graphics;
         st->prev_input = input;
@@ -575,13 +494,8 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
             if (st->dragging[0] || vect2_distance (&input.ptr, &st->click_coord[0]) > st->min_distance_for_drag) {
                 if (!resizing) {
                     // DRAGGING
-                    vect2_t new_origin;
-                    new_origin.x = input.ptr.x - st->prev_input.ptr.x;
-                    new_origin.y = -(input.ptr.y - st->prev_input.ptr.y);
-                    cairo_device_to_user_distance (graphics->cr, &new_origin.x, &new_origin.y);
-                    new_origin.x = st->vp.origin.x - new_origin.x;
-                    new_origin.y = st->vp.origin.y + new_origin.y;
-                    update_transform (*graphics, st->zoom, new_origin, &st->vp);
+                    graphics->T.dx += input.ptr.x - st->prev_input.ptr.x;
+                    graphics->T.dy += (input.ptr.y - st->prev_input.ptr.y);
                     redraw = 1;
 
                     st->dragging[0] = 1;
@@ -620,15 +534,9 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
         cairo_set_source_rgb (cr, 1, 1, 1);
         cairo_paint (cr);
 
-        if (st->old_graphics.width != graphics->width || st->old_graphics.height != graphics->height) {
-            update_transform (*graphics, st->zoom, st->vp.origin, &st->vp);
-        } else if (st->zoom_changed) {
-            view_port_t new_vp;
-            vect2_t canvas_ptr = input.ptr;
-            cairo_device_to_user (graphics->cr, &canvas_ptr.x, &canvas_ptr.y);
-
-            update_transform_fixed_pt (*graphics, st->zoom, canvas_ptr, &st->vp, &new_vp);
-            st->vp = new_vp;
+        // TODO: Handle window resizing to scale canvas correctly.
+        if (st->zoom_changed) {
+            change_zoom (graphics, st->zoom, input.ptr);
             st->zoom_changed = 0;
         }
 
@@ -667,11 +575,11 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
         for (i=0; i<st->n; i++) {
             order_type_t *ot = st->ot;
             point_entity_add (st, ot->pts[i], VECT3(0,0,0));
+            draw_point (graphics, ot->pts[i]);
         }
 
-        redraw = 0;
-
-        draw_entities (st, cr);
+        //printf ("dx: %f, dy: %f, s: %f, z: %f\n", graphics->T.dx, graphics->T.dy, graphics->T.scale, st->zoom);
+        draw_entities (st, graphics);
         cairo_surface_flush (cairo_get_target(cr));
         return true;
     } else {
@@ -698,9 +606,8 @@ int main (void)
 
     // Create a window
     xcb_drawable_t  window = xcb_generate_id (connection);
-    uint32_t mask = XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK;
-    uint32_t values[2] = {screen->white_pixel,
-            XCB_EVENT_MASK_EXPOSURE|XCB_EVENT_MASK_KEY_PRESS|
+    uint32_t mask = XCB_CW_EVENT_MASK;
+    uint32_t values[2] = {XCB_EVENT_MASK_EXPOSURE|XCB_EVENT_MASK_KEY_PRESS|
             XCB_EVENT_MASK_STRUCTURE_NOTIFY|XCB_EVENT_MASK_BUTTON_PRESS|
             XCB_EVENT_MASK_BUTTON_RELEASE|XCB_EVENT_MASK_POINTER_MOTION};
 
@@ -766,8 +673,12 @@ int main (void)
     graphics.cr = cr;
     graphics.width = WINDOW_WIDTH;
     graphics.height = WINDOW_HEIGHT;
+    graphics.T.dx = WINDOW_MARGIN;
+    graphics.T.dy = WINDOW_MARGIN;
+    graphics.T.scale = (double)(graphics.height-2*WINDOW_MARGIN)/CANVAS_SIZE;
     uint16_t pixmap_width = WINDOW_WIDTH;
     uint16_t pixmap_height = WINDOW_HEIGHT;
+    bool make_pixmap_bigger = false;
 
     float frame_rate = 60;
     float target_frame_length_ms = 1000/(frame_rate);
@@ -802,14 +713,7 @@ int main (void)
                     uint16_t new_width = ((xcb_configure_notify_event_t*)event)->width;
                     uint16_t new_height = ((xcb_configure_notify_event_t*)event)->height;
                     if (new_width > pixmap_width || new_height > pixmap_height) {
-                        pixmap_width = new_width;
-                        pixmap_height = new_height;
-                        xcb_free_pixmap (connection, backbuffer);
-                        backbuffer = xcb_generate_id (connection);
-                        xcb_create_pixmap (connection, screen->root_depth, backbuffer, window,
-                                pixmap_width, pixmap_height);
-                        cairo_xcb_surface_set_drawable (cairo_get_target (graphics.cr), backbuffer,
-                                pixmap_width, pixmap_height);
+                        make_pixmap_bigger = 1;
                     }
                     graphics.width = new_width;
                     graphics.height = new_height;
@@ -824,7 +728,6 @@ int main (void)
                     break;
                 case XCB_EXPOSE:
                     // We should tell which areas need exposing
-                    printf ("cnt: %"PRIu16"\n", ((xcb_expose_event_t*)event)->count); 
                     app_input.force_redraw = 1;
                     break;
                 case XCB_BUTTON_PRESS:
@@ -845,8 +748,21 @@ int main (void)
             free (event);
         }
 
+        if (make_pixmap_bigger) {
+            pixmap_width = graphics.width;
+            pixmap_height = graphics.height;
+            xcb_free_pixmap (connection, backbuffer);
+            backbuffer = xcb_generate_id (connection);
+            xcb_create_pixmap (connection, screen->root_depth, backbuffer, window,
+                    pixmap_width, pixmap_height);
+            cairo_xcb_surface_set_drawable (cairo_get_target (graphics.cr), backbuffer,
+                    pixmap_width, pixmap_height);
+            make_pixmap_bigger = false;
+        }
+
         // TODO: How bad is this? should we actually measure it?
         app_input.time_elapsed_ms = target_frame_length_ms;
+
         bool blit_needed = update_and_render (&graphics, app_input);
         clock_gettime (CLOCK_MONOTONIC, &end_ticks);
         float time_elapsed = time_elapsed_in_ms (&start_ticks, &end_ticks);
