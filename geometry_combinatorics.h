@@ -258,6 +258,14 @@ vect2_t v2_from_v2i (vect2i_t v)
     return res;
 }
 
+vect2i_t v2i_from_v2 (vect2_t v)
+{
+    vect2i_t res;
+    res.x = (int64_t)v.x;
+    res.y = (int64_t)v.y;
+    return res;
+}
+
 typedef union {
     struct {
         double x;

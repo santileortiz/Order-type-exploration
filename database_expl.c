@@ -15,7 +15,7 @@
 #define WINDOW_HEIGHT 700
 #define WINDOW_WIDTH 700
 
-#define CANVAS_SIZE 65535 // It's the size of the coordinate axis at 100% zoom
+#define CANVAS_SIZE 65535 // It's the size of the coordinate axis at 1 zoom
 
 typedef struct {
     float time_elapsed_ms;
@@ -37,15 +37,13 @@ typedef struct {
     double dy;
 } transf_t;
 
-// canvas coordinates -> window pixels
-void transform (transf_t tr, vect2_t *p)
+void tr_canvas_to_window (transf_t tr, vect2_t *p)
 {
     p->x = tr.scale*p->x+tr.dx;
     p->y = tr.scale*(CANVAS_SIZE-p->y)+tr.dy;
 }
 
-// window pixels -> canvas coordinates
-void transform_inv (transf_t tr, vect2_t *p)
+void tr_window_to_canvas (transf_t tr, vect2_t *p)
 {
     p->x = (p->x - tr.dx)/tr.scale;
     p->y = (tr.scale*CANVAS_SIZE + tr.dy - p->y )/(tr.scale);
@@ -176,7 +174,7 @@ void draw_point (app_graphics_t *graphics, vect2i_t p)
 {
     cairo_t *cr = graphics->cr;
     vect2_t p_dev = v2_from_v2i (p);
-    transform (graphics->T, &p_dev);
+    tr_canvas_to_window (graphics->T, &p_dev);
     cairo_arc (cr, p_dev.x, p_dev.y, 5, 0, 2*M_PI);
     cairo_fill (cr);
 }
@@ -187,10 +185,10 @@ void draw_segment (app_graphics_t *graphics, vect2i_t p1, vect2i_t p2, double li
     cairo_set_line_width (cr, line_width);
 
     vect2_t p1_dev = v2_from_v2i (p1);
-    transform (graphics->T, &p1_dev);
+    tr_canvas_to_window (graphics->T, &p1_dev);
 
     vect2_t p2_dev = v2_from_v2i (p2);
-    transform (graphics->T, &p2_dev);
+    tr_canvas_to_window (graphics->T, &p2_dev);
 
     cairo_move_to (cr, (double)p1_dev.x, (double)p1_dev.y);
     cairo_line_to (cr, (double)p2_dev.x, (double)p2_dev.y);
@@ -233,39 +231,33 @@ void draw_entities (app_state_t *st, app_graphics_t *graphics)
     }
 }
 
-// Here _pos_ represents the position in window pixels of the point
-// (0, CANVAS_SIZE) of the canvas. Measured from the top left corner.
-#define WINDOW_MARGIN 40
-void change_zoom (app_graphics_t *graphics, double zoom, vect2_t pt)
+// A coordinate transform can be set, by giving a point in the window, the point
+// in the canvas we want mapped to it, and the zoom value.
+void compute_transform (transf_t *T, vect2_t window_pt, vect2_t canvas_pt, double zoom)
 {
-    zoom = zoom/100;
-    double new_scale = (double)(graphics->height-2*WINDOW_MARGIN)*zoom/CANVAS_SIZE;
-    graphics->T.dy = pt.y - ((pt.y-graphics->T.dy)*new_scale/graphics->T.scale);
-    graphics->T.dx = pt.x - ((pt.x-graphics->T.dx)*new_scale/graphics->T.scale);
-    graphics->T.scale = new_scale;
+    T->scale = zoom;
+    T->dx = window_pt.x - (canvas_pt.x)*T->scale;
+    T->dy = window_pt.y - (CANVAS_SIZE - canvas_pt.y)*T->scale;
 }
 
+#define WINDOW_MARGIN 40
 void focus_order_type (app_graphics_t *graphics, app_state_t *st)
 {
     rectangle_t box;
     get_bounding_box (st->ot->pts, st->ot->n, &box);
     double box_aspect_ratio = (double)(box.max.x-box.min.x)/(box.max.y-box.min.y);
     double window_aspect_ratio = (double)(graphics->width)/(graphics->height);
-    double y_margin, x_margin;
+    vect2_t margins;
     if (box_aspect_ratio < window_aspect_ratio) {
-        st->zoom = CANVAS_SIZE*100/((double)(box.max.y - box.min.y));
-        graphics->T.scale = (graphics->height - 2*WINDOW_MARGIN)*st->zoom/(100*CANVAS_SIZE);
-        y_margin = WINDOW_MARGIN;
-        x_margin = (graphics->width - (box.max.x-box.min.x)*graphics->T.scale)/2;
+        st->zoom = (double)(graphics->height - 2*WINDOW_MARGIN)/((double)(box.max.y - box.min.y));
+        margins.y = WINDOW_MARGIN;
+        margins.x = (graphics->width - (box.max.x-box.min.x)*st->zoom)/2;
     } else {
-        st->zoom = CANVAS_SIZE*100/((double)(box.max.x - box.min.x));
-        graphics->T.scale = (graphics->width - 2*WINDOW_MARGIN)*st->zoom/(100*CANVAS_SIZE);
-        x_margin = WINDOW_MARGIN;
-        y_margin = (graphics->height - (box.max.y-box.min.y)*graphics->T.scale)/2;
+        st->zoom = (double)(graphics->width - 2*WINDOW_MARGIN)/((double)(box.max.x - box.min.x));
+        margins.x = WINDOW_MARGIN;
+        margins.y = (graphics->height - (box.max.y-box.min.y)*st->zoom)/2;
     }
-
-    graphics->T.dx = x_margin - (box.min.x)*graphics->T.scale;
-    graphics->T.dy = y_margin - (CANVAS_SIZE-box.max.y)*graphics->T.scale;
+    compute_transform (&graphics->T, margins, VECT2(box.min.x, box.max.y), st->zoom);
 }
 
 int get_tn_for_n (int n)
@@ -304,7 +296,6 @@ void set_n (app_state_t *st, int n, app_graphics_t *graphics)
     focus_order_type (graphics, st);
 }
 
-
 int end_execution = 0;
 
 bool update_and_render (app_graphics_t *graphics, app_input_t input)
@@ -325,10 +316,10 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
         st->it_mode = iterate_order_type;
         st->user_number = -1;
 
-        st->max_zoom = 500000;
-        st->zoom = 100;
+        st->max_zoom = 5000;
+        st->zoom = 1;
         st->zoom_changed = 0;
-        st->old_zoom = 100;
+        st->old_zoom = 1;
         st->app_is_initialized = 1;
         st->old_graphics = *graphics;
         st->prev_input = input;
@@ -534,10 +525,10 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
         cairo_set_source_rgb (cr, 1, 1, 1);
         cairo_paint (cr);
 
-        // TODO: Handle window resizing to scale canvas correctly.
         if (st->zoom_changed) {
-            change_zoom (graphics, st->zoom, input.ptr);
-            st->zoom_changed = 0;
+            vect2_t userspace_ptr = input.ptr;
+            tr_window_to_canvas (graphics->T, &userspace_ptr);
+            compute_transform (&graphics->T, input.ptr, userspace_ptr, st->zoom);
         }
 
         st->old_graphics = *graphics;
@@ -575,7 +566,6 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
         for (i=0; i<st->n; i++) {
             order_type_t *ot = st->ot;
             point_entity_add (st, ot->pts[i], VECT3(0,0,0));
-            draw_point (graphics, ot->pts[i]);
         }
 
         //printf ("dx: %f, dy: %f, s: %f, z: %f\n", graphics->T.dx, graphics->T.dy, graphics->T.scale, st->zoom);
