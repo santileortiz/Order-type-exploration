@@ -138,14 +138,14 @@ void db_prev (order_type_t *ot)
     read_ot_from_db (ot);
 }
 
-void db_seek (order_type_t *ot, uint64_t n)
+void db_seek (order_type_t *ot, uint64_t id)
 {
     // TODO: This hasn't been tested for n>10, if we get the file for n=11,
     // this may throw EOVERFLOW, check it doesn't.
-    if (n < __g_db_data.num_order_types) {
-        __g_db_data.indx = n;
+    if (id < __g_db_data.num_order_types) {
+        __g_db_data.indx = id;
         ot->id = __g_db_data.indx;
-        if (-1 == lseek (__g_db_data.db, n*__g_db_data.ot_size, SEEK_SET)) {
+        if (-1 == lseek (__g_db_data.db, id*__g_db_data.ot_size, SEEK_SET)) {
             if (errno == EOVERFLOW) {
                 printf ("File offset too big\n");
             }
