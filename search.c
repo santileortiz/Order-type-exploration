@@ -116,6 +116,25 @@ void count_thrackles (int k)
     free (triangle_set_it);
 }
 
+void print_differing_triples (int n, uint64_t ot_id_1, uint64_t ot_id_2)
+{
+    order_type_t *ot_1 = order_type_new (N, NULL);
+    db_seek (ot_1, ot_id_1);
+    ot_triples_t *ot_triples_1 = ot_triples_new (ot_1, NULL);
+
+    order_type_t *ot_2 = order_type_new (N, NULL);
+    db_seek (ot_2, ot_id_2);
+    ot_triples_t *ot_triples_2 = ot_triples_new (ot_2, NULL);
+
+    int32_t trip_id = 0;
+    while (trip_id < ot_triples_1->size) {
+        if (ot_triples_1->triples[trip_id] != ot_triples_2->triples[trip_id]) {
+            print_triple (N, trip_id);
+        }
+        trip_id++;
+    }
+}
+
 int main ()
 {
     if (!open_database (N)){
@@ -123,6 +142,8 @@ int main ()
         return -1;
     }
 
-    //get_thrackle_for_each_ot (8);
-    count_thrackles (8);
+    //get_thrackle_for_each_ot (12);
+    //count_thrackles (8);
+    print_differing_triples (N, 0, 1);
+
 }
