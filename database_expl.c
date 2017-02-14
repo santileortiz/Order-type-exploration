@@ -65,6 +65,7 @@ typedef struct {
     // NOTE: Array of indexes into (app_state_t*)st->pts
     int num_points;
     int pts[3];
+    char label[4];
 } entity_t;
 
 typedef enum {
@@ -157,7 +158,7 @@ void segment_entity_add (app_state_t *st, vect2i_t p1, vect2i_t p2, vect3_t colo
     next_entity->pts[1] = index_for_point_or_add (st, p2);
 }
 
-void point_entity_add (app_state_t *st, vect2i_t p, vect3_t color)
+void point_entity_add (app_state_t *st, int id, vect2i_t p, vect3_t color)
 {
     assert (st->num_entities < ARRAY_SIZE(st->entities));
     entity_t *next_entity = &st->entities[st->num_entities];
@@ -166,17 +167,23 @@ void point_entity_add (app_state_t *st, vect2i_t p, vect3_t color)
     next_entity->type = point;
     next_entity->color = color;
     next_entity->num_points = 1;
+    snprintf (next_entity->label, ARRAY_SIZE(next_entity->label), "%i", id);
 
     next_entity->pts[0] = index_for_point_or_add (st, p);
 }
 
-void draw_point (app_graphics_t *graphics, vect2i_t p)
+void draw_point (app_graphics_t *graphics, vect2i_t p, char *label)
 {
     cairo_t *cr = graphics->cr;
     vect2_t p_dev = v2_from_v2i (p);
     tr_canvas_to_window (graphics->T, &p_dev);
     cairo_arc (cr, p_dev.x, p_dev.y, 5, 0, 2*M_PI);
     cairo_fill (cr);
+
+    p_dev.x -= 10;
+    p_dev.y -= 10;
+    cairo_move_to (graphics->cr, p_dev.x, p_dev.y);
+    cairo_show_text (graphics->cr, label);
 }
 
 void draw_segment (app_graphics_t *graphics, vect2i_t p1, vect2i_t p2, double line_width)
@@ -211,7 +218,7 @@ void draw_entities (app_state_t *st, app_graphics_t *graphics)
         switch (entity->type) {
             case point: {
                 vect2i_t p = st->pts[entity->pts[0]];
-                draw_point (graphics, p);
+                draw_point (graphics, p, entity->label);
                 } break;
             case segment: {
                 vect2i_t p1 = st->pts[entity->pts[0]];
@@ -565,7 +572,7 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
 
         for (i=0; i<st->n; i++) {
             order_type_t *ot = st->ot;
-            point_entity_add (st, ot->pts[i], VECT3(0,0,0));
+            point_entity_add (st, i, ot->pts[i], VECT3(0,0,0));
         }
 
         //printf ("dx: %f, dy: %f, s: %f, z: %f\n", graphics->T.dx, graphics->T.dy, graphics->T.scale, st->zoom);
