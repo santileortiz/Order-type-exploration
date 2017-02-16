@@ -1,4 +1,4 @@
-//gcc -Wall -g -o bin/search search.c -lm
+//gcc -O2 -Wall -g -o bin/search search.c -lm
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -189,6 +189,38 @@ void swap (int*a, int*b)
     *a = *a^*b;
 }
 
+// Merge sort implementation
+void sort (int *arr, int n)
+{
+    if (n==1) {
+        return;
+    } else if (n == 2) {
+        if (arr[1] < arr[0]) {
+            swap (&arr[0], &arr[1]);
+        }
+    } else {
+        int res[n];
+        sort (arr, n/2);
+        sort (&arr[n/2], n-n/2);
+
+        int i;
+        int a=0;
+        int b=n/2;
+        for (i=0; i<n; i++) {
+            if ((a<n/2 && arr[a] < arr[b]) || b==n) {
+                res[i] = arr[a];
+                a++;
+            } else {
+                res[i] = arr[b];
+                b++;
+            }
+        }
+        for (i=0; i<n; i++) {
+            arr[i] = res[i];
+        }
+    }
+}
+
 // This function was tested with this code:
 //
 // int n = 5;
@@ -203,13 +235,10 @@ void swap (int*a, int*b)
 // } while (subset_it_next (triangle_it));
 
 // TODO: What is the complexity of this? O(sum(idx)), maybe?
+// NOTE: This mutates the list idx and sorts it.
 uint64_t subset_it_id_for_idx (int n, int *idx, int k)
 {
-    //TODO: use a generic sort here so it works for any k.
-    assert (k==3);
-    if (idx[0] > idx[1]) swap(&idx[0],&idx[1]);
-    if (idx[1] > idx[2]) swap(&idx[1],&idx[2]);
-    if (idx[0] > idx[1]) swap(&idx[0],&idx[1]);
+    sort (idx, k);
 
     uint64_t id = 0;
     int idx_counter = 0;
@@ -346,6 +375,16 @@ void fast_edge_disjoint_sets (int n, int k)
     free (triangle_it);
 }
 
+
+void array_print (int *arr, int n)
+{
+    int i;
+    for (i=0; i<n-1; i++) {
+        printf ("%d ", arr[i]);
+    }
+    printf ("%d\n", arr[i]);
+}
+
 int main ()
 {
     if (!open_database (N)){
@@ -358,5 +397,4 @@ int main ()
     //print_differing_triples (N, 0, 1);
     //print_edge_disjoint_sets (9, 12);
     fast_edge_disjoint_sets (9, 12);
-
 }
