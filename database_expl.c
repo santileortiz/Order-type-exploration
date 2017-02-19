@@ -56,7 +56,7 @@ typedef struct {
     transf_t T;
 } app_graphics_t;
 
-typedef enum {point, triangle, segment} entity_type;
+typedef enum {triangle, segment} entity_type;
 typedef struct {
     entity_type type;
     vect3_t color;
@@ -66,6 +66,7 @@ typedef struct {
     int num_points;
     int pts[3];
     char label[4];
+    int id; // This is a unique id depending on the type of entity
 } entity_t;
 
 typedef enum {
@@ -108,27 +109,9 @@ typedef struct {
 
     int num_entities;
     entity_t entities[300];
-
-    int num_points;
-    vect2i_t pts[500]; // All figures on canvas are made of points here
 } app_state_t;
 
-int index_for_point_or_add (app_state_t *st, vect2i_t p)
-{
-    int pt_index = 0;
-    while (pt_index < st->num_points && st->pts[pt_index].x != p.x) {
-        pt_index++;
-    }
-
-    if (pt_index == st->num_points) {
-        assert (st->num_points < ARRAY_SIZE(st->pts));
-        st->pts[pt_index] = p;
-        st->num_points++;
-    }
-    return pt_index;
-}
-
-void triangle_entity_add (app_state_t *st, triangle_t *t, vect3_t color)
+void triangle_entity_add (app_state_t *st, int id, vect3_t color)
 {
     assert (st->num_entities < ARRAY_SIZE(st->entities));
     entity_t *next_entity = &st->entities[st->num_entities];
@@ -138,13 +121,10 @@ void triangle_entity_add (app_state_t *st, triangle_t *t, vect3_t color)
     next_entity->color = color;
     next_entity->num_points = 3;
 
-    int i;
-    for (i=0; i<3; i++) {
-        next_entity->pts[i] = index_for_point_or_add (st, t->v[i]);
-    }
+    next_entity->id = id;
 }
 
-void segment_entity_add (app_state_t *st, vect2i_t p1, vect2i_t p2, vect3_t color)
+void segment_entity_add (app_state_t *st, int id, vect3_t color)
 {
     assert (st->num_entities < ARRAY_SIZE(st->entities));
     entity_t *next_entity = &st->entities[st->num_entities];
@@ -154,87 +134,85 @@ void segment_entity_add (app_state_t *st, vect2i_t p1, vect2i_t p2, vect3_t colo
     next_entity->color = color;
     next_entity->num_points = 2;
 
-    next_entity->pts[0] = index_for_point_or_add (st, p1);
-    next_entity->pts[1] = index_for_point_or_add (st, p2);
+    next_entity->id = id;
 }
 
-void point_entity_add (app_state_t *st, int id, vect2i_t p, vect3_t color)
-{
-    assert (st->num_entities < ARRAY_SIZE(st->entities));
-    entity_t *next_entity = &st->entities[st->num_entities];
-    st->num_entities++;
-
-    next_entity->type = point;
-    next_entity->color = color;
-    next_entity->num_points = 1;
-    snprintf (next_entity->label, ARRAY_SIZE(next_entity->label), "%i", id);
-
-    next_entity->pts[0] = index_for_point_or_add (st, p);
-}
-
-void draw_point (app_graphics_t *graphics, vect2i_t p, char *label)
+void draw_point (app_graphics_t *graphics, vect2_t p, char *label)
 {
     cairo_t *cr = graphics->cr;
-    vect2_t p_dev = v2_from_v2i (p);
-    tr_canvas_to_window (graphics->T, &p_dev);
-    cairo_arc (cr, p_dev.x, p_dev.y, 5, 0, 2*M_PI);
+    tr_canvas_to_window (graphics->T, &p);
+    cairo_arc (cr, p.x, p.y, 5, 0, 2*M_PI);
     cairo_fill (cr);
 
-    p_dev.x -= 10;
-    p_dev.y -= 10;
-    cairo_move_to (graphics->cr, p_dev.x, p_dev.y);
+    p.x -= 10;
+    p.y -= 10;
+    cairo_move_to (graphics->cr, p.x, p.y);
     cairo_show_text (graphics->cr, label);
 }
 
-void draw_segment (app_graphics_t *graphics, vect2i_t p1, vect2i_t p2, double line_width)
+void draw_segment (app_graphics_t *graphics, vect2_t p1, vect2_t p2, double line_width)
 {
     cairo_t *cr = graphics->cr;
     cairo_set_line_width (cr, line_width);
 
-    vect2_t p1_dev = v2_from_v2i (p1);
-    tr_canvas_to_window (graphics->T, &p1_dev);
+    tr_canvas_to_window (graphics->T, &p1);
+    tr_canvas_to_window (graphics->T, &p2);
 
-    vect2_t p2_dev = v2_from_v2i (p2);
-    tr_canvas_to_window (graphics->T, &p2_dev);
-
-    cairo_move_to (cr, (double)p1_dev.x, (double)p1_dev.y);
-    cairo_line_to (cr, (double)p2_dev.x, (double)p2_dev.y);
+    cairo_move_to (cr, (double)p1.x, (double)p1.y);
+    cairo_line_to (cr, (double)p2.x, (double)p2.y);
     cairo_stroke (cr);
 }
 
-void draw_triangle (app_graphics_t *graphics, triangle_t *t)
+void draw_triangle (app_graphics_t *graphics, vect2_t p1, vect2_t p2, vect2_t p3)
 {
-    draw_segment (graphics, t->v[0], t->v[1], 3);
-    draw_segment (graphics, t->v[1], t->v[2], 3);
-    draw_segment (graphics, t->v[2], t->v[0], 3);
+    draw_segment (graphics, p1, p2, 3);
+    draw_segment (graphics, p2, p3, 3);
+    draw_segment (graphics, p3, p1, 3);
 }
 
 void draw_entities (app_state_t *st, app_graphics_t *graphics)
 {
+
+    int idx[3];
     int i;
+
+    vect2_t pts[st->n];
+    for (i=0; i<st->n; i++) {
+        pts[i] = v2_from_v2i (st->ot->pts[i]);
+    }
+
+    cairo_set_source_rgb (graphics->cr, 0, 0, 0);
+    for (i=0; i<binomial(st->n, 2); i++) {
+        subset_it_idx_for_id (i, st->n, idx, 2);
+        vect2_t p1 = pts[idx[0]];
+        vect2_t p2 = pts[idx[1]];
+        draw_segment (graphics, p1, p2, 1);
+    }
+
     for (i=0; i<st->num_entities; i++) {
         entity_t *entity = &st->entities[i];
         cairo_set_source_rgb (graphics->cr, entity->color.r, entity->color.g, entity->color.b);
         switch (entity->type) {
-            case point: {
-                vect2i_t p = st->pts[entity->pts[0]];
-                draw_point (graphics, p, entity->label);
-                } break;
             case segment: {
-                vect2i_t p1 = st->pts[entity->pts[0]];
-                vect2i_t p2 = st->pts[entity->pts[1]];
+                subset_it_idx_for_id (entity->id, st->n, idx, 2);
+                vect2_t p1 = pts[idx[0]];
+                vect2_t p2 = pts[idx[1]];
                 draw_segment (graphics, p1, p2, 1);
                 } break;
             case triangle: {
-                triangle_t t;
-                t.v[0] = st->pts[entity->pts[0]];
-                t.v[1] = st->pts[entity->pts[1]];
-                t.v[2] = st->pts[entity->pts[2]];
-                draw_triangle (graphics, &t);
+                subset_it_idx_for_id (entity->id, st->n, idx, 3);
+                draw_triangle (graphics, pts[idx[0]], pts[idx[1]], pts[idx[2]]);
                 } break;
             default:
                 invalid_code_path;
         }
+    }
+
+    cairo_set_source_rgb (graphics->cr, 0, 0, 0);
+    for (i=0; i<st->n; i++) {
+        char str[4];
+        snprintf (str, ARRAY_SIZE(str), "%i", i);
+        draw_point (graphics, pts[i], str);
     }
 }
 
@@ -527,10 +505,13 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
     }
     st->prev_input = input;
 
+
+
     if (redraw || input.force_redraw) {
         cairo_t *cr = graphics->cr;
         cairo_set_source_rgb (cr, 1, 1, 1);
         cairo_paint (cr);
+        //draw_point (graphics, VECT2(100,100), "0");
 
         if (st->zoom_changed) {
             vect2_t userspace_ptr = input.ptr;
@@ -542,37 +523,13 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
 
         // Construct drawing on canvas.
         st->num_entities = 0;
-        st->num_points = 0;
 
         int i;
-#if 1
-        for (i=0; i<st->n-1; i++) {
-            int j;
-            for (j=i+1; j<st->n; j++) {
-                order_type_t *ot = st->ot;
-                segment_entity_add (st, ot->pts[i], ot->pts[j], VECT3(0,0,0));
-            }
-        }
-#endif
-
         get_next_color (0);
-
         for (i=0; i<st->k; i++) {
-            triangle_t t;
-            subset_it_seek (st->triangle_it, st->triangle_set_it->idx[i]);
-            t.v[0] = st->ot->pts[st->triangle_it->idx[0]];
-            t.v[1] = st->ot->pts[st->triangle_it->idx[1]];
-            t.v[2] = st->ot->pts[st->triangle_it->idx[2]];
-
             vect3_t color;
             get_next_color (&color);
-            triangle_entity_add (st, &t, color);
-        }
-
-
-        for (i=0; i<st->n; i++) {
-            order_type_t *ot = st->ot;
-            point_entity_add (st, i, ot->pts[i], VECT3(0,0,0));
+            triangle_entity_add (st, st->triangle_set_it->idx[i], color);
         }
 
         //printf ("dx: %f, dy: %f, s: %f, z: %f\n", graphics->T.dx, graphics->T.dy, graphics->T.scale, st->zoom);
@@ -761,6 +718,13 @@ int main (void)
         app_input.time_elapsed_ms = target_frame_length_ms;
 
         bool blit_needed = update_and_render (&graphics, app_input);
+
+        cairo_status_t cr_stat = cairo_status (graphics.cr);
+        if (cr_stat != CAIRO_STATUS_SUCCESS) {
+            printf ("Cairo error: %s\n", cairo_status_to_string (cr_stat));
+            return 0;
+        }
+
         clock_gettime (CLOCK_MONOTONIC, &end_ticks);
         float time_elapsed = time_elapsed_in_ms (&start_ticks, &end_ticks);
         if (time_elapsed < target_frame_length_ms) {

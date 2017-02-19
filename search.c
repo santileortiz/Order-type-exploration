@@ -171,90 +171,6 @@ void print_edge_disjoint_sets (int n, int k)
     free (triangle_set_it);
 }
 
-bool in_array (int i, int* arr, int size)
-{
-    while (size) {
-        size--;
-        if (arr[size] == i) {
-            return true;
-        }
-    }
-    return false;
-}
-
-void swap (int*a, int*b)
-{
-    *a = *a^*b;
-    *b = *a^*b;
-    *a = *a^*b;
-}
-
-// Merge sort implementation
-void sort (int *arr, int n)
-{
-    if (n==1) {
-        return;
-    } else if (n == 2) {
-        if (arr[1] < arr[0]) {
-            swap (&arr[0], &arr[1]);
-        }
-    } else {
-        int res[n];
-        sort (arr, n/2);
-        sort (&arr[n/2], n-n/2);
-
-        int i;
-        int a=0;
-        int b=n/2;
-        for (i=0; i<n; i++) {
-            if ((a<n/2 && arr[a] < arr[b]) || b==n) {
-                res[i] = arr[a];
-                a++;
-            } else {
-                res[i] = arr[b];
-                b++;
-            }
-        }
-        for (i=0; i<n; i++) {
-            arr[i] = res[i];
-        }
-    }
-}
-
-// This function was tested with this code:
-//
-// int n = 5;
-// subset_it_t *triangle_it = subset_it_new (n, 3, NULL);
-// subset_it_precompute (triangle_it);
-// do {
-//     if (triangle_it->id != subset_it_id_for_idx (n, triangle_it->idx, 3)) {
-//         printf ("There is an error\n");
-//         subset_it_print (triangle_it);
-//         break;
-//     }
-// } while (subset_it_next (triangle_it));
-
-// TODO: What is the complexity of this? O(sum(idx)), maybe?
-// NOTE: This mutates the list idx and sorts it.
-uint64_t subset_it_id_for_idx (int n, int *idx, int k)
-{
-    sort (idx, k);
-
-    uint64_t id = 0;
-    int idx_counter = 0;
-    int h=0;
-    while (h < k) {
-        uint64_t subsets = binomial ((n)-(idx_counter)-1, k-h-1);
-        if (idx_counter < idx[h]) {
-            id+=subsets;
-        } else {
-            h++;
-        }
-        idx_counter++;
-    }
-    return id;
-}
-
 void fast_edge_disjoint_sets (int n, int k)
 {
     uint64_t count = 0;
@@ -373,16 +289,6 @@ void fast_edge_disjoint_sets (int n, int k)
         }
     }
     free (triangle_it);
-}
-
-
-void array_print (int *arr, int n)
-{
-    int i;
-    for (i=0; i<n-1; i++) {
-        printf ("%d ", arr[i]);
-    }
-    printf ("%d\n", arr[i]);
 }
 
 int main ()

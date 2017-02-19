@@ -53,5 +53,69 @@ void end_temporary_memory (temporary_marker_t mrkr)
     assert (mrkr.stack->used >= mrkr.used);
     mrkr.stack->used = mrkr.used;
 }
+
+bool in_array (int i, int* arr, int size)
+{
+    while (size) {
+        size--;
+        if (arr[size] == i) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void array_print (int *arr, int n)
+{
+    int i;
+    for (i=0; i<n-1; i++) {
+        printf ("%d ", arr[i]);
+    }
+    printf ("%d\n", arr[i]);
+}
+
+void swap (int*a, int*b)
+{
+    *a = *a^*b;
+    *b = *a^*b;
+    *a = *a^*b;
+}
+
+// Merge sort implementation
+void sort (int *arr, int n)
+{
+    if (n==1) {
+        return;
+    } else if (n == 2) {
+        if (arr[1] < arr[0]) {
+            swap (&arr[0], &arr[1]);
+        }
+    } else if (n==3) {
+        if (arr[0] > arr[1]) swap(&arr[0],&arr[1]);
+        if (arr[1] > arr[2]) swap(&arr[1],&arr[2]);
+        if (arr[0] > arr[1]) swap(&arr[0],&arr[1]);
+    } else {
+        int res[n];
+        sort (arr, n/2);
+        sort (&arr[n/2], n-n/2);
+
+        int i;
+        int a=0;
+        int b=n/2;
+        for (i=0; i<n; i++) {
+            if ((a<n/2 && arr[a] < arr[b]) || b==n) {
+                res[i] = arr[a];
+                a++;
+            } else {
+                res[i] = arr[b];
+                b++;
+            }
+        }
+        for (i=0; i<n; i++) {
+            arr[i] = res[i];
+        }
+    }
+}
+
 #define COMMON_H
 #endif

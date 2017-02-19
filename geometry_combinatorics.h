@@ -362,21 +362,6 @@ uint64_t binomial (int n, int k)
     return res;
 }
 
-//// Code used to test subset_it_seek
-//  subset_it_t *it = subset_it_new (8, 3, null);
-//  do {
-//      subset_it_print (it);
-//  }while (subset_it_next (it));
-//  printf ("\n");
-//  {
-//      int i=0;
-//      for (i=0; i<it->size; i++) {
-//          subset_it_seek (it, i);
-//          subset_it_print (it);
-//      }
-//  }
-//  subset_it_free (it);
-
 typedef struct {
     int n; // size of the whole set
     int k; // size of the subset
@@ -419,6 +404,84 @@ subset_it_t *subset_it_new (int n, int k, memory_stack_t *stack)
     return retval;
 }
 
+// This function was tested with this code:
+//
+// int n = 5;
+// subset_it_t *triangle_it = subset_it_new (n, 3, NULL);
+// subset_it_precompute (triangle_it);
+// do {
+//     if (triangle_it->id != subset_it_id_for_idx (n, triangle_it->idx, 3)) {
+//         printf ("There is an error\n");
+//         subset_it_print (triangle_it);
+//         break;
+//     }
+// } while (subset_it_next (triangle_it));
+
+// TODO: What is the complexity of this? O(sum(idx)), maybe?
+// NOTE: This mutates the list idx and sorts it.
+uint64_t subset_it_id_for_idx (int n, int *idx, int k)
+{
+    sort (idx, k);
+
+    uint64_t id = 0;
+    int idx_counter = 0;
+    int h=0;
+    while (h < k) {
+        uint64_t subsets = binomial ((n)-(idx_counter)-1, k-h-1);
+        if (idx_counter < idx[h]) {
+            id+=subsets;
+        } else {
+            h++;
+        }
+        idx_counter++;
+    }
+    return id;
+}
+
+void subset_it_idx_for_id (uint64_t id, int n, int *idx, int k)
+{
+    int i = 0;
+    idx[0] = 0;
+
+    while (i < k) {
+        uint64_t subsets = binomial ((n)-(idx[i])-1, k-i-1);
+        //printf ("bin(%d, %d)\n", (n)-(idx[k])-1, k-i-1);
+        //printf ("k: %d, id: %ld, sus: %ld\n", k, id, subsets);
+        if (id >= subsets) {
+            id -= subsets;
+            idx[i]++;
+        } else {
+            if (i<k-1) {
+                idx[i+1] = idx[i]+1;
+            }
+            i++;
+        }
+    }
+}
+
+void subset_it_idx_for_id_safe (uint64_t id, int n, int *idx, int k)
+{
+    if (id >= binomial(n,k)) {
+        return;
+    }
+    subset_it_idx_for_id (id, n, idx, k);
+}
+
+//// Code used to test subset_it_seek
+//  subset_it_t *it = subset_it_new (8, 3, null);
+//  do {
+//      subset_it_print (it);
+//  }while (subset_it_next (it));
+//  printf ("\n");
+//  {
+//      int i=0;
+//      for (i=0; i<it->size; i++) {
+//          subset_it_seek (it, i);
+//          subset_it_print (it);
+//      }
+//  }
+//  subset_it_free (it);
+
 void subset_it_seek (subset_it_t *it, uint64_t id)
 {
     if (id >= it->size) {
@@ -429,23 +492,7 @@ void subset_it_seek (subset_it_t *it, uint64_t id)
     if (it->precomp) {
         it->idx = &(it->precomp[id*it->k]);
     } else {
-        int k = 0;
-        it->idx[0] = 0;
-
-        while (k < it->k) {
-            uint64_t subsets = binomial ((it->n)-(it->idx[k])-1, it->k-k-1);
-            //printf ("bin(%d, %d)\n", (it->n)-(it->idx[k])-1, it->k-k-1);
-            //printf ("k: %d, id: %ld, sus: %ld\n", k, id, subsets);
-            if (id >= subsets) {
-                id -= subsets;
-                it->idx[k]++;
-            } else {
-                if (k<it->k-1) {
-                    it->idx[k+1] = it->idx[k]+1;
-                }
-                k++;
-            }
-        }
+        subset_it_idx_for_id (id, it->n, it->idx, it->k);
     }
 }
 
@@ -482,7 +529,7 @@ int subset_it_next (subset_it_t *it)
     }
 }
 
-// TODO: This is a slow if not precomputed, try to implement a proper prev
+// TODO: This is slow if not precomputed, try to implement a proper prev
 // function in O(it->k).
 void subset_it_prev (subset_it_t *it)
 {
