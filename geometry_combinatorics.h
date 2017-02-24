@@ -215,6 +215,71 @@ int is_thrackle (triangle_set_t *set)
     return 1;
 }
 
+int thrackle_size (int n)
+{
+    switch (n) {
+        case 3:
+            return 1;
+        case 4:
+            return 1;
+        case 5:
+            return 2;
+        case 6:
+            return 4;
+        case 7:
+            return 7;
+        case 8:
+            return 8;
+        default:
+            // TODO: Should return -1, use upper or lower bound in vsualizer.
+            printf ("Tn is unknown\n");
+            return 2;
+    }
+}
+
+int thrackle_size_lower_bound (int n)
+{
+    assert (n>=7);
+    if (n%3 == 0) {
+        return (n*n/9+1);
+    } else {
+        switch (n%6) {
+            case 1:
+                return (2*n*n-n+35)/18;
+            case 4:
+                return (2*n*n-n+26)/18;
+            case 5:
+                return (n*n-n+7)/9;
+            case 2:
+                return (n*n-n+16)/9;
+            default:
+                return -1;
+        }
+    }
+}
+
+int thrackle_size_upper_bound (int n)
+{
+    if (n%2 == 0) {
+        return (n*n-2*n)/6;
+    } else {
+        return (n*n-n)/6;
+    }
+}
+
+void thrackle_size_print (int n)
+{
+    int i=3;
+    while (i<=n) {
+        if (i<9) {
+            printf ("T_%d: %d\n", i, thrackle_size (i));
+        } else {
+            printf ("T_%d: %d-%d\n", i, thrackle_size_lower_bound (i), thrackle_size_upper_bound(i));
+        }
+        i++;
+    }
+}
+
 void init_example_thrackle (triangle_set_t *res, order_type_t *ot)
 {
     if (res->k == 7) {

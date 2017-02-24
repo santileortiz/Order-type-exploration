@@ -245,27 +245,6 @@ void focus_order_type (app_graphics_t *graphics, app_state_t *st)
     compute_transform (&graphics->T, margins, VECT2(box.min.x, box.max.y), st->zoom);
 }
 
-int get_tn_for_n (int n)
-{
-    switch (n) {
-        case 3:
-            return 1;
-        case 4:
-            return 1;
-        case 5:
-            return 2;
-        case 6:
-            return 4;
-        case 7:
-            return 7;
-        case 8:
-            return 8;
-        default:
-            printf ("Tn is unknown\n");
-            return 2;
-    }
-}
-
 void set_ot (app_state_t *st)
 {
     int i;
@@ -297,7 +276,7 @@ void set_n (app_state_t *st, int n, app_graphics_t *graphics)
     st->memory.used = 0; // Clears all storage
 
     st->n = n;
-    st->k = get_tn_for_n (st->n);
+    st->k = thrackle_size (st->n);
     st->ot = order_type_new (10, &st->memory);
     open_database (st->n);
     st->ot->n = st->n;
@@ -325,7 +304,7 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
         memory_stack_init (&st->memory, st->storage_size-sizeof(app_state_t), memory+sizeof(app_state_t));
 
         st->n = 8;
-        st->k = get_tn_for_n (st->n);
+        st->k = thrackle_size (st->n);
 
         st->it_mode = iterate_order_type;
         st->user_number = -1;
