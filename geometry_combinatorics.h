@@ -17,17 +17,30 @@ typedef struct {
     vect2i_t pts [1];
 } order_type_t;
 
+#define order_type_size(n) (sizeof(order_type_t)+(n-1)*sizeof(vect2i_t))
 order_type_t *order_type_new (int n, memory_stack_t *stack)
 {
     order_type_t *ret;
     if (stack) {
-         ret = push_size (stack, sizeof(order_type_t)+(n-1)*sizeof(vect2i_t));
+         ret = push_size (stack, order_type_size(n));
     } else {
-        ret = malloc(sizeof(order_type_t)+(n-1)*sizeof(vect2i_t));
+        ret = malloc(order_type_size(n));
     }
     ret->n = n;
     ret->id = -1;
     return ret;
+}
+
+void convex_ot (order_type_t *ot)
+{
+    assert (ot->n >= 3);
+    double theta = (2*M_PI)/ot->n;
+    ot->id = 0;
+    int i;
+    for (i=1; i<=ot->n; i++) {
+        ot->pts[i-1].x = (int)(127.0*(1+cos(i*theta)));
+        ot->pts[i-1].y = (int)(127.0*(1+sin(i*theta)));
+    }
 }
 
 void print_order_type (order_type_t *ot)
@@ -69,46 +82,10 @@ typedef struct {
 } triangle_set_t;
 #define triangle_set_size(n) (sizeof(triangle_set_t)+(n-1)*sizeof(triangle_t))
 
-typedef struct {
-    vect2i_t min;
-    vect2i_t max;
-} rectangle_t;
-
-rectangle_t rect_min_dim (vect2i_t min, vect2i_t dim)
+int64_t area_2 (vect2i_t a, vect2i_t b, vect2i_t c)
 {
-    rectangle_t res;
-    res.min = min;
-    res.max = min;
-    return res;
-}
-
-#define max_edge(rect, res) max_min_edges(rect,res, NULL)
-#define min_edge(rect, res) max_min_edges(rect,NULL, res)
-void max_min_edges (rectangle_t rect, int64_t *max, int64_t *min)
-{
-    int64_t width = rect.max.x - rect.min.x;
-    int64_t height = rect.max.y - rect.min.y;
-    int64_t l_max, l_min;
-    if (width < height) {
-        l_max = height;
-        l_min = width;
-    } else {
-        l_min = height;
-        l_max = width;
-    }
-
-    if (max) {
-        *max = l_max;
-    }
-    if (min) {
-        *min = l_min;
-    }
-}
-
-int area_2 (vect2i_t a, vect2i_t b, vect2i_t c)
-{
-    return ((int)b.x-(int)a.x)*((int)c.y-(int)a.y) - 
-           ((int)c.x-(int)a.x)*((int)b.y-(int)a.y);
+    return (b.x-a.x)*(c.y-a.y) - 
+           (c.x-a.x)*(b.y-a.y);
 }
 
 int left (vect2i_t a, vect2i_t b, vect2i_t c)
@@ -238,38 +215,6 @@ int is_thrackle (triangle_set_t *set)
     return 1;
 }
 
-void get_bounding_box (vect2i_t *pts, int n, rectangle_t *res)
-{
-    int64_t min_x, min_y, max_x, max_y;
-
-    min_x = max_x = pts[0].x;
-    min_y = max_y = pts[0].y;
-
-    int i=1;
-    while (i < n) {
-        if (pts[i].x < min_x) {
-            min_x = pts[i].x;
-        }
-
-        if (pts[i].y < min_y) {
-            min_y = pts[i].y;
-        }
-
-        if (pts[i].x > max_x) {
-            max_x = pts[i].x;
-        }
-
-        if (pts[i].y > max_y) {
-            max_y = pts[i].y;
-        }
-        i++;
-    }
-    res->min.x = min_x;
-    res->min.y = min_y;
-    res->max.x = max_x;
-    res->max.y = max_y;
-}
-
 void init_example_thrackle (triangle_set_t *res, order_type_t *ot)
 {
     if (res->k == 7) {
@@ -351,6 +296,74 @@ typedef union {
     double E[3];
 } vect3_t;
 #define VECT3(x,y,z) ((vect3_t){{x,y,z}})
+
+typedef struct {
+    vect2_t min;
+    vect2_t max;
+} box_t;
+
+box_t box_min_dim (vect2_t min, vect2_t dim)
+{
+    box_t res;
+    res.min = min;
+    res.max = min;
+    return res;
+}
+
+#define max_edge(box, res) max_min_edges(box,res, NULL)
+#define min_edge(box, res) max_min_edges(box,NULL, res)
+void max_min_edges (box_t box, int64_t *max, int64_t *min)
+{
+    int64_t width = box.max.x - box.min.x;
+    int64_t height = box.max.y - box.min.y;
+    int64_t l_max, l_min;
+    if (width < height) {
+        l_max = height;
+        l_min = width;
+    } else {
+        l_min = height;
+        l_max = width;
+    }
+
+    if (max) {
+        *max = l_max;
+    }
+    if (min) {
+        *min = l_min;
+    }
+}
+
+void get_bounding_box (vect2_t *pts, int n, box_t *res)
+{
+    double min_x, min_y, max_x, max_y;
+
+    min_x = max_x = pts[0].x;
+    min_y = max_y = pts[0].y;
+
+    int i=1;
+    while (i < n) {
+        if (pts[i].x < min_x) {
+            min_x = pts[i].x;
+        }
+
+        if (pts[i].y < min_y) {
+            min_y = pts[i].y;
+        }
+
+        if (pts[i].x > max_x) {
+            max_x = pts[i].x;
+        }
+
+        if (pts[i].y > max_y) {
+            max_y = pts[i].y;
+        }
+        i++;
+    }
+    res->min.x = min_x;
+    res->min.y = min_y;
+    res->max.x = max_x;
+    res->max.y = max_y;
+}
 
 uint64_t binomial (int n, int k)
 {
@@ -602,6 +615,125 @@ void subset_it_free (subset_it_t *it)
         free (it->idx);
     }
     free (it);
+}
+
+// Walker's backtracking algorithm used to generate only
+// edge disjoint triangle sets.
+void generate_edge_disjoint_triangle_sets (int n, int k, int *result, int *num_found)
+{
+    int l = 1; // Tree level
+    int min_sl;
+    bool S_l_empty;
+
+    subset_it_t *triangle_it = subset_it_new (n, 3, NULL);
+    subset_it_precompute (triangle_it);
+    int total_triangles = triangle_it->size;
+
+    int S_l[total_triangles];
+    int i;
+    for (i=1; i<triangle_it->size; i++) {
+        S_l[i] = 1;
+    }
+    S_l[0] = 0;
+
+    *num_found = 0;
+    int set_id = 0;
+    int triangle_id = 0;
+    int invalid_triangles[total_triangles];
+    int num_invalid = 0;
+
+    int choosen_triangles[k];
+    choosen_triangles[0] = 0;
+    int invalid_restore_indx[k];
+    invalid_restore_indx[0] = 0;
+
+    while (l > 0) {
+        if (l>=k) {
+            //array_print (choosen_triangles, k);
+            int p_k;
+            for (p_k=0; p_k<k; p_k++) {
+                result[set_id+p_k] = choosen_triangles[p_k];
+            }
+            set_id += p_k;
+            (*num_found)++;
+            goto backtrack;
+        } else {
+            // Compute S_l
+            subset_it_seek (triangle_it, triangle_id);
+            int triangle[3];
+            triangle[0] = triangle_it->idx[0];
+            triangle[1] = triangle_it->idx[1];
+            triangle[2] = triangle_it->idx[2];
+
+            int i;
+            for (i=0; i<n; i++) {
+                int invalid_triangle[3];
+
+                if (in_array(i, triangle, 3)) {
+                    continue;
+                }
+
+                uint64_t id;
+                int t;
+                for (t=0; t<3; t++) {
+                    invalid_triangle[0] = i;
+                    invalid_triangle[1] = triangle[t];
+                    invalid_triangle[2] = triangle[(t+1)%3];
+                    id = subset_it_id_for_idx (n, invalid_triangle, 3);
+
+                    int j;
+                    for (j=0; j<num_invalid; j++) {
+                        if (invalid_triangles[j] == id) {
+                            break;
+                        }
+                    }
+                    if (j == num_invalid) {
+                        invalid_triangles[num_invalid] = id;
+                        S_l[id] = 0;
+                        num_invalid++;
+                    }
+                }
+            }
+        }
+
+        while (1) {
+            // Try to advance
+            S_l_empty = true;
+            int i;
+            for (i=0; i<total_triangles; i++) {
+                if (S_l[i]) {
+                    min_sl = i;
+                    S_l_empty = false;
+                    break;
+                }
+            }
+
+            if (!S_l_empty) {
+                triangle_id = min_sl;
+                S_l[triangle_id] = 0;
+                invalid_restore_indx[l] = num_invalid;
+                choosen_triangles[l] = triangle_id;
+                l++;
+                break;
+            }
+
+backtrack:
+            l--;
+            if (l>=0) {
+                int i;
+                for (i=choosen_triangles[l]+1; i<total_triangles; i++) {
+                    S_l[i] = 1;
+                }
+
+                num_invalid = invalid_restore_indx[l];
+                for (i=0; i<num_invalid; i++) {
+                    S_l[invalid_triangles[i]] = 0;
+                }
+            } else {
+                break;
+            }
+        }
+    }
 }
 
 // Automatic color palette:

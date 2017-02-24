@@ -109,6 +109,9 @@ typedef struct {
 
     int num_entities;
     entity_t entities[300];
+
+    bool view_db_ot;
+    vect2_t visible_pts[50];
 } app_state_t;
 
 void triangle_entity_add (app_state_t *st, int id, vect3_t color)
@@ -176,10 +179,7 @@ void draw_entities (app_state_t *st, app_graphics_t *graphics)
     int idx[3];
     int i;
 
-    vect2_t pts[st->n];
-    for (i=0; i<st->n; i++) {
-        pts[i] = v2_from_v2i (st->ot->pts[i]);
-    }
+    vect2_t *pts = st->visible_pts;
 
     cairo_set_source_rgb (graphics->cr, 0, 0, 0);
     for (i=0; i<binomial(st->n, 2); i++) {
@@ -228,8 +228,8 @@ void compute_transform (transf_t *T, vect2_t window_pt, vect2_t canvas_pt, doubl
 #define WINDOW_MARGIN 40
 void focus_order_type (app_graphics_t *graphics, app_state_t *st)
 {
-    rectangle_t box;
-    get_bounding_box (st->ot->pts, st->ot->n, &box);
+    box_t box;
+    get_bounding_box (st->visible_pts, st->ot->n, &box);
     double box_aspect_ratio = (double)(box.max.x-box.min.x)/(box.max.y-box.min.y);
     double window_aspect_ratio = (double)(graphics->width)/(graphics->height);
     vect2_t margins;
@@ -248,6 +248,8 @@ void focus_order_type (app_graphics_t *graphics, app_state_t *st)
 int get_tn_for_n (int n)
 {
     switch (n) {
+        case 3:
+            return 1;
         case 4:
             return 1;
         case 5:
@@ -264,6 +266,32 @@ int get_tn_for_n (int n)
     }
 }
 
+void set_ot (app_state_t *st)
+{
+    int i;
+    if (!st->view_db_ot) {
+        if (st->ot->id == 0 && st->n>5) {
+            char ot[order_type_size(st->n)];
+            order_type_t *cvx_ot = (order_type_t*)ot;
+            cvx_ot->n = st->ot->n;
+            cvx_ot->id = 0;
+            convex_ot (cvx_ot);
+            for (i=0; i<st->n; i++) {
+                st->visible_pts[i] = v2_from_v2i (cvx_ot->pts[i]);
+            }
+        } else {
+            // TODO: Look for a file with a visualization of the order type
+            for (i=0; i<st->n; i++) {
+                st->visible_pts[i] = v2_from_v2i (st->ot->pts[i]);
+            }
+        }
+    } else {
+        for (i=0; i<st->n; i++) {
+            st->visible_pts[i] = v2_from_v2i (st->ot->pts[i]);
+        }
+    }
+}
+
 void set_n (app_state_t *st, int n, app_graphics_t *graphics)
 {
     st->memory.used = 0; // Clears all storage
@@ -274,6 +302,7 @@ void set_n (app_state_t *st, int n, app_graphics_t *graphics)
     open_database (st->n);
     st->ot->n = st->n;
     db_next (st->ot);
+    set_ot (st);
 
     st->triangle_it = subset_it_new (st->n, 3, &st->memory);
     subset_it_precompute (st->triangle_it);
@@ -313,6 +342,7 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
         st->time_since_button_press[2] = -1;
         st->double_click_time = 100;
         st->min_distance_for_drag = 10;
+        st->view_db_ot = false;
 
         set_n (st, st->n, graphics);
 
@@ -381,9 +411,13 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
                 if (XCB_KEY_BUT_MASK_SHIFT & input.modifiers
                         || input.keycode == 113) {
                     db_prev (st->ot);
+
                 } else {
                     db_next (st->ot);
                 }
+                set_ot (st);
+                focus_order_type (graphics, st);
+
             } else if (st->it_mode == iterate_n) {
                 int n = st->n;
                 if (XCB_KEY_BUT_MASK_SHIFT & input.modifiers
@@ -409,9 +443,16 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
             }
             redraw = 1;
             break;
+        case 55: //KEY_V
+            st->view_db_ot = !st->view_db_ot;
+            set_ot (st);
+            focus_order_type (graphics, st);
+            redraw = 1;
+            break;
         case 36: //KEY_ENTER
             if (st->it_mode == iterate_order_type) {
                 db_seek (st->ot, st->user_number);
+                set_ot (st);
             } else if (st->it_mode == iterate_n) {
                 if (3 <= st->user_number && st->user_number <= 10) {
                     set_n (st, st->user_number, graphics);
@@ -619,6 +660,8 @@ int main (void)
 
     cairo_surface_t *surface = cairo_xcb_surface_create (connection, backbuffer, root_window_visual, WINDOW_WIDTH, WINDOW_HEIGHT);
     cairo_t *cr = cairo_create (surface);
+    cairo_select_font_face (cr, "Open Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
+    cairo_set_font_size (cr, 12);
 
     // ////////////////
     // Main event loop

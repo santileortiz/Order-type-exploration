@@ -60,18 +60,6 @@ void draw_triangle (cairo_t *cr, triangle_t *t, transf_t *tr)
     draw_segment (cr, t->v[2], t->v[0], 1, tr);
 }
 
-void convex_ot (order_type_t *ot)
-{
-    assert (ot->n >= 3);
-    double theta = (2*M_PI)/ot->n;
-    ot->id = 0;
-    int i;
-    for (i=1; i<=ot->n; i++) {
-        ot->pts[i-1].x = (int)(127.0*(1+cos(i*theta)));
-        ot->pts[i-1].y = (int)(127.0*(1+sin(i*theta)));
-    }
-}
-
 #if 1
 
 #define PAGE_WIDTH 612

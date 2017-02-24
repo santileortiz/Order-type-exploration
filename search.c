@@ -1,4 +1,4 @@
-//gcc -O2 -Wall -g -o bin/search search.c -lm
+//gcc -Wall -g -o bin/search search.c -lm
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -12,7 +12,7 @@
 #include "geometry_combinatorics.h"
 #include "ot_db.h"
 
-#define N 8
+#define N 9
 
 void get_thrackle_for_each_ot (int k)
 {
@@ -68,7 +68,7 @@ void get_thrackle_for_each_ot (int k)
 
 void count_thrackles (int k)
 {
-    uint64_t id = 8;
+    uint64_t id = 0;
     order_type_t *ot = order_type_new (N, NULL);
     triangle_set_t *curr_set = malloc (sizeof(triangle_set_t)+(k-1)*sizeof(triangle_t));
     curr_set->k = k;
@@ -109,7 +109,7 @@ void count_thrackles (int k)
             //PROBE_WALL_CLOCK("Triangle set loop");
         }
         printf ("%ld: %ld\n", id, count);
-        if (id==9) {
+        if (id==0) {
             return;
         }
         id++;
@@ -139,6 +139,7 @@ void print_differing_triples (int n, uint64_t ot_id_1, uint64_t ot_id_2)
 
 void print_edge_disjoint_sets (int n, int k)
 {
+    int count = 0;
     order_type_t *ot = order_type_new (n, NULL);
     triangle_set_t *curr_set = malloc (sizeof(triangle_set_t)+(k-1)*sizeof(triangle_t));
     curr_set->k = k;
@@ -160,134 +161,58 @@ void print_edge_disjoint_sets (int n, int k)
         }
 
         if (is_edge_disjoint_set(curr_set)) {
-            subset_it_print (triangle_set_it);
+            array_print (triangle_set_it->idx, k);
+            //subset_it_print (triangle_set_it);
+            count++;
         }
 
         if (!subset_it_next (triangle_set_it)) {
             break;
         }
     }
+    printf ("total count: %d\n", count);
     free (triangle_it);
     free (triangle_set_it);
 }
 
 void fast_edge_disjoint_sets (int n, int k)
 {
-    uint64_t count = 0;
-    order_type_t *ot = order_type_new (n, NULL);
+    int *all_edj_sets = malloc(840*12*12*sizeof(int));
+
     triangle_set_t *curr_set = malloc (sizeof(triangle_set_t)+(k-1)*sizeof(triangle_t));
     curr_set->k = k;
 
-    subset_it_t *triangle_it = subset_it_new (n, 3, NULL);
+    order_type_t *ot = order_type_new (n, NULL);
+    db_seek (ot, 0);
 
+    subset_it_t *triangle_it = subset_it_new (n, 3, NULL);
     subset_it_precompute (triangle_it);
 
-    int triangle_id = 0;
-    int invalid_triangles[triangle_it->size];
-    int num_invalid = 0;
+    int num_found;
+    generate_edge_disjoint_triangle_sets (n, k, all_edj_sets, &num_found);
+    printf ("Sets found: %d\n", num_found);
 
-    int choosen_triangles[k];
-    int invalid_restore_indx[k];
-    int triangles_remaining_for_choosen[k];
-    int num_choosen = 0;
-    db_seek (ot, 0);
-    //triangles_remaining_for_choosen[0] = 0;
-    triangles_remaining_for_choosen[0] = triangle_it->size-1;
-
-    while (1) {
-        choosen_triangles[num_choosen] = triangle_id;
-        invalid_restore_indx[num_choosen] = num_invalid;
-
-        num_choosen++;
-
-        if (num_choosen == k) {
-            count++;
-            //if (count%10000 == 0) {
-            //    printf ("count: %"PRIu64"\n", count);
-            //}
-            int p_k;
-            for (p_k=0; p_k<k-1; p_k++) {
-                printf ("%d ", choosen_triangles[p_k]);
+    int i;
+    while (!db_is_eof()) {
+        int found_th = 0;
+        for (i=0; i<num_found*k; i+=k) {
+            int j;
+            for (j=0; j<k; j++) {
+                subset_it_seek (triangle_it, all_edj_sets[i+j]);
+                curr_set->e[j].v[0] = ot->pts[triangle_it->idx[0]];
+                curr_set->e[j].v[1] = ot->pts[triangle_it->idx[1]];
+                curr_set->e[j].v[2] = ot->pts[triangle_it->idx[2]];
             }
-            printf ("%d\n", choosen_triangles[p_k]);
-        }
-
-        subset_it_seek (triangle_it, triangle_id);
-        int triangle[3];
-        triangle[0] = triangle_it->idx[0];
-        triangle[1] = triangle_it->idx[1];
-        triangle[2] = triangle_it->idx[2];
-
-        int i;
-        for (i=0; i<ot->n; i++) {
-            int invalid_triangle[3];
-
-            if (in_array(i, triangle, 3)) {
-                    continue;
-            }
-
-            uint64_t id;
-            int t;
-            for (t=0; t<3; t++) {
-                invalid_triangle[0] = i;
-                invalid_triangle[1] = triangle[t];
-                invalid_triangle[2] = triangle[(t+1)%3];
-                id = subset_it_id_for_idx (n, invalid_triangle, 3);
-
-                int j;
-                for (j=0; j<num_invalid; j++) {
-                    if (invalid_triangles[j] == id) {
-                        break;
-                    }
-                }
-                if (j == num_invalid) {
-                    invalid_triangles[num_invalid] = id;
-                    num_invalid++;
-                }
+            if (is_thrackle(curr_set)) {
+                found_th++;
+                //printf ("%"PRIu64": ", subset_it_id_for_idx (binomial(n,3), &all_edj_sets[i], k));
+                //array_print (&all_edj_sets[i], k);
             }
         }
-
-        if (triangle_it->size == num_invalid+num_choosen) {
-            // Backtrack
-            do {
-                num_choosen--;
-                num_invalid = invalid_restore_indx[num_choosen];
-                triangles_remaining_for_choosen[num_choosen]--;
-                if (num_choosen == 0 && triangles_remaining_for_choosen[num_choosen] == -1) {
-                    printf ("total count: %"PRIu64"\n", count);
-                    return;
-                }
-            } while (triangles_remaining_for_choosen[num_choosen]+1 == 0);
-            triangle_id = choosen_triangles[num_choosen]+1;
-        } else {
-            triangles_remaining_for_choosen[num_choosen] = triangle_it->size-num_invalid-num_choosen-1;
-            triangle_id = choosen_triangles[num_choosen-1]+1;
-        }
-
-        while (in_array(triangle_id, invalid_triangles, num_invalid) ||
-                in_array(triangle_id, choosen_triangles, num_choosen)) {
-            triangle_id++;
-            //triangle_id %=triangle_it->size;
-        }
-
-        if (triangle_id >= triangle_it->size) {
-            do {
-                num_choosen--;
-                num_invalid = invalid_restore_indx[num_choosen];
-                triangles_remaining_for_choosen[num_choosen]--;
-                if (num_choosen == 0 && triangles_remaining_for_choosen[num_choosen] == -1) {
-                    printf ("total count: %"PRIu64"\n", count);
-                    return;
-                }
-            } while (triangles_remaining_for_choosen[num_choosen]+1 == 0);
-            triangle_id = choosen_triangles[num_choosen]+1;
-            while (in_array(triangle_id, invalid_triangles, num_invalid) ||
-                    in_array(triangle_id, choosen_triangles, num_choosen)) {
-                triangle_id++;
-            }
-
-        }
+        printf ("%d %d\n", ot->id, found_th);
+        db_next (ot);
     }
+
     free (triangle_it);
 }
 
@@ -301,6 +226,7 @@ int main ()
     //get_thrackle_for_each_ot (12);
     //count_thrackles (8);
     //print_differing_triples (N, 0, 1);
-    //print_edge_disjoint_sets (9, 12);
-    fast_edge_disjoint_sets (9, 12);
+    //print_edge_disjoint_sets (8, 8);
+    //generate_edge_disjoint_triangle_sets (10, 13);
+    fast_edge_disjoint_sets (9, 13);
 }
