@@ -276,7 +276,13 @@ void set_n (app_state_t *st, int n, app_graphics_t *graphics)
     st->memory.used = 0; // Clears all storage
 
     st->n = n;
-    st->k = thrackle_size (st->n);
+    int t_n = thrackle_size (st->n);
+    if (t_n == -1) {
+        st->k = thrackle_size_lower_bound (st->n);
+    } else {
+        st->k = t_n;
+    }
+
     st->ot = order_type_new (10, &st->memory);
     open_database (st->n);
     st->ot->n = st->n;

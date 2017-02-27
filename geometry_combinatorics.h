@@ -231,9 +231,8 @@ int thrackle_size (int n)
         case 8:
             return 8;
         default:
-            // TODO: Should return -1, use upper or lower bound in vsualizer.
             printf ("Tn is unknown\n");
-            return 2;
+            return -1;
     }
 }
 
