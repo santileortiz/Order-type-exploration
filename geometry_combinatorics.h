@@ -66,6 +66,8 @@ typedef struct {
     vect2i_t v [3];
 } triangle_t;
 #define TRIANGLE(ot,a,b,c) (triangle_t){{ot->pts[a],ot->pts[b],ot->pts[c]}}
+#define TRIANGLE_IDXS(ot,idx) TRIANGLE(ot, idx[0], idx[1], idx[2])
+#define TRIANGLE_IT(ot,it) TRIANGLE_IDXS(ot, it->idx)
 void print_triangle (triangle_t *t)
 {
     int i = 0;
@@ -230,6 +232,10 @@ int thrackle_size (int n)
             return 7;
         case 8:
             return 8;
+        case 9:
+            return 10;
+        case 10:
+            return 12;
         default:
             printf ("Tn is unknown\n");
             return -1;
@@ -683,6 +689,31 @@ void subset_it_free (subset_it_t *it)
 
 // Walker's backtracking algorithm used to generate only
 // edge disjoint triangle sets.
+
+// TODO: This backtracking procedure is not generic, maybe put backtrack
+// specific data in some struct and receive a pointer to a function that
+// updates this data.
+bool backtrack (int *l, int *curr_seq, int domain_size, int *S_l,
+        int *num_invalid, int *invalid_restore_indx, int *invalid_triangles)
+{
+    int lev = *l;
+    lev--;
+    if (lev>=0) {
+        int i;
+        for (i=curr_seq[lev]+1; i<domain_size; i++) {
+            S_l[i] = 1;
+        }
+
+        *num_invalid = invalid_restore_indx[lev];
+        for (i=0; i<*num_invalid; i++) {
+            S_l[invalid_triangles[i]] = 0;
+        }
+        return true;
+    } else {
+        return false;
+    }
+}
+
 void generate_edge_disjoint_triangle_sets (int n, int k, int *result, int *num_found)
 {
     int l = 1; // Tree level
@@ -720,7 +751,10 @@ void generate_edge_disjoint_triangle_sets (int n, int k, int *result, int *num_f
             }
             set_id += p_k;
             (*num_found)++;
-            goto backtrack;
+            if (!backtrack (&l, choosen_triangles, total_triangles, S_l,
+                       &num_invalid, invalid_restore_indx, invalid_triangles)) {
+                break;
+            }
         } else {
             // Compute S_l
             subset_it_seek (triangle_it, triangle_id);
@@ -781,19 +815,162 @@ void generate_edge_disjoint_triangle_sets (int n, int k, int *result, int *num_f
                 break;
             }
 
-backtrack:
-            l--;
-            if (l>=0) {
-                int i;
-                for (i=choosen_triangles[l]+1; i<total_triangles; i++) {
-                    S_l[i] = 1;
+            if (!backtrack (&l, choosen_triangles, total_triangles, S_l,
+                       &num_invalid, invalid_restore_indx, invalid_triangles)) {
+                break;
+            }
+        }
+    }
+}
+
+// Walker's backtracking algorithm used to generate thrackles.
+bool thrackle_backtrack (int *l, int *curr_seq, int domain_size, int *S_l,
+        int *num_invalid, int *invalid_restore_indx, int *invalid_triangles)
+{
+    (*l)--;
+    int lev = *l;
+    if (lev>=0) {
+        int i;
+        for (i=curr_seq[lev]+1; i<domain_size; i++) {
+            S_l[i] = 1;
+        }
+
+        *num_invalid = invalid_restore_indx[lev];
+        for (i=0; i<*num_invalid; i++) {
+            S_l[invalid_triangles[i]] = 0;
+        }
+        return true;
+    } else {
+        return false;
+    }
+}
+
+void iterate_threackles_backtracking (int n, int k, order_type_t *ot, int *result, int *num_found)
+{
+    assert (n==ot->n);
+    int l = 1; // Tree level
+    int min_sl;
+    bool S_l_empty;
+
+    subset_it_t *triangle_it = subset_it_new (n, 3, NULL);
+    subset_it_precompute (triangle_it);
+    int total_triangles = triangle_it->size;
+
+    int S_l[total_triangles];
+    int i;
+    for (i=1; i<triangle_it->size; i++) {
+        S_l[i] = 1;
+    }
+    S_l[0] = 0;
+
+    *num_found = 0;
+    int set_id = 0;
+    int triangle_id = 0;
+    int invalid_triangles[total_triangles];
+    int num_invalid = 0;
+
+    int choosen_triangles[k];
+    choosen_triangles[0] = 0;
+    int invalid_restore_indx[k];
+    invalid_restore_indx[0] = 0;
+
+    while (l > 0) {
+        if (l>=k) {
+            uint64_t choosen_set_id = subset_it_id_for_idx (total_triangles, choosen_triangles, k);
+            printf ("%"PRIu64": ", choosen_set_id);
+            array_print (choosen_triangles, k);
+            //int p_k;
+            //for (p_k=0; p_k<k; p_k++) {
+            //    result[set_id+p_k] = choosen_triangles[p_k];
+            //}
+            //set_id += p_k;
+            (*num_found)++;
+            if (!thrackle_backtrack (&l, choosen_triangles, total_triangles, S_l,
+                       &num_invalid, invalid_restore_indx, invalid_triangles)) {
+                continue;
+            }
+        } else {
+            // Compute S_l
+            subset_it_seek (triangle_it, triangle_id);
+            int triangle[3];
+            triangle[0] = triangle_it->idx[0];
+            triangle[1] = triangle_it->idx[1];
+            triangle[2] = triangle_it->idx[2];
+
+            int i;
+            for (i=0; i<n; i++) {
+                int invalid_triangle[3];
+
+                if (in_array(i, triangle, 3)) {
+                    continue;
                 }
 
-                num_invalid = invalid_restore_indx[l];
-                for (i=0; i<num_invalid; i++) {
-                    S_l[invalid_triangles[i]] = 0;
+                uint64_t id;
+                int t;
+                for (t=0; t<3; t++) {
+                    invalid_triangle[0] = i;
+                    invalid_triangle[1] = triangle[t];
+                    invalid_triangle[2] = triangle[(t+1)%3];
+                    id = subset_it_id_for_idx (n, invalid_triangle, 3);
+
+                    int j;
+                    for (j=0; j<num_invalid; j++) {
+                        if (invalid_triangles[j] == id) {
+                            break;
+                        }
+                    }
+                    if (j == num_invalid) {
+                        invalid_triangles[num_invalid] = id;
+                        S_l[id] = 0;
+                        num_invalid++;
+                    }
                 }
-            } else {
+            }
+        }
+
+        while (1) {
+            // Try to advance
+            S_l_empty = true;
+            int i;
+            for (i=0; i<total_triangles; i++) {
+                if (S_l[i]) {
+                    min_sl = i;
+                    S_l_empty = false;
+                    break;
+                }
+            }
+
+            if (!S_l_empty) {
+                triangle_id = min_sl;
+
+                subset_it_seek (triangle_it, triangle_id);
+                triangle_t candidate_tr = TRIANGLE_IT (ot, triangle_it);
+
+                bool is_disjoint = false;
+                int j;
+                for (j=0; j<l; j++) {
+                    int choosen_id = choosen_triangles[j];
+                    subset_it_seek (triangle_it, choosen_id);
+                    triangle_t choosen_tr = TRIANGLE_IT (ot, triangle_it);
+                    if (!have_intersecting_segments (&choosen_tr, &candidate_tr)) {
+                        is_disjoint = true;
+                        break;
+                    }
+                }
+
+                S_l[triangle_id] = 0;
+                if (!is_disjoint) {
+                    invalid_restore_indx[l] = num_invalid;
+                    choosen_triangles[l] = triangle_id;
+                    l++;
+                    break;
+                } else {
+                    continue;
+                }
+            }
+
+            if (!thrackle_backtrack (&l, choosen_triangles, total_triangles, S_l,
+                       &num_invalid, invalid_restore_indx, invalid_triangles)) {
                 break;
             }
         }

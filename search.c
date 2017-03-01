@@ -1,4 +1,4 @@
-//gcc -Wall -g -o bin/search search.c -lm
+//gcc -O2 -Wall -g -o bin/search search.c -lm
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -177,7 +177,7 @@ void print_edge_disjoint_sets (int n, int k)
 
 void fast_edge_disjoint_sets (int n, int k)
 {
-    int *all_edj_sets = malloc(840*12*12*sizeof(int));
+    int *all_edj_sets = malloc(840*12*12*11*10*sizeof(int));
 
     triangle_set_t *curr_set = malloc (sizeof(triangle_set_t)+(k-1)*sizeof(triangle_t));
     curr_set->k = k;
@@ -228,5 +228,11 @@ int main ()
     //print_differing_triples (N, 0, 1);
     //print_edge_disjoint_sets (8, 8);
     //generate_edge_disjoint_triangle_sets (10, 13);
-    fast_edge_disjoint_sets (9, 13);
+    //fast_edge_disjoint_sets (9, 10);
+
+    int found_th;
+    order_type_t *ot = order_type_new (N, NULL);
+    db_seek (ot, 0);
+    iterate_threackles_backtracking (N, 1, ot, NULL, &found_th);
+    printf ("Thrackles found: %d", found_th);
 }
