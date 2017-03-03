@@ -5,11 +5,15 @@
 #include <fcntl.h>
 #include <unistd.h>
 
+#include <sys/stat.h>
+
 //#define NDEBUG
 #include <assert.h>
 
 #include "slo_timers.h"
 #include "geometry_combinatorics.h"
+
+#define OT_DB_IMPLEMENTATION
 #include "ot_db.h"
 
 #define N 9
@@ -216,11 +220,50 @@ void fast_edge_disjoint_sets (int n, int k)
     free (triangle_it);
 }
 
+void file_read (int file, void *pos,  size_t size)
+{
+    int bytes_read = read (file, pos, size);
+    if ( bytes_read < size) {
+        printf ("Did not read full file\n"
+                "asked for: %ld\n"
+                "received: %d\n", size, bytes_read);
+    }
+}
+
+int* get_all_thrackles (int n, int k, uint32_t ot_id, int *num_found)
+{
+    char filename[200];
+    snprintf (filename, ARRAY_SIZE(filename), ".cache/n_%d-ot_%d-th_all.bin", n, ot_id);
+
+    int file = open (filename, O_RDONLY);
+    if (file) {
+        open_database (n);
+        order_type_t *ot = order_type_new (n, NULL);
+        db_seek (ot, ot_id);
+
+        iterate_threackles_backtracking (n, k, ot, filename);
+        file = open (filename, O_RDONLY);
+    }
+
+    int *res;
+    search_info_t info;
+    file_read (file, &info, sizeof (search_info_t));
+
+    res = malloc (info.num_found*info.k*sizeof(int));
+    file_read (file, res, info.num_found*info.k*sizeof(int));
+    *num_found = info.num_found;
+    return res;
+}
+
 int main ()
 {
     if (!open_database (N)){
         printf ("Could not open database\n");
         return -1;
+    }
+
+    if (mkdir (".cache", 0775) == 0) {
+        printf ("Creating .cache dir\n");
     }
 
     //get_thrackle_for_each_ot (12);
@@ -230,9 +273,11 @@ int main ()
     //generate_edge_disjoint_triangle_sets (10, 13);
     //fast_edge_disjoint_sets (9, 10);
 
-    int found_th;
-    order_type_t *ot = order_type_new (N, NULL);
-    db_seek (ot, 0);
-    iterate_threackles_backtracking (N, 1, ot, NULL, &found_th);
-    printf ("Thrackles found: %d", found_th);
+    int k = 7;
+    int num_found;
+    int *thrackles = get_all_thrackles (7, k, 0, &num_found);
+    int i;
+    for (i=0; i<num_found*k; i+=k) {
+        array_print (&thrackles[i], k);
+    }
 }

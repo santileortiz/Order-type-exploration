@@ -1,5 +1,6 @@
 #if !defined(GEOMETRY_COMBINATORICS_H)
 #include <math.h>
+#include <time.h>
 #include "common.h"
 
 // TODO: These are 128 bit structs, they may take up a lot of space, maybe have
@@ -845,7 +846,21 @@ bool thrackle_backtrack (int *l, int *curr_seq, int domain_size, int *S_l,
     }
 }
 
-void iterate_threackles_backtracking (int n, int k, order_type_t *ot, int *result, int *num_found)
+typedef struct {
+    float time;
+    uint32_t num_found;
+    uint32_t n;
+    uint32_t k;
+} search_info_t;
+
+void file_write (int file, void *pos,  size_t size)
+{
+    if (write (file, pos, size) < size) {
+        printf ("Write interrupted, aborting search\n");
+    }
+}
+
+void iterate_threackles_backtracking (int n, int k, order_type_t *ot, char *filename)
 {
     assert (n==ot->n);
     int l = 1; // Tree level
@@ -863,8 +878,6 @@ void iterate_threackles_backtracking (int n, int k, order_type_t *ot, int *resul
     }
     S_l[0] = 0;
 
-    *num_found = 0;
-    int set_id = 0;
     int triangle_id = 0;
     int invalid_triangles[total_triangles];
     int num_invalid = 0;
@@ -874,17 +887,26 @@ void iterate_threackles_backtracking (int n, int k, order_type_t *ot, int *resul
     int invalid_restore_indx[k];
     invalid_restore_indx[0] = 0;
 
+    remove (filename);
+    int file = open (filename, O_RDWR|O_CREAT, 0666);
+
+    search_info_t info;
+    lseek (file, sizeof (search_info_t), SEEK_SET);
+
+    info.n = n;
+    info.k = k;
+    info.num_found = 0;
+    struct timespec begin;
+    struct timespec end;
+    clock_gettime (CLOCK_MONOTONIC, &begin);
+
     while (l > 0) {
         if (l>=k) {
             uint64_t choosen_set_id = subset_it_id_for_idx (total_triangles, choosen_triangles, k);
             printf ("%"PRIu64": ", choosen_set_id);
             array_print (choosen_triangles, k);
-            //int p_k;
-            //for (p_k=0; p_k<k; p_k++) {
-            //    result[set_id+p_k] = choosen_triangles[p_k];
-            //}
-            //set_id += p_k;
-            (*num_found)++;
+            file_write (file, choosen_triangles, k*sizeof(int));
+            info.num_found++;
             if (!thrackle_backtrack (&l, choosen_triangles, total_triangles, S_l,
                        &num_invalid, invalid_restore_indx, invalid_triangles)) {
                 continue;
@@ -975,6 +997,12 @@ void iterate_threackles_backtracking (int n, int k, order_type_t *ot, int *resul
             }
         }
     }
+
+    clock_gettime (CLOCK_MONOTONIC, &end);
+    info.time = time_elapsed_in_ms (&end, &begin);
+    lseek (file, 0, SEEK_SET);
+    file_write (file, &info, sizeof(search_info_t));
+    close (file);
 }
 
 // Automatic color palette:
