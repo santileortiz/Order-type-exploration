@@ -236,7 +236,7 @@ int* get_all_thrackles (int n, int k, uint32_t ot_id, int *num_found)
     snprintf (filename, ARRAY_SIZE(filename), ".cache/n_%d-ot_%d-th_all.bin", n, ot_id);
 
     int file = open (filename, O_RDONLY);
-    if (file) {
+    if (file == -1) {
         open_database (n);
         order_type_t *ot = order_type_new (n, NULL);
         db_seek (ot, ot_id);
