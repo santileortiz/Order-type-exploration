@@ -19,6 +19,12 @@ struct {
     uint32_t buff[40];
 } __g_db_data ;
 
+int open_database (int n);
+void db_next (order_type_t *ot);
+void db_seek (order_type_t *ot, uint64_t id);
+void db_prev (order_type_t *ot);
+int db_is_eof ();
+
 int open_database (int n)
 {
     if (__g_db_data.db) {
