@@ -1,5 +1,6 @@
 *.swp
 otypes*
 perf.data*
+.cache/*
 bin/*
 out/*
