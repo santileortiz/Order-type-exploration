@@ -902,9 +902,6 @@ void iterate_threackles_backtracking (int n, int k, order_type_t *ot, char *file
 
     while (l > 0) {
         if (l>=k) {
-            uint64_t choosen_set_id = subset_it_id_for_idx (total_triangles, choosen_triangles, k);
-            printf ("%"PRIu64": ", choosen_set_id);
-            array_print (choosen_triangles, k);
             file_write (file, choosen_triangles, k*sizeof(int));
             info.num_found++;
             if (!thrackle_backtrack (&l, choosen_triangles, total_triangles, S_l,

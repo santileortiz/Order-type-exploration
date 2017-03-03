@@ -273,11 +273,17 @@ int main ()
     //generate_edge_disjoint_triangle_sets (10, 13);
     //fast_edge_disjoint_sets (9, 10);
 
-    int k = 7;
+    int n = 9;
+    int k = 10;
     int num_found;
-    int *thrackles = get_all_thrackles (7, k, 0, &num_found);
+    int *thrackles = get_all_thrackles (n, k, 0, &num_found);
     int i;
     for (i=0; i<num_found*k; i+=k) {
-        array_print (&thrackles[i], k);
+        int *thrackle = &thrackles[i];
+
+        int total_triangles = binomial (n, 3);
+        uint64_t choosen_set_id = subset_it_id_for_idx (total_triangles, thrackle, k);
+        printf ("%"PRIu64": ", choosen_set_id);
+        array_print (thrackle, k);
     }
 }
