@@ -7,6 +7,11 @@
 #include <stdlib.h>
 #include <cairo/cairo-xcb.h>
 
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/stat.h>
+
+#include "gui.h"
 #include "common.h"
 #include "slo_timers.h"
 #include "ot_db.h"
@@ -66,7 +71,7 @@ typedef struct {
     int num_points;
     int pts[3];
     char label[4];
-    int id; // This is a unique id depending on the type of entity
+    uint64_t id; // This is a unique id depending on the type of entity
 } entity_t;
 
 typedef enum {
@@ -94,10 +99,10 @@ typedef struct {
     int64_t user_number;
 
     app_input_t prev_input;
-    char maybe_clicked[3];
     char dragging[3];
     vect2_t click_coord[3];
-    float time_since_button_press[3];
+    bool mouse_clicked[3];
+    float time_since_last_click[3];
     float double_click_time;
     float min_distance_for_drag;
 
@@ -322,9 +327,9 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
         st->app_is_initialized = 1;
         st->old_graphics = *graphics;
         st->prev_input = input;
-        st->time_since_button_press[0] = -1;
-        st->time_since_button_press[1] = -1;
-        st->time_since_button_press[2] = -1;
+        st->time_since_last_click[0] = -1;
+        st->time_since_last_click[1] = -1;
+        st->time_since_last_click[2] = -1;
         st->double_click_time = 100;
         st->min_distance_for_drag = 10;
         st->view_db_ot = false;
@@ -482,14 +487,15 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
     if (input.mouse_down[0]) {
         if (!st->prev_input.mouse_down[0]) {
             st->click_coord[0] = input.ptr;
-            if (st->time_since_button_press[0] > 0 && st->time_since_button_press[0] < st->double_click_time) {
+            if (st->time_since_last_click[0] > 0 && st->time_since_last_click[0] < st->double_click_time) {
                 // DOUBLE CLICK
+                printf ("Double Click\n");
                 focus_order_type (graphics, st);
                 redraw = 1;
 
                 // We want to ignore this button press as an actual click, we
                 // use -10 to signal this.
-                st->time_since_button_press[0] = -10;
+                st->time_since_last_click[0] = -10;
             }
         } else {
             // button is being held
@@ -501,29 +507,28 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
                     redraw = 1;
 
                     st->dragging[0] = 1;
-                    st->time_since_button_press[0] = -10;
+                    st->time_since_last_click[0] = -10;
                 }
             }
         }
     } else {
         if (st->prev_input.mouse_down[0]) {
-            if (st->time_since_button_press[0] != -10) {
+            // CLICK
+            printf ("Click\n");
+            st->mouse_clicked[0] = true;
+            if (st->time_since_last_click[0] != -10) {
+
                 // button was released, start counter to see if
                 // it's a double click
-                st->time_since_button_press[0] = 0;
-                // We can't separate a click from a double click just now, so we set
-                // this and wait to see if st->double_click_time passes with no
-                // other button presses.
-                st->maybe_clicked[0] = 1;
+                st->time_since_last_click[0] = 0;
             } else {
-                st->time_since_button_press[0] = -1;
+                st->time_since_last_click[0] = -1;
             }
-        } else if (st->time_since_button_press[0] >= 0) {
-            st->time_since_button_press[0] += input.time_elapsed_ms;
-            if (st->maybe_clicked && st->time_since_button_press[0] > st->double_click_time) {
-                // CLICK
-                printf ("Click\n");
-                st->time_since_button_press[0] = -1;
+        } else if (st->time_since_last_click[0] >= 0) {
+            st->mouse_clicked[0] = false;
+            st->time_since_last_click[0] += input.time_elapsed_ms;
+            if (st->time_since_last_click[0] > st->double_click_time) {
+                st->time_since_last_click[0] = -1;
             }
         }
         resizing = 0;
@@ -532,7 +537,7 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
     st->prev_input = input;
 
 
-
+    bool blit_needed = false;
     if (redraw || input.force_redraw) {
         cairo_t *cr = graphics->cr;
         cairo_set_source_rgb (cr, 1, 1, 1);
@@ -560,11 +565,36 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
 
         //printf ("dx: %f, dy: %f, s: %f, z: %f\n", graphics->T.dx, graphics->T.dy, graphics->T.scale, st->zoom);
         draw_entities (st, graphics);
-        cairo_surface_flush (cairo_get_target(cr));
-        return true;
-    } else {
-        return false;
+        blit_needed = true;
     }
+
+    double button_x = 20;
+    double button_y = 20;
+    char *label = "Save point set";
+
+    static double button_width, button_height;
+
+    static bool button_init = false;
+    if (!button_init || input.force_redraw || redraw) {
+        draw_button (graphics->cr, button_x, button_y, label, &button_width, &button_height);
+        blit_needed = true;
+        button_init = true;
+    }
+
+    if (input.mouse_down[0]) {
+        if (is_point_in_box (st->click_coord[0].x, st->click_coord[0].y,
+                                button_x, button_y, button_width, button_height)) {
+            draw_pressed_button (graphics->cr, button_x, button_y, label);
+            blit_needed = true;
+        }
+
+    } else if (st->mouse_clicked[0]) {
+        draw_button (graphics->cr, button_x, button_y, label, &button_width, &button_height);
+        blit_needed = true;
+    }
+
+    cairo_surface_flush (cairo_get_target(graphics->cr));
+    return blit_needed;
 }
 
 int main (void)
@@ -646,7 +676,7 @@ int main (void)
     cairo_surface_t *surface = cairo_xcb_surface_create (connection, backbuffer, root_window_visual, WINDOW_WIDTH, WINDOW_HEIGHT);
     cairo_t *cr = cairo_create (surface);
     cairo_select_font_face (cr, "Open Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
-    cairo_set_font_size (cr, 12);
+    cairo_set_font_size (cr, 12.5);
 
     // ////////////////
     // Main event loop

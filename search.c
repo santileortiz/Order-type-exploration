@@ -281,9 +281,72 @@ int main ()
     for (i=0; i<num_found*k; i+=k) {
         int *thrackle = &thrackles[i];
 
+        //array_print (thrackle, k);
+
+        int num_sizes = n/2-1;
+        int sizes[num_sizes];
+        array_clear (sizes, num_sizes);
+
+        int j;
+        for (j = 0; j<k; j++) {
+            int t_id = thrackle[j];
+            int t[3];
+            subset_it_idx_for_id (t_id, n, t, 3);
+
+            int dist[3];
+            int d_a = 0;
+            int d_b = 0;
+
+            d_a = t[1] - t[0] - 1;
+            d_b = n + t[0] - t[1] - 1;
+            if (d_a <d_b) {
+                dist [0] = d_a;
+            } else {
+                dist [0] = d_b;
+            }
+
+            d_a = t[2] - t[1] - 1;
+            d_b = n + t[1] - t[2] - 1;
+            if (d_a <d_b) {
+                dist [1] = d_a;
+            } else {
+                dist [1] = d_b;
+            }
+
+            d_a = t[2] - t[0] - 1;
+            d_b = n + t[0] - t[2] - 1;
+            if (d_a <d_b) {
+                dist [2] = d_a;
+            } else {
+                dist [2] = d_b;
+            }
+
+            //printf ("triangle: ");
+            //array_print (t, 3);
+            //printf ("distances: ");
+            //array_print (dist, 3);
+
+            int h;
+            int max_distance = 0;
+            for (h=0; h<3; h++) {
+                if (dist[h] > max_distance) {
+                    max_distance = dist[h];
+                }
+            }
+
+            assert (max_distance != 0);
+            //printf ("max_dist: %d\n", max_distance);
+            sizes[max_distance - 1]++;
+            //printf ("\n");
+        }
+
         int total_triangles = binomial (n, 3);
         uint64_t choosen_set_id = subset_it_id_for_idx (total_triangles, thrackle, k);
-        printf ("%"PRIu64": ", choosen_set_id);
-        array_print (thrackle, k);
+        //if (sizes [0] == 0 && sizes[1] == 2 && sizes[2] == 7 && sizes[3] == 3) {
+        //if (sizes [0] == 0 && sizes[1] == 0) {
+        //if (sizes[3] == 5) {
+            //printf ("%"PRIu64": ", choosen_set_id);
+            array_print (sizes, num_sizes);
+        //}
     }
 }

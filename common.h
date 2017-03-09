@@ -4,6 +4,8 @@
 typedef enum {false, true} bool;
 
 #define ARRAY_SIZE(arr) sizeof(arr)/sizeof((arr)[0])
+#define MIN(a,b) ((a)<(b)?(a):(b))
+#define MAX(a,b) ((a)>(b)?(a):(b))
 
 #define kilobyte(val) ((val)*1024LL)
 #define megabyte(val) (kilobyte(val)*1024LL)
@@ -63,6 +65,14 @@ bool in_array (int i, int* arr, int size)
         }
     }
     return false;
+}
+
+void array_clear (int *arr, int n)
+{
+    while (n) {
+        n--;
+        arr[n] = 0;
+    }
 }
 
 void array_print (int *arr, int n)
