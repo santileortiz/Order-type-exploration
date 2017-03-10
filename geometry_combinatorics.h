@@ -322,20 +322,6 @@ int is_edge_disjoint_set (triangle_set_t *set)
     return 1;
 }
 
-typedef union {
-    struct {
-        double x;
-        double y;
-    };
-    double E[2];
-} vect2_t;
-#define VECT2(x,y) ((vect2_t){{x,y}})
-
-double vect2_distance (vect2_t *v1, vect2_t *v2)
-{
-    return sqrt ((v1->x-v2->x)*(v1->x-v2->x) + (v1->y-v2->y)*(v1->y-v2->y));
-}
-
 vect2_t v2_from_v2i (vect2i_t v)
 {
     vect2_t res;
@@ -351,22 +337,6 @@ vect2i_t v2i_from_v2 (vect2_t v)
     res.y = (int64_t)v.y;
     return res;
 }
-
-typedef union {
-    struct {
-        double x;
-        double y;
-        double z;
-    };
-
-    struct {
-        double r;
-        double g;
-        double b;
-    };
-    double E[3];
-} vect3_t;
-#define VECT3(x,y,z) ((vect3_t){{x,y,z}})
 
 typedef struct {
     vect2_t min;

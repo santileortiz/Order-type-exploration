@@ -14,6 +14,54 @@ typedef enum {false, true} bool;
 
 #define invalid_code_path assert(0)
 
+typedef union {
+    struct {
+        double x;
+        double y;
+    };
+    double E[2];
+} vect2_t;
+#define VECT2(x,y) ((vect2_t){{x,y}})
+
+double vect2_distance (vect2_t *v1, vect2_t *v2)
+{
+    return sqrt ((v1->x-v2->x)*(v1->x-v2->x) + (v1->y-v2->y)*(v1->y-v2->y));
+}
+
+typedef union {
+    struct {
+        double x;
+        double y;
+        double z;
+    };
+
+    struct {
+        double r;
+        double g;
+        double b;
+    };
+    double E[3];
+} vect3_t;
+#define VECT3(x,y,z) ((vect3_t){{x,y,z}})
+
+typedef union {
+    struct {
+        double x;
+        double y;
+        double z;
+        double w;
+    };
+
+    struct {
+        double r;
+        double g;
+        double b;
+        double a;
+    };
+    double E[4];
+} vect4_t;
+#define VECT4(x,y,z,w) ((vect4_t){{x,y,z,w}})
+
 typedef struct {
     uint8_t *data;
     uint32_t size;

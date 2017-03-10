@@ -98,13 +98,15 @@ typedef struct {
     iterator_mode_t it_mode;
     int64_t user_number;
 
-    app_input_t prev_input;
+    app_input_t input;
     char dragging[3];
     vect2_t click_coord[3];
     bool mouse_clicked[3];
     float time_since_last_click[3];
     float double_click_time;
     float min_distance_for_drag;
+
+    css_box_t css_styles[10];
 
     subset_it_t *triangle_it;
     subset_it_t *triangle_set_it;
@@ -300,6 +302,29 @@ void set_n (app_state_t *st, int n, app_graphics_t *graphics)
     focus_order_type (graphics, st);
 }
 
+bool button (char *label, cairo_t *cr, double x, double y, app_state_t *st, bool *blit_needed)
+{
+    css_box_t button;
+    button = st->css_styles[0];
+    css_box_compute_content_width_and_position (cr, &button, label);
+    bool is_ptr_over = is_point_in_box (st->click_coord[0].x, st->click_coord[0].y,
+                             x, y, button.width, button.height);
+    if (st->input.mouse_down[0] && is_ptr_over) {
+        button = st->css_styles[1];
+        *blit_needed = true;
+    }
+    css_box_compute_content_width_and_position (cr, &button, label);
+
+    button.label = label;
+    css_box_draw (cr, &button, x, y);
+    if (st->mouse_clicked[0] && is_ptr_over) {
+        *blit_needed = true;
+        return true;
+    } else {
+        return false;
+    }
+}
+
 int end_execution = 0;
 
 bool update_and_render (app_graphics_t *graphics, app_input_t input)
@@ -326,7 +351,7 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
         st->old_zoom = 1;
         st->app_is_initialized = 1;
         st->old_graphics = *graphics;
-        st->prev_input = input;
+        st->input = input;
         st->time_since_last_click[0] = -1;
         st->time_since_last_click[1] = -1;
         st->time_since_last_click[2] = -1;
@@ -335,6 +360,10 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
         st->view_db_ot = false;
 
         set_n (st, st->n, graphics);
+
+        init_button (&st->css_styles[0]);
+        init_pressed_button (&st->css_styles[1]);
+        init_background (&st->css_styles[2]);
 
         redraw = 1;
     }
@@ -484,8 +513,9 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
     // TODO: This is a very rudimentary implementation for detection of Click,
     // Double Click, and Dragging. See if it can be implemented cleanly with a
     // state machine.
+    app_input_t prev_input = st->input;
     if (input.mouse_down[0]) {
-        if (!st->prev_input.mouse_down[0]) {
+        if (!prev_input.mouse_down[0]) {
             st->click_coord[0] = input.ptr;
             if (st->time_since_last_click[0] > 0 && st->time_since_last_click[0] < st->double_click_time) {
                 // DOUBLE CLICK
@@ -502,8 +532,8 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
             if (st->dragging[0] || vect2_distance (&input.ptr, &st->click_coord[0]) > st->min_distance_for_drag) {
                 if (!resizing) {
                     // DRAGGING
-                    graphics->T.dx += input.ptr.x - st->prev_input.ptr.x;
-                    graphics->T.dy += (input.ptr.y - st->prev_input.ptr.y);
+                    graphics->T.dx += input.ptr.x - prev_input.ptr.x;
+                    graphics->T.dy += (input.ptr.y - prev_input.ptr.y);
                     redraw = 1;
 
                     st->dragging[0] = 1;
@@ -512,7 +542,7 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
             }
         }
     } else {
-        if (st->prev_input.mouse_down[0]) {
+        if (prev_input.mouse_down[0]) {
             // CLICK
             printf ("Click\n");
             st->mouse_clicked[0] = true;
@@ -534,12 +564,11 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
         resizing = 0;
         st->dragging[0] = 0;
     }
-    st->prev_input = input;
-
+    st->input = input;
 
     bool blit_needed = false;
+    cairo_t *cr = graphics->cr;
     if (redraw || input.force_redraw) {
-        cairo_t *cr = graphics->cr;
         cairo_set_source_rgb (cr, 1, 1, 1);
         cairo_paint (cr);
         //draw_point (graphics, VECT2(100,100), "0");
@@ -568,29 +597,16 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
         blit_needed = true;
     }
 
-    double button_x = 20;
-    double button_y = 20;
-    char *label = "Save point set";
-
-    static double button_width, button_height;
-
-    static bool button_init = false;
-    if (!button_init || input.force_redraw || redraw) {
-        draw_button (graphics->cr, button_x, button_y, label, &button_width, &button_height);
-        blit_needed = true;
-        button_init = true;
+    st->css_styles[2].width = 200;
+    st->css_styles[2].height = 100;
+    css_box_draw (cr, &st->css_styles[2], 10, 10);
+    if (button ("Prueba", cr, 20, 20, st, &blit_needed)) {
+        //Hacer algo.
+        printf ("Saving point set.\n");
     }
-
-    if (input.mouse_down[0]) {
-        if (is_point_in_box (st->click_coord[0].x, st->click_coord[0].y,
-                                button_x, button_y, button_width, button_height)) {
-            draw_pressed_button (graphics->cr, button_x, button_y, label);
-            blit_needed = true;
-        }
-
-    } else if (st->mouse_clicked[0]) {
-        draw_button (graphics->cr, button_x, button_y, label, &button_width, &button_height);
-        blit_needed = true;
+    if (button ("Prueba1", cr, 20, 20+30, st, &blit_needed)) {
+        //Hacer algo.
+        printf ("Do other thing.\n");
     }
 
     cairo_surface_flush (cairo_get_target(graphics->cr));
