@@ -341,9 +341,12 @@ bool button (char *label, cairo_t *cr, double x, double y, app_state_t *st,
     curr_box->status_changed = false;
 
     css_box_t css_style = st->css_styles[CSS_BUTTON];
+    css_style.width = *width;
+    css_style.height = *height;
     css_box_compute_content_width_and_position (cr, &css_style, label);
     *width = css_style.width;
     *height = css_style.height;
+
     curr_box->box.min.x = x;
     curr_box->box.max.x = x + *width;
     curr_box->box.min.y = y;
@@ -645,18 +648,40 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
     double y_margin = 10;
 
     double y_pos = bg_pos.y + y_margin;
-    double width, height, max_width = 0;
-    if (button ("Prueba", graphics->cr, bg_pos.x+x_margin, y_pos, st, &width, &height, &update_panel)) {
+    double width = 0, height = 0, max_width = 0;
+
+
+    char *btns[] = {"Prueba",
+                    "c",
+                    "Prueba1 larga"};
+    {
+        int i;
+        for (i=0; i<ARRAY_SIZE(btns); i++) {
+            css_box_t css_style = st->css_styles[CSS_BUTTON];
+            css_box_compute_content_width_and_position (graphics->cr, &css_style, btns[i]);
+            width = MAX (max_width, css_style.width);
+        }
+    }
+
+    if (button (btns[0], graphics->cr, bg_pos.x+x_margin, y_pos, st, &width, &height, &update_panel)) {
         //Hacer algo.
         printf ("Saving point set.\n");
     }
 
     y_pos += height+y_margin;
     max_width = MAX (max_width, width);
-    if (button ("Prueba1", graphics->cr, bg_pos.x+x_margin, y_pos, st, &width, &height, &update_panel)) {
+    if (button (btns[1], graphics->cr, bg_pos.x+x_margin, y_pos, st, &width, &height, &update_panel)) {
+        //Hacer algo.
+        printf ("Bla bla bla.\n");
+    }
+
+    y_pos += height+y_margin;
+    max_width = MAX (max_width, width);
+    if (button (btns[2], graphics->cr, bg_pos.x+x_margin, y_pos, st, &width, &height, &update_panel)) {
         //Hacer algo.
         printf ("Do other thing.\n");
     }
+
     y_pos += height+y_margin;
     max_width = MAX (max_width, width);
     st->hit_boxes[0].box.max.x = st->hit_boxes[0].box.min.x+max_width+2*x_margin;

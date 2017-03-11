@@ -69,8 +69,12 @@ void css_box_compute_content_width_and_position (cairo_t *cr, css_box_t *box, ch
 {
     cairo_text_extents_t extents;
     cairo_text_extents (cr, label, &extents);
-    box->width = extents.width + 2*(box->padding_x + box->border_width);
-    box->height = MAX (20, extents.height + 2*(box->padding_y)) + 2*box->border_width;
+    if (box->width == 0) {
+        box->width = extents.width + 2*(box->padding_x + box->border_width);
+    }
+    if (box->height == 0) {
+        box->height = MAX (20, extents.height + 2*(box->padding_y)) + 2*box->border_width;
+    }
     box->content_position.x = (box->width - extents.width)/2 + extents.x_bearing;
     box->content_position.y = (box->height - extents.height)/2 - extents.y_bearing;
 }
