@@ -325,6 +325,19 @@ bool button (char *label, cairo_t *cr, double x, double y, app_state_t *st, bool
     }
 }
 
+void text_entry (char *label, cairo_t *cr, double x, double y, app_state_t *st, bool *blit_needed)
+{
+    css_box_t entry;
+    entry = st->css_styles[4];
+    double width = 80;
+    double height = 20;
+    css_box_set_fixed_size (&entry, width, height);
+    entry.label = label;
+    css_box_compute_content_position (cr, &entry, label);
+    css_box_draw (cr, &entry, x, y);
+    *blit_needed = true;
+}
+
 int end_execution = 0;
 
 bool update_and_render (app_graphics_t *graphics, app_input_t input)
@@ -364,6 +377,8 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
         init_button (&st->css_styles[0]);
         init_pressed_button (&st->css_styles[1]);
         init_background (&st->css_styles[2]);
+        init_text_entry (&st->css_styles[3]);
+        init_text_entry_focused (&st->css_styles[4]);
 
         redraw = 1;
     }
@@ -608,6 +623,8 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
         //Hacer algo.
         printf ("Do other thing.\n");
     }
+
+    text_entry ("HOLA", cr, 20, 50+30, st, &blit_needed);
 
     cairo_surface_flush (cairo_get_target(graphics->cr));
     return blit_needed;

@@ -49,6 +49,22 @@ typedef struct {
     char *label;
 } css_box_t;
 
+void css_box_set_fixed_size (css_box_t *box, double width, double height)
+{
+    box->width = width + 2*(box->padding_x + box->border_width);
+    box->height = MAX (20, height) + 2*box->border_width;
+}
+
+// TODO: This function aligns text to the left but the others center it, add
+// an align argument to specify what we want.
+void css_box_compute_content_position (cairo_t *cr, css_box_t *box, char *label)
+{
+    cairo_text_extents_t extents;
+    cairo_text_extents (cr, label, &extents);
+    box->content_position.x = box->padding_x + extents.x_bearing;
+    box->content_position.y = (box->height - extents.height)/2 - extents.y_bearing;
+}
+
 void css_box_compute_content_width_and_position (cairo_t *cr, css_box_t *box, char *label)
 {
     cairo_text_extents_t extents;
@@ -172,6 +188,36 @@ void init_background (css_box_t *box)
     box->padding_y = 3;
     box->background_color = RGB(0.96, 0.96, 0.96);
     box->border_color = RGBA(0, 0, 0, 0.27);
+}
+
+void init_text_entry (css_box_t *box)
+{
+    *box = (css_box_t){0};
+    box->border_radius = 2.5;
+    box->border_width = 1;
+    box->padding_x = 3;
+    box->padding_y = 3;
+    box->background_color = RGB(0.96, 0.96, 0.96);
+    box->border_color = RGBA(0, 0, 0, 0.25);
+    box->color = RGB(0.2, 0.2, 0.2);
+    vect4_t stops[2] = {RGB(0.93,0.93,0.93),
+                        RGB(0.97,0.97,0.97)};
+    css_box_add_gradient_stops (box, ARRAY_SIZE(stops), stops);
+}
+
+void init_text_entry_focused (css_box_t *box)
+{
+    *box = (css_box_t){0};
+    box->border_radius = 2.5;
+    box->border_width = 1;
+    box->padding_x = 3;
+    box->padding_y = 3;
+    box->background_color = RGB(0.96, 0.96, 0.96);
+    box->border_color = RGBA(0.239216, 0.607843, 0.854902, 0.8);
+    box->color = RGB(0.2, 0.2, 0.2);
+    vect4_t stops[2] = {RGB(0.93,0.93,0.93),
+                        RGB(0.97,0.97,0.97)};
+    css_box_add_gradient_stops (box, ARRAY_SIZE(stops), stops);
 }
 
 #define GUI_H
