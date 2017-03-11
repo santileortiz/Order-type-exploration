@@ -3,7 +3,7 @@
 #include <assert.h>
 typedef enum {false, true} bool;
 
-#define ARRAY_SIZE(arr) sizeof(arr)/sizeof((arr)[0])
+#define ARRAY_SIZE(arr) (sizeof(arr)/sizeof((arr)[0]))
 
 #if !defined(MIN)
 #define MIN(a,b) ((a)<(b)?(a):(b))
