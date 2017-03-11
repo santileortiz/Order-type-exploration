@@ -1,4 +1,4 @@
-//gcc -O2 -g -Wall database_expl.c -o bin/database_expl -lcairo -lxcb -lm
+//gcc -O2 -g -Wall database_expl.c -o bin/database_expl -lcairo -lxcb -lm -lpangocairo-1.0 -I/usr/include/pango-1.0 -I/usr/include/cairo -I/usr/include/glib-2.0 -I/usr/lib/x86_64-linux-gnu/glib-2.0/include
 // Dependencies:
 // sudo apt-get install libxcb1-dev libcairo2-dev
 #include <xcb/xcb.h>
@@ -6,6 +6,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <cairo/cairo-xcb.h>
+#include <pango/pangocairo.h>
 
 #include <fcntl.h>
 #include <unistd.h>
