@@ -1,4 +1,4 @@
-//gcc -O2 -g -Wall database_expl.c -o bin/database_expl -lcairo -lxcb -lm -lpangocairo-1.0 -I/usr/include/pango-1.0 -I/usr/include/cairo -I/usr/include/glib-2.0 -I/usr/lib/x86_64-linux-gnu/glib-2.0/include
+//gcc -O2 -g -Wall database_expl.c -o bin/database_expl -lcairo -lxcb -lm -lpango-1.0 -lpangocairo-1.0 -I/usr/include/pango-1.0 -I/usr/include/cairo -I/usr/include/glib-2.0 -I/usr/lib/x86_64-linux-gnu/glib-2.0/include
 // Dependencies:
 // sudo apt-get install libxcb1-dev libcairo2-dev
 #include <xcb/xcb.h>
@@ -57,6 +57,7 @@ void tr_window_to_canvas (transf_t tr, vect2_t *p)
 
 typedef struct {
     cairo_t *cr;
+    PangoLayout *text_layout;
     uint16_t width;
     uint16_t height;
     transf_t T;
@@ -816,6 +817,13 @@ int main (void)
 
     cairo_surface_t *surface = cairo_xcb_surface_create (connection, backbuffer, root_window_visual, WINDOW_WIDTH, WINDOW_HEIGHT);
     cairo_t *cr = cairo_create (surface);
+
+    // Creating a PangoLayout for text handling
+    PangoLayout *text_layout = pango_cairo_create_layout (cr);
+    PangoFontDescription *font_desc = pango_font_description_from_string ("Open Sans 9");
+    pango_layout_set_font_description (text_layout, font_desc);
+    pango_font_description_free (font_desc);
+
     cairo_select_font_face (cr, "Open Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
     cairo_set_font_size (cr, 12.5);
 
@@ -824,6 +832,7 @@ int main (void)
     xcb_generic_event_t *event;
     app_graphics_t graphics;
     graphics.cr = cr;
+    graphics.text_layout = text_layout;
     graphics.width = WINDOW_WIDTH;
     graphics.height = WINDOW_HEIGHT;
     graphics.T.dx = WINDOW_MARGIN;
