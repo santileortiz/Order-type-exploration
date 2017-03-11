@@ -626,6 +626,8 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
             if (st->time_since_last_click[0] > st->double_click_time) {
                 st->time_since_last_click[0] = -1;
             }
+        } else {
+            st->mouse_clicked[0] = false;
         }
         resizing = 0;
         st->dragging[0] = 0;
