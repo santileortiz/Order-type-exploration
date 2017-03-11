@@ -81,6 +81,31 @@ typedef enum {
     num_iterator_mode
 } iterator_mode_t;
 
+typedef enum {
+    CSS_BUTTON,
+    CSS_BUTTON_ACTIVE,
+    CSS_BACKGROUND,
+    CSS_TEXT_ENTRY,
+    CSS_TEXT_ENTRY_FOCUS,
+
+    CSS_NUM_STYLES
+} css_style_t;
+
+typedef enum {
+    INACTIVE,
+    PRESSED,
+    RELEASED
+} hit_status_t;
+
+typedef struct {
+    box_t box;
+    bool status_changed;
+    vect2_t origin;
+    hit_status_t status;
+    css_style_t style;
+    char *label;
+} hit_box_t;
+
 typedef struct {
     int app_is_initialized;
     int n;
@@ -106,7 +131,10 @@ typedef struct {
     float double_click_time;
     float min_distance_for_drag;
 
-    css_box_t css_styles[10];
+    css_box_t css_styles[CSS_NUM_STYLES];
+    int num_hit_boxes;
+    int focused_hit_box;
+    hit_box_t hit_boxes[30];
 
     subset_it_t *triangle_it;
     subset_it_t *triangle_set_it;
@@ -302,23 +330,45 @@ void set_n (app_state_t *st, int n, app_graphics_t *graphics)
     focus_order_type (graphics, st);
 }
 
-bool button (char *label, cairo_t *cr, double x, double y, app_state_t *st, bool *blit_needed)
+bool button (char *label, cairo_t *cr, double x, double y, app_state_t *st,
+             double *width, double *height, bool *update_panel)
 {
-    css_box_t button;
-    button = st->css_styles[0];
-    css_box_compute_content_width_and_position (cr, &button, label);
-    bool is_ptr_over = is_point_in_box (st->click_coord[0].x, st->click_coord[0].y,
-                             x, y, button.width, button.height);
-    if (st->input.mouse_down[0] && is_ptr_over) {
-        button = st->css_styles[1];
-        *blit_needed = true;
-    }
-    css_box_compute_content_width_and_position (cr, &button, label);
+    hit_box_t *curr_box = &st->hit_boxes[st->num_hit_boxes];
+    st->num_hit_boxes++;
 
-    button.label = label;
-    css_box_draw (cr, &button, x, y);
+    curr_box->label = label;
+    curr_box->style = CSS_BUTTON;
+    curr_box->status_changed = false;
+
+    css_box_t css_style = st->css_styles[CSS_BUTTON];
+    css_box_compute_content_width_and_position (cr, &css_style, label);
+    *width = css_style.width;
+    *height = css_style.height;
+    curr_box->box.min.x = x;
+    curr_box->box.max.x = x + *width;
+    curr_box->box.min.y = y;
+    curr_box->box.max.y = y + *height;
+    curr_box->origin.x = css_style.content_position.x;
+    curr_box->origin.y = css_style.content_position.y;
+    bool is_ptr_over = is_point_in_box (st->click_coord[0].x, st->click_coord[0].y,
+                             curr_box->box.min.x, curr_box->box.min.y,
+                             *width, *height);
+    if (st->input.mouse_down[0] && is_ptr_over) {
+        if (curr_box->status != PRESSED) {
+            curr_box->status_changed = true;
+            *update_panel = true;
+        }
+        curr_box->style = CSS_BUTTON_ACTIVE;
+        curr_box->status = PRESSED;
+    }
+
     if (st->mouse_clicked[0] && is_ptr_over) {
-        *blit_needed = true;
+        if (curr_box->status != INACTIVE) {
+            curr_box->status_changed = true;
+            *update_panel = true;
+        }
+        curr_box->style = CSS_BUTTON;
+        curr_box->status = INACTIVE;
         return true;
     } else {
         return false;
@@ -328,7 +378,7 @@ bool button (char *label, cairo_t *cr, double x, double y, app_state_t *st, bool
 void text_entry (char *label, cairo_t *cr, double x, double y, app_state_t *st, bool *blit_needed)
 {
     css_box_t entry;
-    entry = st->css_styles[4];
+    entry = st->css_styles[CSS_TEXT_ENTRY];
     double width = 80;
     double height = 20;
     css_box_set_fixed_size (&entry, width, height);
@@ -374,11 +424,12 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
 
         set_n (st, st->n, graphics);
 
-        init_button (&st->css_styles[0]);
-        init_pressed_button (&st->css_styles[1]);
-        init_background (&st->css_styles[2]);
-        init_text_entry (&st->css_styles[3]);
-        init_text_entry_focused (&st->css_styles[4]);
+        init_button (&st->css_styles[CSS_BUTTON]);
+        init_pressed_button (&st->css_styles[CSS_BUTTON_ACTIVE]);
+        init_background (&st->css_styles[CSS_BACKGROUND]);
+        init_text_entry (&st->css_styles[CSS_TEXT_ENTRY]);
+        init_text_entry_focused (&st->css_styles[CSS_TEXT_ENTRY_FOCUS]);
+        st->focused_hit_box = -1;
 
         redraw = 1;
     }
@@ -581,6 +632,34 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
     }
     st->input = input;
 
+    // Build widgets
+    bool update_panel = false;
+    st->num_hit_boxes = 0;
+    vect2_t bg_pos = VECT2(10, 10);
+    st->hit_boxes[st->num_hit_boxes].box.min = bg_pos;
+    st->hit_boxes[st->num_hit_boxes].style = CSS_BACKGROUND;
+    st->num_hit_boxes++;
+    double x_margin = 10;
+    double y_margin = 10;
+
+    double y_pos = bg_pos.y + y_margin;
+    double width, height, max_width = 0;
+    if (button ("Prueba", graphics->cr, bg_pos.x+x_margin, y_pos, st, &width, &height, &update_panel)) {
+        //Hacer algo.
+        printf ("Saving point set.\n");
+    }
+
+    y_pos += height+y_margin;
+    max_width = MAX (max_width, width);
+    if (button ("Prueba1", graphics->cr, bg_pos.x+x_margin, y_pos, st, &width, &height, &update_panel)) {
+        //Hacer algo.
+        printf ("Do other thing.\n");
+    }
+    y_pos += height+y_margin;
+    max_width = MAX (max_width, width);
+    st->hit_boxes[0].box.max.x = st->hit_boxes[0].box.min.x+max_width+2*x_margin;
+    st->hit_boxes[0].box.max.y = y_pos;
+
     bool blit_needed = false;
     cairo_t *cr = graphics->cr;
     if (redraw || input.force_redraw) {
@@ -612,19 +691,20 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
         blit_needed = true;
     }
 
-    st->css_styles[2].width = 200;
-    st->css_styles[2].height = 100;
-    css_box_draw (cr, &st->css_styles[2], 10, 10);
-    if (button ("Prueba", cr, 20, 20, st, &blit_needed)) {
-        //Hacer algo.
-        printf ("Saving point set.\n");
+    if (blit_needed || update_panel) {
+        int i;
+        for (i=0; i<st->num_hit_boxes; i++) {
+            if (st->hit_boxes[i].status_changed) {
+                blit_needed = true;
+            }
+            css_box_t box = st->css_styles[st->hit_boxes[i].style];
+            box.label = st->hit_boxes[i].label;
+            box.content_position = st->hit_boxes[i].origin;
+            box.width = BOX_WIDTH (st->hit_boxes[i].box);
+            box.height = BOX_HEIGHT (st->hit_boxes[i].box);
+            css_box_draw (cr, &box, st->hit_boxes[i].box.min.x, st->hit_boxes[i].box.min.y);
+        }
     }
-    if (button ("Prueba1", cr, 20, 20+30, st, &blit_needed)) {
-        //Hacer algo.
-        printf ("Do other thing.\n");
-    }
-
-    text_entry ("HOLA", cr, 20, 50+30, st, &blit_needed);
 
     cairo_surface_flush (cairo_get_target(graphics->cr));
     return blit_needed;
