@@ -20,6 +20,16 @@ typedef enum {false, true} bool;
 
 #define invalid_code_path assert(0)
 
+#define VECT_X 0
+#define VECT_Y 1
+#define VECT_Z 2
+#define VECT_W 3
+
+#define VECT_R 0
+#define VECT_G 1
+#define VECT_B 2
+#define VECT_A 3
+
 typedef union {
     struct {
         double x;
@@ -146,7 +156,7 @@ void swap (int*a, int*b)
 }
 
 // Merge sort implementation
-void sort (int *arr, int n)
+void int_sort (int *arr, int n)
 {
     if (n==1) {
         return;
@@ -160,14 +170,14 @@ void sort (int *arr, int n)
         if (arr[0] > arr[1]) swap(&arr[0],&arr[1]);
     } else {
         int res[n];
-        sort (arr, n/2);
-        sort (&arr[n/2], n-n/2);
+        int_sort (arr, n/2);
+        int_sort (&arr[n/2], n-n/2);
 
         int i;
         int a=0;
         int b=n/2;
         for (i=0; i<n; i++) {
-            if ((a<n/2 && arr[a] < arr[b]) || b==n) {
+            if (b==n || (a<n/2 && arr[a] < arr[b])) {
                 res[i] = arr[a];
                 a++;
             } else {
@@ -179,6 +189,71 @@ void sort (int *arr, int n)
             arr[i] = res[i];
         }
     }
+}
+
+void swap_n_bytes (void *a, void*b, int n)
+{
+    while (sizeof(int)<=n) {
+        n -= sizeof(int);
+        int *a_c = (int*)((char*)a+n);
+        int *b_c = (int*)((char*)b+n);
+        *a_c = *a_c^*b_c;
+        *b_c = *a_c^*b_c;
+        *a_c = *a_c^*b_c;
+    }
+
+    if (n<0) {
+        n += sizeof(int);
+        while (n<0) {
+            n--;
+            char *a_c = (char*)a+n;
+            char *b_c = (char*)b+n;
+            *a_c = *a_c^*b_c;
+            *b_c = *a_c^*b_c;
+            *a_c = *a_c^*b_c;
+        }
+    }
+}
+
+// Templetized merge sort
+// IS_A_LT_B is an expression where *a and *b are pointers
+// to _arr_ true when *a<*b.
+#define templ_sort(FUNCNAME,TYPE,IS_A_LT_B)                 \
+void FUNCNAME (TYPE *arr, int n)                            \
+{                                                           \
+    if (n==1) {                                             \
+        return;                                             \
+    } else if (n == 2) {                                    \
+        TYPE *a = &arr[1];                                  \
+        TYPE *b = &arr[0];                                  \
+        int c = IS_A_LT_B;                                  \
+        if (c) {                                            \
+            swap_n_bytes (&arr[0], &arr[1], sizeof(TYPE));  \
+        }                                                   \
+    } else {                                                \
+        TYPE res[n];                                        \
+        FUNCNAME (arr, n/2);                                \
+        FUNCNAME (&arr[n/2], n-n/2);                        \
+                                                            \
+        int i;                                              \
+        int h=0;                                            \
+        int k=n/2;                                          \
+        for (i=0; i<n; i++) {                               \
+            TYPE *a = &arr[h];                              \
+            TYPE *b = &arr[k];                              \
+            int c = IS_A_LT_B;                              \
+            if (k==n || (h<n/2 && c)) {                     \
+                res[i] = arr[h];                            \
+                h++;                                        \
+            } else {                                        \
+                res[i] = arr[k];                            \
+                k++;                                        \
+            }                                               \
+        }                                                   \
+        for (i=0; i<n; i++) {                               \
+            arr[i] = res[i];                                \
+        }                                                   \
+    }                                                       \
 }
 
 #define COMMON_H

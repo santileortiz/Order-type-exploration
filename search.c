@@ -230,21 +230,13 @@ void file_read (int file, void *pos,  size_t size)
     }
 }
 
-int* get_all_thrackles (int n, int k, uint32_t ot_id, int *num_found)
+void get_thrackle_list_filename (char *s, int len, int n, int ot_id, int k)
 {
-    char filename[200];
-    snprintf (filename, ARRAY_SIZE(filename), ".cache/n_%d-ot_%d-th_all.bin", n, ot_id);
+    snprintf (s, len, ".cache/n_%d-ot_%d-th_all-k_%d.bin", n, ot_id, k);
+}
 
-    int file = open (filename, O_RDONLY);
-    if (file == -1) {
-        open_database (n);
-        order_type_t *ot = order_type_new (n, NULL);
-        db_seek (ot, ot_id);
-
-        iterate_threackles_backtracking (n, k, ot, filename);
-        file = open (filename, O_RDONLY);
-    }
-
+int* read_thrackle_list (int *num_found, int file)
+{
     int *res;
     search_info_t info;
     file_read (file, &info, sizeof (search_info_t));
@@ -255,28 +247,60 @@ int* get_all_thrackles (int n, int k, uint32_t ot_id, int *num_found)
     return res;
 }
 
-int main ()
+int* get_all_thrackles (int n, int k, uint32_t ot_id, int *num_found)
 {
-    if (!open_database (N)){
-        printf ("Could not open database\n");
-        return -1;
+    char filename[200];
+    get_thrackle_list_filename (filename, ARRAY_SIZE(filename), n, ot_id, k);
+
+    int file = open (filename, O_RDONLY);
+    if (file == -1) {
+        assert (n<=10);
+        open_database (n);
+        order_type_t *ot = order_type_new (n, NULL);
+        db_seek (ot, ot_id);
+
+        iterate_threackles_backtracking (n, k, ot, filename);
+        file = open (filename, O_RDONLY);
     }
 
-    if (mkdir (".cache", 0775) == 0) {
-        printf ("Creating .cache dir\n");
+    return read_thrackle_list (num_found, file);
+}
+
+int* get_all_thrackles_convex_position (int n, int k, int *num_found)
+{
+    char filename[200];
+    get_thrackle_list_filename (filename, ARRAY_SIZE(filename), n, 0, k);
+
+    int file = open (filename, O_RDONLY);
+    if (file == -1) {
+        order_type_t *ot = order_type_new (n, NULL);
+        if (n<=10) {
+            open_database (n);
+            db_seek (ot, 0);
+        } else {
+            convex_ot_searchable (ot);
+        }
+
+        iterate_threackles_backtracking (n, k, ot, filename);
+        file = open (filename, O_RDONLY);
     }
 
-    //get_thrackle_for_each_ot (12);
-    //count_thrackles (8);
-    //print_differing_triples (N, 0, 1);
-    //print_edge_disjoint_sets (8, 8);
-    //generate_edge_disjoint_triangle_sets (10, 13);
-    //fast_edge_disjoint_sets (9, 10);
+    return read_thrackle_list (num_found, file);
+}
 
-    int n = 9;
-    int k = 10;
+// TODO: Do something more intelligent when T_n is unknown. Maybe call a
+// monitored version of get_all_thrackles() to estimate how long it will take.
+int* get_all_thrackles_safe (int n, int k, uint32_t ot_id, int *num_found)
+{
+    assert (n <= 10); // T_n is unknown for n>10
+    return get_all_thrackles (n, k, ot_id, num_found);
+}
+
+void print_triangle_sizes_for_thrackles_in_convex_position (int n)
+{
+    int k = thrackle_size (n);
     int num_found;
-    int *thrackles = get_all_thrackles (n, k, 0, &num_found);
+    int *thrackles = get_all_thrackles_safe (n, k, 0, &num_found);
     int i;
     for (i=0; i<num_found*k; i+=k) {
         int *thrackle = &thrackles[i];
@@ -340,8 +364,8 @@ int main ()
             //printf ("\n");
         }
 
-        int total_triangles = binomial (n, 3);
-        uint64_t choosen_set_id = subset_it_id_for_idx (total_triangles, thrackle, k);
+        //int total_triangles = binomial (n, 3);
+        //uint64_t choosen_set_id = subset_it_id_for_idx (total_triangles, thrackle, k);
         //if (sizes [0] == 0 && sizes[1] == 2 && sizes[2] == 7 && sizes[3] == 3) {
         //if (sizes [0] == 0 && sizes[1] == 0) {
         //if (sizes[3] == 5) {
@@ -349,4 +373,28 @@ int main ()
             array_print (sizes, num_sizes);
         //}
     }
+}
+
+int main ()
+{
+    if (!open_database (N)){
+        printf ("Could not open database\n");
+        return -1;
+    }
+
+    if (mkdir (".cache", 0775) == 0) {
+        printf ("Creating .cache dir\n");
+    }
+
+    //get_thrackle_for_each_ot (12);
+    //count_thrackles (8);
+    //print_differing_triples (N, 0, 1);
+    //print_edge_disjoint_sets (8, 8);
+    //generate_edge_disjoint_triangle_sets (10, 13);
+    //fast_edge_disjoint_sets (9, 10);
+    int num_found = 0;
+    int n = 11;
+    int k = 16;
+    get_all_thrackles_convex_position (n, k, &num_found);
+    printf ("found: %d\n", num_found);
 }

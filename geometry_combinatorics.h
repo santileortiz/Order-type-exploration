@@ -6,11 +6,14 @@
 // TODO: These are 128 bit structs, they may take up a lot of space, maybe have
 // another one of 32 bits for small coordinates.
 // TODO: Also, how does this affect performance?
-typedef struct {
-    int64_t x;
-    int64_t y;
+typedef union {
+    struct {
+        int64_t x;
+        int64_t y;
+    };
+    int64_t E[2];
 } vect2i_t;
-#define VECT2i(x,y) ((vect2i_t){x,y})
+#define VECT2i(x,y) ((vect2i_t){{x,y}})
 
 typedef struct {
     int n;
@@ -32,16 +35,56 @@ order_type_t *order_type_new (int n, memory_stack_t *stack)
     return ret;
 }
 
-void convex_ot (order_type_t *ot)
+#define convex_ot(ot) convex_ot_scale (ot, 255/2)
+void convex_ot_scale (order_type_t *ot, int radius)
 {
     assert (ot->n >= 3);
     double theta = (2*M_PI)/ot->n;
     ot->id = 0;
     int i;
     for (i=1; i<=ot->n; i++) {
-        ot->pts[i-1].x = (int)(127.0*(1+cos(i*theta)));
-        ot->pts[i-1].y = (int)(127.0*(1+sin(i*theta)));
+        ot->pts[i-1].x = (int)((double)radius*(1+cos(i*theta)));
+        ot->pts[i-1].y = (int)((double)radius*(1+sin(i*theta)));
     }
+}
+
+typedef struct {
+    int origin;
+    int key;
+} int_key_t;
+
+void int_key_print (int_key_t k)
+{
+    printf ("origin: %d, key: %d\n", k.origin, k.key);
+}
+
+templ_sort (sort_int_keys, int_key_t, a->key < b->key)
+
+void increase_duplicated_coords (order_type_t *ot, int_key_t *key_array, int coord)
+{
+    int i;
+    for (i=0; i<ot->n; i++) {
+        key_array[i].key = ot->pts[i].E[coord];
+        key_array[i].origin = i;
+    }
+    sort_int_keys (key_array, ot->n);
+
+    int last_val = key_array[0].key;
+    for (i=1; i<ot->n; i++) {
+        if (last_val == key_array[i].key) {
+            ot->pts[key_array[i].origin].E[coord]++;
+        }
+        last_val = key_array[i].key;
+    }
+}
+
+void convex_ot_searchable (order_type_t *ot)
+{
+    convex_ot_scale (ot, 65535/2);
+
+    int_key_t key_array[ot->n];
+    increase_duplicated_coords (ot, key_array, VECT_X);
+    increase_duplicated_coords (ot, key_array, VECT_Y);
 }
 
 void print_order_type (order_type_t *ot)
@@ -478,7 +521,7 @@ subset_it_t *subset_it_new (int n, int k, memory_stack_t *stack)
 // NOTE: This mutates the list idx and sorts it.
 uint64_t subset_it_id_for_idx (int n, int *idx, int k)
 {
-    sort (idx, k);
+    int_sort (idx, k);
 
     uint64_t id = 0;
     int idx_counter = 0;
@@ -877,6 +920,9 @@ void iterate_threackles_backtracking (int n, int k, order_type_t *ot, char *file
         if (l>=k) {
             file_write (file, choosen_triangles, k*sizeof(int));
             info.num_found++;
+            if (info.num_found % 1000 == 0) {
+                printf ("Found: %d\n", info.num_found);
+            }
             if (!thrackle_backtrack (&l, choosen_triangles, total_triangles, S_l,
                        &num_invalid, invalid_restore_indx, invalid_triangles)) {
                 continue;
