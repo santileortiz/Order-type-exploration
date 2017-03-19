@@ -570,17 +570,6 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
         redraw = 1;
     }
 
-    // TODO: This is the only way I could think of to differentiate a drag
-    // inside the window, from a resize of the window.
-    // NOTE: I did it this way because while dragging to resize the window, on
-    // some frames the width and the height don't change and the pointer is
-    // inside the window (when shrinking).
-    static int resizing = 0;
-    if ((st->dragging[0] && resizing) ||
-            graphics->width != st->old_graphics.width || graphics->height != st->old_graphics.height) {
-        resizing = 1;
-    }
-
     // TODO: This is a very rudimentary implementation for detection of Click,
     // Double Click, and Dragging. See if it can be implemented cleanly with a
     // state machine.
@@ -601,15 +590,13 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
         } else {
             // button is being held
             if (st->dragging[0] || vect2_distance (&input.ptr, &st->click_coord[0]) > st->min_distance_for_drag) {
-                if (!resizing) {
-                    // DRAGGING
-                    graphics->T.dx += input.ptr.x - prev_input.ptr.x;
-                    graphics->T.dy += (input.ptr.y - prev_input.ptr.y);
-                    redraw = 1;
+                // DRAGGING
+                graphics->T.dx += input.ptr.x - prev_input.ptr.x;
+                graphics->T.dy += (input.ptr.y - prev_input.ptr.y);
+                redraw = 1;
 
-                    st->dragging[0] = 1;
-                    st->time_since_last_click[0] = -10;
-                }
+                st->dragging[0] = 1;
+                st->time_since_last_click[0] = -10;
             }
         }
     } else {
@@ -634,7 +621,6 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
         } else {
             st->mouse_clicked[0] = false;
         }
-        resizing = 0;
         st->dragging[0] = 0;
     }
     st->input = input;
@@ -863,11 +849,6 @@ int main (void)
         app_input.mouse_down[0] = (XCB_KEY_BUT_MASK_BUTTON_1 & ptr_state->mask) ? 1 : 0;
         app_input.mouse_down[1] = (XCB_KEY_BUT_MASK_BUTTON_2 & ptr_state->mask) ? 1 : 0;
         app_input.mouse_down[2] = (XCB_KEY_BUT_MASK_BUTTON_3 & ptr_state->mask) ? 1 : 0;
-        if (ptr_state->win_x > 0 && ptr_state->win_x < graphics.width &&
-            ptr_state->win_y > 0 && ptr_state->win_y < graphics.height) {
-            app_input.ptr.x = ptr_state->win_x;
-            app_input.ptr.y = ptr_state->win_y;
-        }
         free (ptr_state);
         while ((event = xcb_poll_for_event (connection))) {
             switch (event->response_type) {
