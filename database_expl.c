@@ -725,6 +725,20 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
     return blit_needed;
 }
 
+xcb_atom_t get_x11_atom (xcb_connection_t *c, const char *value)
+{
+    xcb_atom_t res;
+    xcb_generic_error_t *err = NULL;
+    xcb_intern_atom_cookie_t ck = xcb_intern_atom (c, 0, strlen(value), value);
+    xcb_intern_atom_reply_t *reply = xcb_intern_atom_reply (c, ck, &err);
+    if (err != NULL) {
+        printf ("Error while requesting atom.\n");
+    }
+    res = reply->atom;
+    free(reply);
+    return res;
+}
+
 int main (void)
 {
     // Setup clocks
@@ -770,6 +784,18 @@ int main (void)
             8,
             strlen (title),
             title);
+
+    // Set WM_PROTOCOLS property
+    xcb_atom_t delete_window_atom = get_x11_atom (connection, "WM_DELETE_WINDOW");
+    xcb_atom_t atoms[] = {delete_window_atom};
+    xcb_change_property (connection,
+            XCB_PROP_MODE_REPLACE,
+            window,
+            get_x11_atom (connection, "WM_PROTOCOLS"),
+            XCB_ATOM_ATOM,
+            32,
+            ARRAY_SIZE(atoms),
+            atoms);
 
     // Getting visual of root window (required to get a cairo surface)
     xcb_depth_iterator_t depth_iter;
@@ -838,7 +864,10 @@ int main (void)
     app_input.wheel = 1;
     while (!end_execution) {
         while ((event = xcb_poll_for_event (connection))) {
-            switch (event->response_type) {
+            // NOTE: The most significant bit of event->response_type is set if
+            // the event was generated from a SendEvent request, here we don't
+            // care about the source of the event.
+            switch (event->response_type & ~0x80) {
                 case XCB_CONFIGURE_NOTIFY: {
                     uint16_t new_width = ((xcb_configure_notify_event_t*)event)->width;
                     uint16_t new_height = ((xcb_configure_notify_event_t*)event)->height;
@@ -879,6 +908,11 @@ int main (void)
                         app_input.mouse_down[button_pressed-1] = 0;
                     }
                     } break;
+                case XCB_CLIENT_MESSAGE:
+                    if (((xcb_client_message_event_t*)event)->data.data32[0] == delete_window_atom) {
+                        end_execution = true;
+                    }
+                    break;
                 default: 
                     /* Unknown event type, ignore it */
                     continue;
