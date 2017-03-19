@@ -837,19 +837,6 @@ int main (void)
     app_input_t app_input = {0};
     app_input.wheel = 1;
     while (!end_execution) {
-        // Get pointer state, this is how we detect button releases, because we
-        // ignore button_release events so we don't miss button presses shorter
-        // than 1 frame.
-        xcb_generic_error_t *err = NULL;
-        xcb_query_pointer_cookie_t ck = xcb_query_pointer (connection, window);
-        xcb_query_pointer_reply_t *ptr_state = xcb_query_pointer_reply (connection, ck, &err);
-        if (err != NULL) {
-            printf ("Error while polling pointer\n");
-        }
-        app_input.mouse_down[0] = (XCB_KEY_BUT_MASK_BUTTON_1 & ptr_state->mask) ? 1 : 0;
-        app_input.mouse_down[1] = (XCB_KEY_BUT_MASK_BUTTON_2 & ptr_state->mask) ? 1 : 0;
-        app_input.mouse_down[2] = (XCB_KEY_BUT_MASK_BUTTON_3 & ptr_state->mask) ? 1 : 0;
-        free (ptr_state);
         while ((event = xcb_poll_for_event (connection))) {
             switch (event->response_type) {
                 case XCB_CONFIGURE_NOTIFY: {
@@ -873,17 +860,25 @@ int main (void)
                     // We should tell which areas need exposing
                     app_input.force_redraw = 1;
                     break;
-                case XCB_BUTTON_PRESS:
-                    if (((xcb_key_press_event_t*)event)->detail == 4) {
+                case XCB_BUTTON_PRESS: {
+                    char button_pressed = ((xcb_key_press_event_t*)event)->detail;
+                    if (button_pressed == 4) {
                         app_input.wheel *= 1.2;
-                    } else if (((xcb_key_press_event_t*)event)->detail == 5) {
+                    } else if (button_pressed == 5) {
                         app_input.wheel /= 1.2;
-                    } else {
-                        app_input.mouse_down[((xcb_button_press_event_t*)event)->detail-1] = 1;
+                    } else if (button_pressed >= 1 && button_pressed <= 3) {
+                        app_input.mouse_down[button_pressed-1] = 1;
                     }
-                    break;
-                case XCB_BUTTON_RELEASE:
-                    break;
+                    } break;
+                case XCB_BUTTON_RELEASE: {
+                    // NOTE: This loses clicks if the button press-release
+                    // sequence happens in the same batch of events, right now
+                    // it does not seem to be a problem.
+                    char button_pressed = ((xcb_key_press_event_t*)event)->detail;
+                    if (button_pressed >= 1 && button_pressed <= 3) {
+                        app_input.mouse_down[button_pressed-1] = 0;
+                    }
+                    } break;
                 default: 
                     /* Unknown event type, ignore it */
                     continue;
