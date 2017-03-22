@@ -39,6 +39,22 @@ typedef union {
 } vect2_t;
 #define VECT2(x,y) ((vect2_t){{x,y}})
 
+typedef struct {
+    vect2_t min;
+    vect2_t max;
+} box_t;
+
+void set_box_from_pos_and_size (box_t *box, double x, double y, double width, double height)
+{
+}
+
+#define BOX_X_Y_W_H(box,n_x,n_y,n_w,n_h) {(box).min.x=(n_x);(box).max.x=(n_x)+(n_w); \
+                                          (box).min.y=(n_y);(box).max.y=(n_y)+(n_h);}
+#define BOX_POS_SIZE(box,pos,size) BOX_X_Y_W_H(box,(pos).x,(pos).y,(size).x,(size).y)
+
+#define BOX_WIDTH(box) (box.max.x-box.min.x)
+#define BOX_HEIGHT(box) (box.max.y-box.min.y)
+
 double vect2_distance (vect2_t *v1, vect2_t *v2)
 {
     return sqrt ((v1->x-v2->x)*(v1->x-v2->x) + (v1->y-v2->y)*(v1->y-v2->y));

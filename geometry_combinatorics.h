@@ -381,14 +381,6 @@ vect2i_t v2i_from_v2 (vect2_t v)
     return res;
 }
 
-typedef struct {
-    vect2_t min;
-    vect2_t max;
-} box_t;
-
-#define BOX_WIDTH(box) (box.max.x-box.min.x)
-#define BOX_HEIGHT(box) (box.max.y-box.min.y)
-
 box_t box_min_dim (vect2_t min, vect2_t dim)
 {
     box_t res;

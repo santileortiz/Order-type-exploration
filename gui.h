@@ -31,64 +31,108 @@ bool is_point_in_box (double p_x, double p_y, double x, double y, double width, 
 }
 
 typedef struct {
+    char *s;
+    double width;
+    double height;
+    double x_bearing;
+    double y_bearing;
+} sized_string_t;
+
+typedef enum {
+    INACTIVE,
+    PRESSED,
+    RELEASED
+} hit_status_t;
+
+typedef enum {
+    CSS_BUTTON,
+    CSS_BUTTON_ACTIVE,
+    CSS_BACKGROUND,
+    CSS_TEXT_ENTRY,
+    CSS_TEXT_ENTRY_FOCUS,
+    CSS_LABEL,
+    CSS_TITLE_LABEL,
+
+    CSS_NUM_STYLES
+} css_style_t;
+
+typedef enum {
+    CSS_TEXT_ALIGN_CENTER,
+    CSS_TEXT_ALIGN_LEFT,
+    CSS_TEXT_ALIGN_RIGHT
+} css_text_align_t;
+
+typedef struct {
     double border_radius;
     vect4_t border_color;
     double border_width;
     double padding_x;
     double padding_y;
-    double width;
-    double height;
+    //double width;
+    double min_width;
+    //double height;
+    double min_height;
     vect4_t background_color;
     vect4_t color;
 
+    css_text_align_t text_align;
+
     int num_gradient_stops;
     vect4_t *gradient_stops;
-
-    vect2_t content_position;
-    // TODO: ATM only text content is supported.
-    char *label;
 } css_box_t;
 
-void css_box_set_fixed_size (css_box_t *box, double width, double height)
-{
-    box->width = width + 2*(box->padding_x + box->border_width);
-    box->height = MAX (20, height) + 2*box->border_width;
-}
+typedef struct {
+    box_t box;
+    bool status_changed;
+    vect2_t content_position;
+    hit_status_t status;
+    css_box_t *style;
+    sized_string_t str;
+} hit_box_t;
 
-// TODO: This function aligns text to the left but the others center it, add
-// an align argument to specify what we want.
-void css_box_compute_content_position (cairo_t *cr, css_box_t *box, char *label)
+void sized_string_compute (sized_string_t *res, cairo_t *cr, char *str)
 {
     cairo_text_extents_t extents;
-    cairo_text_extents (cr, label, &extents);
-    box->content_position.x = box->padding_x + extents.x_bearing;
-    box->content_position.y = (box->height - extents.height)/2 - extents.y_bearing;
+    cairo_text_extents (cr, str, &extents);
+    res->width = extents.width;
+    res->height = extents.height;
+    res->y_bearing = extents.y_bearing;
+    res->x_bearing = extents.x_bearing;
 }
 
 void css_box_compute_content_width_and_position (cairo_t *cr, css_box_t *box, char *label)
 {
-    cairo_text_extents_t extents;
-    cairo_text_extents (cr, label, &extents);
-    if (box->width == 0) {
-        box->width = extents.width + 2*(box->padding_x + box->border_width);
-    }
-    if (box->height == 0) {
-        box->height = MAX (20, extents.height + 2*(box->padding_y)) + 2*box->border_width;
-    }
-    box->content_position.x = (box->width - extents.width)/2 + extents.x_bearing;
-    box->content_position.y = (box->height - extents.height)/2 - extents.y_bearing;
+    //cairo_text_extents_t extents;
+    //cairo_text_extents (cr, label, &extents);
+    //if (box->width == 0) {
+    //    box->width = extents.width + 2*(box->padding_x + box->border_width);
+    //}
+    //if (box->height == 0) {
+    //    box->height = MAX (20, extents.height + 2*(box->padding_y)) + 2*box->border_width;
+    //}
+    //box->content_position.x = (box->width - extents.width)/2 + extents.x_bearing;
+    //box->content_position.y = (box->height - extents.height)/2 - extents.y_bearing;
 }
 
-void css_box_draw (cairo_t *cr, css_box_t *box, double x, double y)
+void layout_size_from_css_content_size (css_box_t *css_box,
+                                        vect2_t *css_content_size, vect2_t *layout_size)
+{
+    layout_size->x = MAX(css_box->min_width, css_content_size->x)
+                     + 2*(css_box->padding_x + css_box->border_width);
+    layout_size->y = MAX(css_box->min_height, css_content_size->y)
+                     + 2*(css_box->padding_x + css_box->border_width);
+}
+
+void css_box_draw (cairo_t *cr, css_box_t *box, hit_box_t *layout)
 {
     cairo_save (cr);
-    cairo_translate (cr, x, y);
+    cairo_translate (cr, layout->box.min.x, layout->box.min.y);
 
-    if (box->width == 0 || box->height == 0) {
-        printf ("Drawing a 0 sized box.\n");
-    }
-    rounded_box_path (cr, 0, 0,box->width+2*box->border_width,
-                      box->height+2*box->border_width, box->border_radius);
+    double content_width = BOX_WIDTH(layout->box) - 2*(box->border_width);
+    double content_height = BOX_HEIGHT(layout->box) - 2*(box->border_width);
+
+    rounded_box_path (cr, 0, 0,content_width+2*box->border_width,
+                      content_height+2*box->border_width, box->border_radius);
     cairo_clip (cr);
 
     cairo_set_source_rgba (cr, box->background_color.r,
@@ -97,7 +141,8 @@ void css_box_draw (cairo_t *cr, css_box_t *box, double x, double y)
                           box->background_color.a);
     cairo_paint (cr);
 
-    cairo_pattern_t *patt = cairo_pattern_create_linear (box->border_width, box->border_width, 0, box->height);
+    cairo_pattern_t *patt = cairo_pattern_create_linear (box->border_width, box->border_width,
+                                                         0, content_height);
 
     if (box->num_gradient_stops > 0) {
         double position;
@@ -119,7 +164,7 @@ void css_box_draw (cairo_t *cr, css_box_t *box, double x, double y)
     }
 
     rounded_box_path (cr, box->border_width/2, box->border_width/2,
-                      box->width+box->border_width, box->height+box->border_width,
+                      content_width+box->border_width, content_height+box->border_width,
                       box->border_radius-box->border_width/2);
     cairo_set_source_rgba (cr, box->border_color.r,
                            box->border_color.g,
@@ -128,10 +173,24 @@ void css_box_draw (cairo_t *cr, css_box_t *box, double x, double y)
     cairo_set_line_width (cr, box->border_width);
     cairo_stroke (cr);
 
-    cairo_move_to (cr, box->content_position.x, box->content_position.y);
+    double text_pos_x, text_pos_y;
+    switch (box->text_align) {
+        case CSS_TEXT_ALIGN_LEFT:
+            text_pos_x = layout->str.x_bearing;
+            break;
+        case CSS_TEXT_ALIGN_RIGHT:
+            text_pos_x = content_width - layout->str.width + layout->str.x_bearing;
+            break;
+        default: // CSS_TEXT_ALIGN_CENTER
+            text_pos_x = (content_width - layout->str.width)/2 + layout->str.x_bearing;
+            break;
+    }
+    text_pos_y = (content_height - layout->str.height)/2 - layout->str.y_bearing;
+
+    cairo_move_to (cr, text_pos_x, text_pos_y);
     cairo_set_source_rgba (cr, box->color.r, box->color.g, box->color.b,
                           box->color.a);
-    cairo_show_text (cr, box->label);
+    cairo_show_text (cr, layout->str.s);
 
     cairo_restore (cr);
 }
@@ -159,12 +218,13 @@ void init_button (css_box_t *box)
     *box = (css_box_t){0};
     box->border_radius = 2.5;
     box->border_width = 1;
+    box->min_height = 20;
     box->padding_x = 12;
     box->padding_y = 3;
-    box->background_color = RGB(0.96, 0.96, 0.96);
     box->border_color = RGBA(0, 0, 0, 0.27);
     box->color = RGB(0.2, 0.2, 0.2);
 
+    box->background_color = RGB(0.96, 0.96, 0.96);
     vect4_t stops[3] = {RGBA(0,0,0,0),
                         RGBA(0,0,0,0),
                         RGBA(0,0,0,0.04)};
@@ -176,11 +236,13 @@ void init_pressed_button (css_box_t *box)
     *box = (css_box_t){0};
     box->border_radius = 2.5;
     box->border_width = 1;
+    box->min_height = 20;
     box->padding_x = 12;
     box->padding_y = 3;
-    box->background_color = RGBA(0, 0, 0, 0.05);
     box->border_color = RGBA(0, 0, 0, 0.27);
     box->color = RGB(0.2, 0.2, 0.2);
+
+    box->background_color = RGBA(0, 0, 0, 0.05);
 }
 
 void init_background (css_box_t *box)
@@ -188,8 +250,8 @@ void init_background (css_box_t *box)
     *box = (css_box_t){0};
     box->border_radius = 2.5;
     box->border_width = 1;
-    box->padding_x = 12;
-    box->padding_y = 3;
+    //box->padding_x = 12;
+    //box->padding_y = 3;
     box->background_color = RGB(0.96, 0.96, 0.96);
     box->border_color = RGBA(0, 0, 0, 0.27);
 }
@@ -199,14 +261,16 @@ void init_text_entry (css_box_t *box)
     *box = (css_box_t){0};
     box->border_radius = 2.5;
     box->border_width = 1;
+    box->min_height = 20;
     box->padding_x = 3;
     box->padding_y = 3;
     box->background_color = RGB(0.96, 0.96, 0.96);
-    box->border_color = RGBA(0, 0, 0, 0.25);
     box->color = RGB(0.2, 0.2, 0.2);
     vect4_t stops[2] = {RGB(0.93,0.93,0.93),
                         RGB(0.97,0.97,0.97)};
     css_box_add_gradient_stops (box, ARRAY_SIZE(stops), stops);
+
+    box->border_color = RGBA(0, 0, 0, 0.25);
 }
 
 void init_text_entry_focused (css_box_t *box)
@@ -214,14 +278,30 @@ void init_text_entry_focused (css_box_t *box)
     *box = (css_box_t){0};
     box->border_radius = 2.5;
     box->border_width = 1;
+    box->min_height = 20;
     box->padding_x = 3;
     box->padding_y = 3;
     box->background_color = RGB(0.96, 0.96, 0.96);
-    box->border_color = RGBA(0.239216, 0.607843, 0.854902, 0.8);
     box->color = RGB(0.2, 0.2, 0.2);
     vect4_t stops[2] = {RGB(0.93,0.93,0.93),
                         RGB(0.97,0.97,0.97)};
     css_box_add_gradient_stops (box, ARRAY_SIZE(stops), stops);
+
+    box->border_color = RGBA(0.239216, 0.607843, 0.854902, 0.8);
+}
+
+void init_label (css_box_t *box)
+{
+    *box = (css_box_t){0};
+    box->background_color = RGBA(0, 0, 0, 0);
+    box->color = RGB(0.2, 0.2, 0.2);
+}
+
+void init_title_label (css_box_t *box)
+{
+    *box = (css_box_t){0};
+    box->background_color = RGBA(0, 0, 0, 0);
+    box->color = RGBA(0.2, 0.2, 0.2, 0.7);
 }
 
 #define GUI_H
