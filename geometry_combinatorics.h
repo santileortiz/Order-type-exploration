@@ -444,6 +444,16 @@ void get_bounding_box (vect2_t *pts, int n, box_t *res)
     res->max.y = max_y;
 }
 
+uint64_t factorial (int n)
+{
+    uint64_t res = 1;
+    while (n>1) {
+        res *= n;
+        n--;
+    }
+    return res;
+}
+
 uint64_t binomial (int n, int k)
 {
     uint64_t i, res = 1;
@@ -1011,6 +1021,163 @@ void iterate_threackles_backtracking (int n, int k, order_type_t *ot, char *file
     lseek (file, 0, SEEK_SET);
     file_write (file, &info, sizeof(search_info_t));
     close (file);
+}
+
+bool has_fixed_point (int n, int *perm_a, int *perm_b)
+{
+    int i;
+    for (i=0; i<n; i++) {
+        if (perm_a[i] == perm_b[i]) {
+            return true;
+        }
+    }
+    return false;
+}
+
+#define GET_PERM(i) &all_perms[(i)*n]
+void print_decomp (int n, int* decomp, int* all_perms)
+{
+    int i;
+    for (i=0; i<n; i++) {
+        array_print (GET_PERM(decomp[i]), n);
+    }
+    printf ("\n");
+}
+
+// NOTE: This function performs fast until n=10, here are some times:
+// n:9 -> 0.332s
+// n:10 -> 2.877s
+// n:11 -> 37.355s
+void compute_all_permutations (int n, int *res)
+{
+    int i;
+    int *curr= res;
+    for (i=1; i<=n; i++) {
+        res[i-1] = i;
+    }
+
+    int found = 1;
+    while (found < factorial(n)) {
+        int k;
+        for (k=0; k<n; k++) {
+            curr[k+n] = curr[k];
+        }
+        curr+=n;
+
+        int j;
+        for (j=n-2; j>=0 && curr[j] >= curr[j+1]; j--) {
+            if (j==0) {
+                return;
+            }
+        }
+
+        int l;
+        for (l=n-1; curr[j]>=curr[l]; l--) {
+            if (l < 0) {
+                return;
+            }
+        }
+        swap (&curr[j], &curr[l]);
+
+        for (k=j+1, l=n-1; k<l;) {
+            swap (&curr[k], &curr[l]);
+            k++;
+            l--;
+        }
+        found++;
+    }
+}
+
+// TODO: Turns out this function is exactly the same as the one for other
+// backtraching algorithms. I won't reuse it yet, because I want to spend more
+// time designing more generic backtracking code that is easy to use (try to
+// avoid function pointers).
+bool matching_backtrack (int *l, int *curr_seq, int domain_size, bool *S_l,
+                         int *num_invalid, int *invalid_restore_indx, int *invalid_perms)
+{
+    (*l)--;
+    if (*l >= 1) {
+        int i;
+        for (i=curr_seq[*l]+1; i<domain_size; i++) {
+            S_l[i] = true;
+        }
+
+        *num_invalid = invalid_restore_indx[*l];
+        for (i=0; i<*num_invalid; i++) {
+            S_l[invalid_perms[i]] = false;
+        }
+
+        return true;
+    } else {
+        return false;
+    }
+}
+
+void matching_decompositions_over_complete_bipartite_graphs (int n)
+{
+    int num_perms = factorial (n);
+    int *all_perms = malloc (sizeof(int) * num_perms * n);
+    compute_all_permutations (n, all_perms);
+
+    int decomp[n];
+    decomp[0] = 0;
+    int l = 1;
+
+    int invalid_restore_indx[n];
+    invalid_restore_indx[0] = 0;
+    int invalid_perms[num_perms];
+    int num_invalid = 0;
+
+    bool S_l[num_perms];
+    S_l[0] = false;
+    int i;
+    for (i=1; i<num_perms; i++) {
+        S_l[i] = true;
+    }
+
+    while (l>0) {
+        if (l==n) {
+            print_decomp (n, decomp, all_perms);
+            if (!matching_backtrack (&l, decomp, num_perms, S_l,
+                                     &num_invalid, invalid_restore_indx, invalid_perms)) {
+                continue;
+            }
+        } else {
+            // Compute S_l
+            for (i=0; i<ARRAY_SIZE(S_l); i++) {
+                if (S_l[i] && has_fixed_point (n, GET_PERM(decomp[l-1]), GET_PERM(i))) {
+                    S_l[i] = false;
+                    invalid_perms[num_invalid] = i;
+                    num_invalid++;
+                }
+            }
+        }
+
+        while (1) {
+            bool S_l_empty = true;
+            int min_S_l = 0;
+            for (i=0; i<num_perms; i++) {
+                if (S_l[i]) {
+                    min_S_l = i;
+                    S_l_empty = false;
+                    break;
+                }
+            }
+
+            if (!S_l_empty) {
+                invalid_restore_indx[l] = num_invalid;
+                decomp[l] = min_S_l;
+                S_l[min_S_l] = false;
+                l++;
+                break;
+            }
+
+            if (!matching_backtrack (&l, decomp, num_perms, S_l,
+                                     &num_invalid, invalid_restore_indx, invalid_perms)) {
+                break;
+            }
+        }
+    }
 }
 
 // Automatic color palette:

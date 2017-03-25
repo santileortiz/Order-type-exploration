@@ -392,9 +392,5 @@ int main ()
     //print_edge_disjoint_sets (8, 8);
     //generate_edge_disjoint_triangle_sets (10, 13);
     //fast_edge_disjoint_sets (9, 10);
-    int num_found = 0;
-    int n = 11;
-    int k = 16;
-    get_all_thrackles_convex_position (n, k, &num_found);
-    printf ("found: %d\n", num_found);
+    matching_decompositions_over_complete_bipartite_graphs (5);
 }
