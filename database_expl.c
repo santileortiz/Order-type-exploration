@@ -1,11 +1,11 @@
-//gcc -g -Wall database_expl.c -o bin/database_expl -lcairo -lxcb -lm -lpango-1.0 -lpangocairo-1.0 -I/usr/include/pango-1.0 -I/usr/include/cairo -I/usr/include/glib-2.0 -I/usr/lib/x86_64-linux-gnu/glib-2.0/include
+//gcc -g -Wall database_expl.c -o bin/database_expl -lcairo -lX11-xcb -lX11 -lxcb -lm -lpango-1.0 -lpangocairo-1.0 -I/usr/include/pango-1.0 -I/usr/include/cairo -I/usr/include/glib-2.0 -I/usr/lib/x86_64-linux-gnu/glib-2.0/include
 // Dependencies:
 // sudo apt-get install libxcb1-dev libcairo2-dev
-#include <xcb/xcb.h>
+#include <X11/Xlib-xcb.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#include <cairo/cairo-xcb.h>
+#include <cairo/cairo-xlib.h>
 #include <pango/pangocairo.h>
 
 #include <fcntl.h>
@@ -37,12 +37,6 @@ typedef struct {
     vect2_t ptr;
 } app_input_t;
 
-typedef struct {
-    double scale;
-    double dx;
-    double dy;
-} transf_t;
-
 void tr_canvas_to_window (transf_t tr, vect2_t *p)
 {
     p->x = tr.scale*p->x+tr.dx;
@@ -54,14 +48,6 @@ void tr_window_to_canvas (transf_t tr, vect2_t *p)
     p->x = (p->x - tr.dx)/tr.scale;
     p->y = (tr.scale*CANVAS_SIZE + tr.dy - p->y )/(tr.scale);
 }
-
-typedef struct {
-    cairo_t *cr;
-    PangoLayout *text_layout;
-    uint16_t width;
-    uint16_t height;
-    transf_t T;
-} app_graphics_t;
 
 typedef enum {triangle, segment} entity_type;
 typedef struct {
@@ -109,9 +95,9 @@ typedef struct {
     float min_distance_for_drag;
 
     css_box_t css_styles[CSS_NUM_STYLES];
-    int num_hit_boxes;
-    int focused_hit_box;
-    hit_box_t hit_boxes[30];
+    int num_layout_boxes;
+    int focused_layout_box;
+    layout_box_t layout_boxes[30];
 
     subset_it_t *triangle_it;
     subset_it_t *triangle_set_it;
@@ -310,11 +296,11 @@ void set_n (app_state_t *st, int n, app_graphics_t *graphics)
 // This code shows how to make a panel with 3 example buttons:
 //
 //    bool update_panel = false;
-//    st->num_hit_boxes = 0;
+//    st->num_layout_boxes = 0;
 //    vect2_t bg_pos = VECT2(10, 10);
-//    st->hit_boxes[st->num_hit_boxes].box.min = bg_pos;
-//    st->hit_boxes[st->num_hit_boxes].style = &st->css_styles[CSS_BACKGROUND];
-//    st->num_hit_boxes++;
+//    st->layout_boxes[st->num_layout_boxes].box.min = bg_pos;
+//    st->layout_boxes[st->num_layout_boxes].style = &st->css_styles[CSS_BACKGROUND];
+//    st->num_layout_boxes++;
 //    double x_margin = 10;
 //    double y_margin = 10;
 //
@@ -355,14 +341,15 @@ void set_n (app_state_t *st, int n, app_graphics_t *graphics)
 //
 //    y_pos += height+y_margin;
 //    max_width = MAX (max_width, width);
-//    st->hit_boxes[0].box.max.x = st->hit_boxes[0].box.min.x+max_width+2*x_margin;
-//    st->hit_boxes[0].box.max.y = y_pos;
+//    st->layout_boxes[0].box.max.x = st->layout_boxes[0].box.min.x+max_width+2*x_margin;
+//    st->layout_boxes[0].box.max.y = y_pos;
 //
-bool button (char *label, cairo_t *cr, double x, double y, app_state_t *st,
+bool button (char *label, app_graphics_t *gr, double x, double y, app_state_t *st,
              double *width, double *height, bool *update_panel)
 {
-    //hit_box_t *curr_box = &st->hit_boxes[st->num_hit_boxes];
-    //st->num_hit_boxes++;
+    //cairo_t *cr = gr->cr;
+    //layout_box_t *curr_box = &st->layout_boxes[st->num_layout_boxes];
+    //st->num_layout_boxes++;
 
     //curr_box->str.s = label;
     //curr_box->style = &st->css_styles[CSS_BUTTON];
@@ -449,7 +436,7 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
         init_text_entry_focused (&st->css_styles[CSS_TEXT_ENTRY_FOCUS]);
         init_label (&st->css_styles[CSS_LABEL]);
         init_title_label (&st->css_styles[CSS_TITLE_LABEL]);
-        st->focused_hit_box = -1;
+        st->focused_layout_box = -1;
 
         redraw = 1;
     }
@@ -642,17 +629,17 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
 
     // Build layout
     bool update_panel = false;
-    st->num_hit_boxes = 0;
+    st->num_layout_boxes = 0;
     vect2_t bg_pos = VECT2(10, 10);
     vect2_t bg_min_size = VECT2(200, 0);
-    st->hit_boxes[st->num_hit_boxes].box.min = bg_pos;
-    st->hit_boxes[st->num_hit_boxes].style = &st->css_styles[CSS_BACKGROUND];
-    st->num_hit_boxes++;
+    st->layout_boxes[st->num_layout_boxes].box.min = bg_pos;
+    st->layout_boxes[st->num_layout_boxes].style = &st->css_styles[CSS_BACKGROUND];
+    st->num_layout_boxes++;
     double x_margin = 12, x_step = 12;
     double y_margin = 12, y_step = 12;
 
     double y_pos = bg_pos.y + y_margin;
-    double max_width = 0;
+    double max_width = 0, max_height = 0;
 
 
     char *entry_labels[] = {"n:",
@@ -661,45 +648,52 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
                             "Triangle Set:",
                             "Edge Disj. Set:",
                             "Thrackle:"};
-    int begin_labels_idx = st->num_hit_boxes;
+    int begin_labels_idx = st->num_layout_boxes;
     {
         int i;
         for (i=0; i<ARRAY_SIZE(entry_labels); i++) {
-            hit_box_t *curr_hit_box = &st->hit_boxes[st->num_hit_boxes];
+            layout_box_t *curr_layout_box = &st->layout_boxes[st->num_layout_boxes];
             // NOTE: Leave one empty box for the text entry
-            st->num_hit_boxes+=2;
-            curr_hit_box->str.s = entry_labels[i];
-            sized_string_compute (&curr_hit_box->str, graphics->cr, entry_labels[i]);
-            max_width = MAX (max_width, curr_hit_box->str.width);
+            st->num_layout_boxes+=2;
+            curr_layout_box->str.s = entry_labels[i];
+            sized_string_compute (&curr_layout_box->str, graphics->text_layout, entry_labels[i]);
+            max_width = MAX (max_width, curr_layout_box->str.width);
+            max_height = MAX (max_height, curr_layout_box->str.height);
         }
     }
 
     {
+        vect2_t max_string_size = VECT2(max_width, max_height);
+        vect2_t label_size;
+        layout_size_from_css_content_size (&st->css_styles[CSS_LABEL], &max_string_size, &label_size);
+
+        vect2_t entry_size;
+        layout_size_from_css_content_size (&st->css_styles[CSS_TEXT_ENTRY], &max_string_size, &entry_size);
+        label_size.y = MAX(label_size.y, entry_size.y);
+        entry_size.y = MAX(label_size.y, entry_size.y);
+
+        double label_x_pos = bg_pos.x+x_margin;
+        double entry_x_pos = bg_pos.x+x_margin+label_size.x+x_step;
         int i;
-        double label_align = bg_pos.x+x_margin+max_width;
-        for (i=begin_labels_idx; i<st->num_hit_boxes; i+=2) {
-            hit_box_t *curr_hit_box = &st->hit_boxes[i];
-            curr_hit_box->style = &st->css_styles[CSS_LABEL];
-            vect2_t box_position = VECT2(bg_pos.x+x_margin, y_pos);
-            vect2_t content_size = VECT2(curr_hit_box->str.width, curr_hit_box->str.height);
+        for (i=begin_labels_idx; i<st->num_layout_boxes; i+=2) {
+            vect2_t label_pos = VECT2(label_x_pos, y_pos);
+            vect2_t entry_pos = VECT2 (entry_x_pos, y_pos);
 
-            vect2_t box_size;
-            layout_size_from_css_content_size (curr_hit_box->style, &content_size, &box_size);
-            box_size.x = max_width;
-            BOX_POS_SIZE (curr_hit_box->box, box_position, box_size);
+            layout_box_t *label_layout_box = &st->layout_boxes[i];
+            label_layout_box->style = &st->css_styles[CSS_LABEL];
+            label_layout_box->text_align_override = CSS_TEXT_ALIGN_RIGHT;
 
-            curr_hit_box = &st->hit_boxes[i+1];
-            curr_hit_box->style = &st->css_styles[CSS_TEXT_ENTRY];
-            curr_hit_box->box.min.x = label_align + x_step;
-            curr_hit_box->box.min.y = y_pos;
-            curr_hit_box->box.max.x = bg_pos.x + bg_min_size.x - x_margin;
-            curr_hit_box->box.max.y = y_pos + 20;
-            y_pos += 20 + y_step;
+            layout_box_t *text_entry_layout_box = &st->layout_boxes[i+1];
+            text_entry_layout_box->style = &st->css_styles[CSS_TEXT_ENTRY];
+
+            BOX_POS_SIZE (text_entry_layout_box->box, entry_pos, entry_size);
+            BOX_POS_SIZE (label_layout_box->box, label_pos, label_size);
+            y_pos += label_size.y + y_step;
         }
     }
 
-    st->hit_boxes[0].box.max.x = st->hit_boxes[0].box.min.x + bg_min_size.x;
-    st->hit_boxes[0].box.max.y = y_pos;
+    st->layout_boxes[0].box.max.x = st->layout_boxes[0].box.min.x + bg_min_size.x;
+    st->layout_boxes[0].box.max.y = y_pos;
 
     bool blit_needed = false;
     cairo_t *cr = graphics->cr;
@@ -734,12 +728,19 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
 
     if (blit_needed || update_panel) {
         int i;
-        for (i=0; i<st->num_hit_boxes; i++) {
-            if (st->hit_boxes[i].status_changed) {
+        for (i=0; i<st->num_layout_boxes; i++) {
+            if (st->layout_boxes[i].status_changed) {
                 blit_needed = true;
             }
-            css_box_t *box = st->hit_boxes[i].style;
-            css_box_draw (cr, box, &st->hit_boxes[i]);
+            css_box_t *box = st->layout_boxes[i].style;
+            css_box_draw (graphics, box, &st->layout_boxes[i]);
+#if 0
+            box_t *rect = &st->layout_boxes[i].box;
+            cairo_rectangle (cr, rect->min.x+0.5, rect->min.y+0.5, BOX_WIDTH(*rect)-1, BOX_HEIGHT(*rect)-1);
+            cairo_set_source_rgba (cr, 0.3, 0.1, 0.7, 0.6);
+            cairo_set_line_width (cr, 1);
+            cairo_stroke (cr);
+#endif
         }
     }
 
@@ -768,12 +769,25 @@ int main (void)
 
     //////////////////
     // X11 setup
+    // By default xcb is used, because it allows more granularity if we ever reach
+    // performance issues, but for cases when we need Xlib functions we have an
+    // Xlib Display too.
 
-    xcb_connection_t *connection = xcb_connect (NULL, NULL);
+    Display *dpy = XOpenDisplay (NULL);
+    if (!dpy) {
+        printf ("Could not open display\n");
+        return -1;
+    }
+
+    xcb_connection_t *connection = XGetXCBConnection (dpy); //just in case we need XCB
+    if (!connection) {
+        printf ("Could not get XCB connection from Xlib Display\n");
+        return -1;
+    }
+    XSetEventQueueOwner (dpy, XCBOwnsEventQueue);
 
     /* Get the first screen */
-    // TODO: xcb_connect() returns default screen on 2nd argument, maybe
-    // use that instead of assuming it's 0.
+    // TODO: Get the default screen instead of assuming it's 0.
     // TODO: What happens if there is more than 1 screen?, probably will
     // have to iterate with xcb_setup_roots_iterator(), and xcb_screen_next ().
     xcb_screen_t *screen = xcb_setup_roots_iterator (xcb_get_setup (connection)).data;
@@ -819,23 +833,6 @@ int main (void)
             ARRAY_SIZE(atoms),
             atoms);
 
-    // Getting visual of root window (required to get a cairo surface)
-    xcb_depth_iterator_t depth_iter;
-    xcb_visualtype_t  *root_window_visual = NULL;
-
-    depth_iter = xcb_screen_allowed_depths_iterator (screen);
-    for (; depth_iter.rem; xcb_depth_next (&depth_iter)) {
-        xcb_visualtype_iterator_t visual_iter;
-
-        visual_iter = xcb_depth_visuals_iterator (depth_iter.data);
-        for (; visual_iter.rem; xcb_visualtype_next (&visual_iter)) {
-            if (screen->root_visual == visual_iter.data->visual_id) {
-                root_window_visual = visual_iter.data;
-                break;
-            }
-        }
-    }
-
     xcb_gcontext_t  gc = xcb_generate_id (connection);
     xcb_pixmap_t backbuffer = xcb_generate_id (connection);
     xcb_create_gc (connection, gc, window, 0, values);
@@ -849,17 +846,26 @@ int main (void)
     xcb_map_window (connection, window);
     xcb_flush (connection);
 
-    cairo_surface_t *surface = cairo_xcb_surface_create (connection, backbuffer, root_window_visual, WINDOW_WIDTH, WINDOW_HEIGHT);
+    // Create a cairo surface on window
+    //
+    // NOTE: Ideally we should be using cairo_xcb_* functions, but font
+    // options are ignored because the patch that added this functionality was
+    // disabled, so we are forced to use cairo_xlib_* functions.
+    // TODO: Check the function _cairo_xcb_screen_get_font_options () in
+    // <cairo>/src/cairo-xcb-screen.c and see if the issue has been resolved, if
+    // it has, then go back to xcb for consistency with the rest of the code.
+    // (As of git cffa452f44e it hasn't been solved).
+    Visual *default_visual = DefaultVisual(dpy, DefaultScreen(dpy));
+    cairo_surface_t *surface =
+        cairo_xlib_surface_create (dpy, window, default_visual,
+                                   WINDOW_WIDTH, WINDOW_HEIGHT);
     cairo_t *cr = cairo_create (surface);
 
-    // Creating a PangoLayout for text handling
+    // PangoLayout for text handling
     PangoLayout *text_layout = pango_cairo_create_layout (cr);
     PangoFontDescription *font_desc = pango_font_description_from_string ("Open Sans 9");
     pango_layout_set_font_description (text_layout, font_desc);
     pango_font_description_free (font_desc);
-
-    cairo_select_font_face (cr, "Open Sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
-    cairo_set_font_size (cr, 12.5);
 
     // ////////////////
     // Main event loop
@@ -949,7 +955,7 @@ int main (void)
             backbuffer = xcb_generate_id (connection);
             xcb_create_pixmap (connection, screen->root_depth, backbuffer, window,
                     pixmap_width, pixmap_height);
-            cairo_xcb_surface_set_drawable (cairo_get_target (graphics.cr), backbuffer,
+            cairo_xlib_surface_set_drawable (cairo_get_target (graphics.cr), backbuffer,
                     pixmap_width, pixmap_height);
             make_pixmap_bigger = false;
         }

@@ -52,8 +52,8 @@ void set_box_from_pos_and_size (box_t *box, double x, double y, double width, do
                                           (box).min.y=(n_y);(box).max.y=(n_y)+(n_h);}
 #define BOX_POS_SIZE(box,pos,size) BOX_X_Y_W_H(box,(pos).x,(pos).y,(size).x,(size).y)
 
-#define BOX_WIDTH(box) (box.max.x-box.min.x)
-#define BOX_HEIGHT(box) (box.max.y-box.min.y)
+#define BOX_WIDTH(box) ((box).max.x-(box).min.x)
+#define BOX_HEIGHT(box) ((box).max.y-(box).min.y)
 
 double vect2_distance (vect2_t *v1, vect2_t *v2)
 {

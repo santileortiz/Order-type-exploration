@@ -9,6 +9,24 @@
 int _g_gui_num_colors = 0;
 vect4_t _g_gui_colors[50];
 
+typedef struct {
+    double scale;
+    double dx;
+    double dy;
+} transf_t;
+
+// TODO: Maybe in the future we want this to be defined for each different
+// plattform we support. Maybe move _width_ and _height_ to app_input_t. Also
+// _T_ does not belong here, it belongs to a "canvas" state, but we don't have
+// that yet.
+typedef struct {
+    cairo_t *cr;
+    PangoLayout *text_layout;
+    uint16_t width;
+    uint16_t height;
+    transf_t T;
+} app_graphics_t;
+
 void rounded_box_path (cairo_t *cr, double x, double y, double width, double height, double radius)
 {
     cairo_move_to (cr, x, y+radius);
@@ -34,8 +52,12 @@ typedef struct {
     char *s;
     double width;
     double height;
-    double x_bearing;
-    double y_bearing;
+
+    // NOTE: This is a vector, that goes from the point where cairo was when the
+    // text was drawn, to the top left corner of the logical rectangle (origin). We
+    // compute position thinking about the origin, and in the end we subtract
+    // pos.
+    vect2_t pos;
 } sized_string_t;
 
 typedef enum {
@@ -57,6 +79,7 @@ typedef enum {
 } css_style_t;
 
 typedef enum {
+    CSS_TEXT_ALIGN_INITIAL,
     CSS_TEXT_ALIGN_CENTER,
     CSS_TEXT_ALIGN_LEFT,
     CSS_TEXT_ALIGN_RIGHT
@@ -84,20 +107,23 @@ typedef struct {
 typedef struct {
     box_t box;
     bool status_changed;
-    vect2_t content_position;
     hit_status_t status;
+    css_text_align_t text_align_override;
     css_box_t *style;
     sized_string_t str;
-} hit_box_t;
+} layout_box_t;
 
-void sized_string_compute (sized_string_t *res, cairo_t *cr, char *str)
+void sized_string_compute (sized_string_t *res, PangoLayout *pango_layout, char *str)
 {
-    cairo_text_extents_t extents;
-    cairo_text_extents (cr, str, &extents);
-    res->width = extents.width;
-    res->height = extents.height;
-    res->y_bearing = extents.y_bearing;
-    res->x_bearing = extents.x_bearing;
+    pango_layout_set_text (pango_layout, str, -1);
+
+    PangoRectangle logical;
+    pango_layout_get_pixel_extents (pango_layout, NULL, &logical);
+
+    res->width = logical.width;
+    res->height = logical.height;
+    res->pos.x = logical.x;
+    res->pos.y = logical.y;
 }
 
 void css_box_compute_content_width_and_position (cairo_t *cr, css_box_t *box, char *label)
@@ -120,14 +146,16 @@ void layout_size_from_css_content_size (css_box_t *css_box,
     layout_size->x = MAX(css_box->min_width, css_content_size->x)
                      + 2*(css_box->padding_x + css_box->border_width);
     layout_size->y = MAX(css_box->min_height, css_content_size->y)
-                     + 2*(css_box->padding_x + css_box->border_width);
+                     + 2*(css_box->padding_y + css_box->border_width);
 }
 
-void css_box_draw (cairo_t *cr, css_box_t *box, hit_box_t *layout)
+void css_box_draw (app_graphics_t *gr, css_box_t *box, layout_box_t *layout)
 {
+    cairo_t *cr = gr->cr;
     cairo_save (cr);
     cairo_translate (cr, layout->box.min.x, layout->box.min.y);
 
+    // NOTE: This is the css content+padding.
     double content_width = BOX_WIDTH(layout->box) - 2*(box->border_width);
     double content_height = BOX_HEIGHT(layout->box) - 2*(box->border_width);
 
@@ -174,23 +202,43 @@ void css_box_draw (cairo_t *cr, css_box_t *box, hit_box_t *layout)
     cairo_stroke (cr);
 
     double text_pos_x, text_pos_y;
-    switch (box->text_align) {
+    css_text_align_t effective_text_align;
+    if (layout->text_align_override != CSS_TEXT_ALIGN_INITIAL) {
+        effective_text_align = layout->text_align_override;
+    } else {
+        effective_text_align = box->text_align;
+    }
+    switch (effective_text_align) {
         case CSS_TEXT_ALIGN_LEFT:
-            text_pos_x = layout->str.x_bearing;
+            text_pos_x = -layout->str.pos.x;
             break;
         case CSS_TEXT_ALIGN_RIGHT:
-            text_pos_x = content_width - layout->str.width + layout->str.x_bearing;
+            text_pos_x = content_width - layout->str.width - layout->str.pos.x;
             break;
         default: // CSS_TEXT_ALIGN_CENTER
-            text_pos_x = (content_width - layout->str.width)/2 + layout->str.x_bearing;
+            text_pos_x = (content_width - layout->str.width)/2 - layout->str.pos.x;
             break;
     }
-    text_pos_y = (content_height - layout->str.height)/2 - layout->str.y_bearing;
+    text_pos_y = (content_height - layout->str.height)/2 - layout->str.pos.y;
 
-    cairo_move_to (cr, text_pos_x, text_pos_y);
-    cairo_set_source_rgba (cr, box->color.r, box->color.g, box->color.b,
-                          box->color.a);
-    cairo_show_text (cr, layout->str.s);
+    if (layout->str.s != '\0') {
+        cairo_move_to (cr, text_pos_x, text_pos_y);
+        cairo_set_source_rgba (cr, box->color.r, box->color.g, box->color.b,
+                               box->color.a);
+        PangoLayout *pango_layout = gr->text_layout;
+        pango_layout_set_text (pango_layout, layout->str.s, -1);
+        pango_cairo_show_layout (cr, pango_layout);
+#if 0
+        cairo_set_source_rgba (cr, 1.0, 0.0, 0.0, 0.3);
+        cairo_rectangle (cr, box->border_width, box->border_width, content_width, content_height);
+        cairo_fill (cr);
+
+        cairo_set_source_rgba (cr, 0.0, 1.0, 0.0, 0.3);
+        cairo_rectangle (cr, text_pos_x+layout->str.pos.x, text_pos_y+layout->str.pos.y,
+                         layout->str.width, layout->str.height);
+        cairo_fill (cr);
+#endif
+    }
 
     cairo_restore (cr);
 }
@@ -261,7 +309,6 @@ void init_text_entry (css_box_t *box)
     *box = (css_box_t){0};
     box->border_radius = 2.5;
     box->border_width = 1;
-    box->min_height = 20;
     box->padding_x = 3;
     box->padding_y = 3;
     box->background_color = RGB(0.96, 0.96, 0.96);
@@ -278,7 +325,6 @@ void init_text_entry_focused (css_box_t *box)
     *box = (css_box_t){0};
     box->border_radius = 2.5;
     box->border_width = 1;
-    box->min_height = 20;
     box->padding_x = 3;
     box->padding_y = 3;
     box->background_color = RGB(0.96, 0.96, 0.96);
