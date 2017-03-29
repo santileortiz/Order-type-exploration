@@ -70,10 +70,22 @@ typedef enum {
 } iterator_mode_t;
 
 typedef struct {
+    int i;
+    char str[20];
+} int_string_t;
+
+void int_string_update (int_string_t *x, int i)
+{
+    x->i = i;
+    snprintf (x->str, ARRAY_SIZE(x->str), "%d", i);
+}
+
+typedef struct {
     int app_is_initialized;
-    int n;
-    int k;
+    int_string_t n;
+    int_string_t ot_id;
     order_type_t *ot;
+    int_string_t k;
     int db;
 
     cairo_matrix_t transf;
@@ -104,6 +116,9 @@ typedef struct {
 
     int storage_size;
     memory_stack_t memory;
+
+    // NOTE: This will be cleared at every frame start
+    memory_stack_t temporary_memory;
 
     int num_entities;
     entity_t entities[300];
@@ -176,12 +191,13 @@ void draw_entities (app_state_t *st, app_graphics_t *graphics)
 
     int idx[3];
     int i;
+    int n = st->n.i;
 
     vect2_t *pts = st->visible_pts;
 
     cairo_set_source_rgb (graphics->cr, 0, 0, 0);
-    for (i=0; i<binomial(st->n, 2); i++) {
-        subset_it_idx_for_id (i, st->n, idx, 2);
+    for (i=0; i<binomial(n, 2); i++) {
+        subset_it_idx_for_id (i, n, idx, 2);
         vect2_t p1 = pts[idx[0]];
         vect2_t p2 = pts[idx[1]];
         draw_segment (graphics, p1, p2, 1);
@@ -192,13 +208,13 @@ void draw_entities (app_state_t *st, app_graphics_t *graphics)
         cairo_set_source_rgb (graphics->cr, entity->color.r, entity->color.g, entity->color.b);
         switch (entity->type) {
             case segment: {
-                subset_it_idx_for_id (entity->id, st->n, idx, 2);
+                subset_it_idx_for_id (entity->id, n, idx, 2);
                 vect2_t p1 = pts[idx[0]];
                 vect2_t p2 = pts[idx[1]];
                 draw_segment (graphics, p1, p2, 1);
                 } break;
             case triangle: {
-                subset_it_idx_for_id (entity->id, st->n, idx, 3);
+                subset_it_idx_for_id (entity->id, n, idx, 3);
                 draw_triangle (graphics, pts[idx[0]], pts[idx[1]], pts[idx[2]]);
                 } break;
             default:
@@ -207,7 +223,7 @@ void draw_entities (app_state_t *st, app_graphics_t *graphics)
     }
 
     cairo_set_source_rgb (graphics->cr, 0, 0, 0);
-    for (i=0; i<st->n; i++) {
+    for (i=0; i<n; i++) {
         char str[4];
         snprintf (str, ARRAY_SIZE(str), "%i", i);
         draw_point (graphics, pts[i], str);
@@ -245,25 +261,28 @@ void focus_order_type (app_graphics_t *graphics, app_state_t *st)
 
 void set_ot (app_state_t *st)
 {
+    int_string_update (&st->ot_id, st->ot->id);
+
+    int n = st->n.i;
     int i;
     if (!st->view_db_ot) {
-        if (st->ot->id == 0 && st->n>5) {
-            char ot[order_type_size(st->n)];
+        if (st->ot->id == 0 && n>5) {
+            char ot[order_type_size(n)];
             order_type_t *cvx_ot = (order_type_t*)ot;
             cvx_ot->n = st->ot->n;
             cvx_ot->id = 0;
             convex_ot (cvx_ot);
-            for (i=0; i<st->n; i++) {
+            for (i=0; i<n; i++) {
                 st->visible_pts[i] = v2_from_v2i (cvx_ot->pts[i]);
             }
         } else {
             // TODO: Look for a file with a visualization of the order type
-            for (i=0; i<st->n; i++) {
+            for (i=0; i<n; i++) {
                 st->visible_pts[i] = v2_from_v2i (st->ot->pts[i]);
             }
         }
     } else {
-        for (i=0; i<st->n; i++) {
+        for (i=0; i<n; i++) {
             st->visible_pts[i] = v2_from_v2i (st->ot->pts[i]);
         }
     }
@@ -273,23 +292,23 @@ void set_n (app_state_t *st, int n, app_graphics_t *graphics)
 {
     st->memory.used = 0; // Clears all storage
 
-    st->n = n;
-    int t_n = thrackle_size (st->n);
+    int_string_update (&st->n, n);
+    int t_n = thrackle_size (n);
     if (t_n == -1) {
-        st->k = thrackle_size_lower_bound (st->n);
+        int_string_update (&st->k, thrackle_size_lower_bound (n));
     } else {
-        st->k = t_n;
+        int_string_update (&st->k, t_n);
     }
 
     st->ot = order_type_new (10, &st->memory);
-    open_database (st->n);
-    st->ot->n = st->n;
+    open_database (n);
+    st->ot->n = n;
     db_next (st->ot);
     set_ot (st);
 
-    st->triangle_it = subset_it_new (st->n, 3, &st->memory);
+    st->triangle_it = subset_it_new (n, 3, &st->memory);
     subset_it_precompute (st->triangle_it);
-    st->triangle_set_it = subset_it_new (st->triangle_it->size, st->k, &st->memory);
+    st->triangle_set_it = subset_it_new (st->triangle_it->size, st->k.i, &st->memory);
     focus_order_type (graphics, st);
 }
 
@@ -393,6 +412,116 @@ bool button (char *label, app_graphics_t *gr, double x, double y, app_state_t *s
     //}
 }
 
+typedef struct {
+    double label_align;
+    vect2_t label_size;
+    int current_label_layout;
+    layout_box_t *label_layouts;
+
+    double entry_align;
+    vect2_t entry_size;
+    double row_height;
+    double y_step;
+    double x_step;
+    double y_pos;
+    double x_pos;
+} labeled_entries_layout_t;
+
+void init_labeled_layout (labeled_entries_layout_t *layout_state, app_graphics_t *graphics,
+                          double x_step, double y_step, double x, double y, double width,
+                          char** labels, int num_labels, app_state_t *st)
+{
+    double max_width = 0, max_height = 0;
+    int i;
+
+    layout_state->label_layouts = push_array (&st->temporary_memory,
+                                              num_labels, layout_box_t);
+    css_box_t *label_style = &st->css_styles[CSS_LABEL];
+    for (i=0; i<num_labels; i++) {
+        layout_box_t *curr_layout_box = &layout_state->label_layouts[i];
+        curr_layout_box->str.s = labels[i];
+        sized_string_compute (&curr_layout_box->str, label_style,
+                              graphics->text_layout, labels[i]);
+        max_width = MAX (max_width, curr_layout_box->str.width);
+        max_height = MAX (max_height, curr_layout_box->str.height);
+    }
+    vect2_t max_string_size = VECT2(max_width, max_height);
+    layout_size_from_css_content_size (label_style, &max_string_size,
+                                       &layout_state->label_size);
+
+    layout_size_from_css_content_size (&st->css_styles[CSS_TEXT_ENTRY],
+                                       &max_string_size, &layout_state->entry_size);
+    layout_state->row_height = MAX(layout_state->label_size.y, layout_state->entry_size.y);
+    layout_state->label_size.y = layout_state->row_height;
+    layout_state->entry_size.y = layout_state->row_height;
+
+    layout_state->label_align = x;
+    layout_state->entry_align = x+layout_state->label_size.x+x_step;
+    layout_state->entry_size.x = width-layout_state->entry_align;
+    layout_state->x_step = x_step;
+    layout_state->y_step = y_step;
+    layout_state->y_pos = y;
+    layout_state->x_pos = x;
+    layout_state->current_label_layout = 0;
+}
+
+layout_box_t* next_layout_box (app_state_t *st)
+{
+    layout_box_t *layout_box = &st->layout_boxes[st->num_layout_boxes];
+    st->num_layout_boxes++;
+    return layout_box;
+}
+
+void labeled_text_entry (char *entry_content, labeled_entries_layout_t *layout_state, app_state_t *st)
+{
+    vect2_t label_pos = VECT2(layout_state->label_align, layout_state->y_pos);
+    vect2_t entry_pos = VECT2(layout_state->entry_align, layout_state->y_pos);
+
+    layout_box_t *label_layout_box = next_layout_box(st);
+    *label_layout_box = layout_state->label_layouts[layout_state->current_label_layout];
+    layout_state->current_label_layout++;
+    label_layout_box->style = &st->css_styles[CSS_LABEL];
+    label_layout_box->text_align_override = CSS_TEXT_ALIGN_RIGHT;
+
+    layout_box_t *text_entry_layout_box = next_layout_box(st);
+    text_entry_layout_box->style = &st->css_styles[CSS_TEXT_ENTRY];
+    text_entry_layout_box->str.s = entry_content;
+
+    BOX_POS_SIZE (text_entry_layout_box->box, entry_pos, layout_state->entry_size);
+    BOX_POS_SIZE (label_layout_box->box, label_pos, layout_state->label_size);
+    layout_state->y_pos += layout_state->row_height + layout_state->y_step;
+}
+
+void title (char *str, labeled_entries_layout_t *layout_state, app_state_t *st, app_graphics_t *graphics)
+{
+    layout_box_t *title = next_layout_box (st);
+    title->style = &st->css_styles[CSS_TITLE_LABEL];
+    title->str.s = str;
+    sized_string_compute (&title->str, title->style, graphics->text_layout, title->str.s);
+
+    vect2_t content_size = VECT2 (title->str.width, title->str.height);
+    vect2_t title_size;
+    layout_size_from_css_content_size (title->style, &content_size, &title_size);
+    BOX_POS_SIZE (title->box, VECT2(layout_state->x_pos, layout_state->y_pos), title_size);
+    layout_state->y_pos += title_size.y + layout_state->y_step;
+}
+
+DRAW_CALLBACK(draw_separator)
+{
+    cairo_t *cr = gr->cr;
+    box_t *box = &layout->box;
+    cairo_set_line_width (cr, 1);
+    cairo_set_source_rgba (cr, 0, 0, 0, 0.25);
+    cairo_move_to (cr, box->min.x, box->min.y+0.5);
+    cairo_line_to (cr, box->max.x, box->min.y+0.5);
+    cairo_stroke (cr);
+
+    cairo_set_source_rgba (cr, 1, 1, 1, 0.8);
+    cairo_move_to (cr, box->min.x, box->min.y+1.5);
+    cairo_line_to (cr, box->max.x, box->min.y+1.5);
+    cairo_stroke (cr);
+}
+
 int end_execution = 0;
 
 bool update_and_render (app_graphics_t *graphics, app_input_t input)
@@ -407,8 +536,12 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
         st->storage_size = storage_size;
         memory_stack_init (&st->memory, st->storage_size-sizeof(app_state_t), memory+sizeof(app_state_t));
 
-        st->n = 8;
-        st->k = thrackle_size (st->n);
+        int temp_memory_size =  megabyte(10);
+        uint8_t* temp_memory = calloc (temp_memory_size, 1);
+        memory_stack_init (&st->temporary_memory, temp_memory_size, temp_memory);
+
+        int_string_update (&st->n, 8);
+        int_string_update (&st->k, thrackle_size (st->n.i));
 
         st->it_mode = iterate_order_type;
         st->user_number = -1;
@@ -427,7 +560,7 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
         st->min_distance_for_drag = 10;
         st->view_db_ot = false;
 
-        set_n (st, st->n, graphics);
+        set_n (st, st->n.i, graphics);
 
         init_button (&st->css_styles[CSS_BUTTON]);
         init_pressed_button (&st->css_styles[CSS_BUTTON_ACTIVE]);
@@ -440,6 +573,8 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
 
         redraw = 1;
     }
+
+    st->temporary_memory.used = 0;
 
     if (10 <= input.keycode && input.keycode < 20) { // KEY_0-9
         if (st->user_number ==-1) {
@@ -511,7 +646,7 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
                 focus_order_type (graphics, st);
 
             } else if (st->it_mode == iterate_n) {
-                int n = st->n;
+                int n = st->n.i;
                 if (XCB_KEY_BUT_MASK_SHIFT & input.modifiers
                         || input.keycode == 113) {
                     n--;
@@ -638,62 +773,34 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
     double x_margin = 12, x_step = 12;
     double y_margin = 12, y_step = 12;
 
-    double y_pos = bg_pos.y + y_margin;
-    double max_width = 0, max_height = 0;
-
-
     char *entry_labels[] = {"n:",
                             "Order Type:",
                             "k:",
                             "Triangle Set:",
                             "Edge Disj. Set:",
                             "Thrackle:"};
-    int begin_labels_idx = st->num_layout_boxes;
+    labeled_entries_layout_t lay;
+    init_labeled_layout (&lay, graphics, x_step, y_step,
+                         bg_pos.x+x_margin, bg_pos.y+y_margin, bg_min_size.x,
+                         entry_labels, ARRAY_SIZE(entry_labels), st);
+
+    title ("Point Set", &lay, st, graphics);
+    labeled_text_entry (st->n.str, &lay, st);
+    labeled_text_entry (st->ot_id.str, &lay, st);
     {
-        int i;
-        for (i=0; i<ARRAY_SIZE(entry_labels); i++) {
-            layout_box_t *curr_layout_box = &st->layout_boxes[st->num_layout_boxes];
-            // NOTE: Leave one empty box for the text entry
-            st->num_layout_boxes+=2;
-            curr_layout_box->str.s = entry_labels[i];
-            sized_string_compute (&curr_layout_box->str, graphics->text_layout, entry_labels[i]);
-            max_width = MAX (max_width, curr_layout_box->str.width);
-            max_height = MAX (max_height, curr_layout_box->str.height);
-        }
+        layout_box_t *sep = next_layout_box (st);
+        BOX_X_Y_W_H(sep->box, lay.x_pos, lay.y_pos, bg_min_size.x-2*x_margin, 2);
+        sep->draw = draw_separator;
+        lay.y_pos += lay.y_step;
     }
-
-    {
-        vect2_t max_string_size = VECT2(max_width, max_height);
-        vect2_t label_size;
-        layout_size_from_css_content_size (&st->css_styles[CSS_LABEL], &max_string_size, &label_size);
-
-        vect2_t entry_size;
-        layout_size_from_css_content_size (&st->css_styles[CSS_TEXT_ENTRY], &max_string_size, &entry_size);
-        label_size.y = MAX(label_size.y, entry_size.y);
-        entry_size.y = MAX(label_size.y, entry_size.y);
-
-        double label_x_pos = bg_pos.x+x_margin;
-        double entry_x_pos = bg_pos.x+x_margin+label_size.x+x_step;
-        int i;
-        for (i=begin_labels_idx; i<st->num_layout_boxes; i+=2) {
-            vect2_t label_pos = VECT2(label_x_pos, y_pos);
-            vect2_t entry_pos = VECT2 (entry_x_pos, y_pos);
-
-            layout_box_t *label_layout_box = &st->layout_boxes[i];
-            label_layout_box->style = &st->css_styles[CSS_LABEL];
-            label_layout_box->text_align_override = CSS_TEXT_ALIGN_RIGHT;
-
-            layout_box_t *text_entry_layout_box = &st->layout_boxes[i+1];
-            text_entry_layout_box->style = &st->css_styles[CSS_TEXT_ENTRY];
-
-            BOX_POS_SIZE (text_entry_layout_box->box, entry_pos, entry_size);
-            BOX_POS_SIZE (label_layout_box->box, label_pos, label_size);
-            y_pos += label_size.y + y_step;
-        }
-    }
+    title ("Triangle Sets", &lay, st, graphics);
+    labeled_text_entry (st->k.str, &lay, st);
+    labeled_text_entry ("0", &lay, st);
+    labeled_text_entry ("-", &lay, st);
+    labeled_text_entry ("-", &lay, st);
 
     st->layout_boxes[0].box.max.x = st->layout_boxes[0].box.min.x + bg_min_size.x;
-    st->layout_boxes[0].box.max.y = y_pos;
+    st->layout_boxes[0].box.max.y = lay.y_pos;
 
     bool blit_needed = false;
     cairo_t *cr = graphics->cr;
@@ -715,7 +822,7 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
 
         int i;
         get_next_color (0);
-        for (i=0; i<st->k; i++) {
+        for (i=0; i<st->k.i; i++) {
             vect3_t color;
             get_next_color (&color);
             triangle_entity_add (st, st->triangle_set_it->idx[i], color);
@@ -732,8 +839,16 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
             if (st->layout_boxes[i].status_changed) {
                 blit_needed = true;
             }
-            css_box_t *box = st->layout_boxes[i].style;
-            css_box_draw (graphics, box, &st->layout_boxes[i]);
+            css_box_t *style = st->layout_boxes[i].style;
+            layout_box_t *layout = &st->layout_boxes[i];
+            if (layout->style != NULL) {
+                css_box_draw (graphics, style, layout);
+            } else if (layout->draw != NULL) {
+                layout->draw (graphics, layout);
+            } else {
+                invalid_code_path;
+            }
+
 #if 0
             box_t *rect = &st->layout_boxes[i].box;
             cairo_rectangle (cr, rect->min.x+0.5, rect->min.y+0.5, BOX_WIDTH(*rect)-1, BOX_HEIGHT(*rect)-1);

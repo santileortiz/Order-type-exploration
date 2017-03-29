@@ -85,36 +85,64 @@ typedef enum {
     CSS_TEXT_ALIGN_RIGHT
 } css_text_align_t;
 
+typedef enum {
+    CSS_FONT_WEIGHT_NORMAL,
+    CSS_FONT_WEIGHT_BOLD
+} css_font_weight_t;
+
 typedef struct {
     double border_radius;
     vect4_t border_color;
     double border_width;
     double padding_x;
     double padding_y;
-    //double width;
     double min_width;
-    //double height;
     double min_height;
     vect4_t background_color;
     vect4_t color;
 
     css_text_align_t text_align;
+    css_font_weight_t font_weight;
 
     int num_gradient_stops;
     vect4_t *gradient_stops;
 } css_box_t;
 
-typedef struct {
+typedef struct layout_box_t layout_box_t;
+#define DRAW_CALLBACK(name) void name(app_graphics_t *gr, layout_box_t *layout)
+typedef DRAW_CALLBACK(draw_callback_t);
+struct layout_box_t {
     box_t box;
     bool status_changed;
     hit_status_t status;
     css_text_align_t text_align_override;
     css_box_t *style;
+    draw_callback_t *draw;
     sized_string_t str;
-} layout_box_t;
+};
 
-void sized_string_compute (sized_string_t *res, PangoLayout *pango_layout, char *str)
+void update_font_description (css_box_t *box, PangoLayout *pango_layout)
 {
+    const PangoFontDescription *orig_font_desc = pango_layout_get_font_description (pango_layout);
+    PangoFontDescription *new_font_desc = pango_font_description_copy (orig_font_desc);
+    if (box->font_weight == CSS_FONT_WEIGHT_NORMAL) {
+        pango_font_description_set_weight (new_font_desc, PANGO_WEIGHT_NORMAL);
+    } else {
+        pango_font_description_set_weight (new_font_desc, PANGO_WEIGHT_BOLD);
+    }
+    pango_layout_set_font_description (pango_layout, new_font_desc);
+}
+
+void sized_string_compute (sized_string_t *res, css_box_t *style, PangoLayout *pango_layout, char *str)
+{
+    // TODO: Try to refactor code so this fuction does not receive a PangoLayout
+    // but creates it.
+    update_font_description (style, pango_layout);
+
+    // NOTE: I have the hunch that calls into Pango will be slow, so we ideally
+    // would like to call this function just once for each string that needs to
+    // be computed.
+    // TODO: Time this function and check if it's really a problem.
     pango_layout_set_text (pango_layout, str, -1);
 
     PangoRectangle logical;
@@ -201,31 +229,35 @@ void css_box_draw (app_graphics_t *gr, css_box_t *box, layout_box_t *layout)
     cairo_set_line_width (cr, box->border_width);
     cairo_stroke (cr);
 
-    double text_pos_x, text_pos_y;
-    css_text_align_t effective_text_align;
-    if (layout->text_align_override != CSS_TEXT_ALIGN_INITIAL) {
-        effective_text_align = layout->text_align_override;
-    } else {
-        effective_text_align = box->text_align;
-    }
-    switch (effective_text_align) {
-        case CSS_TEXT_ALIGN_LEFT:
-            text_pos_x = -layout->str.pos.x;
-            break;
-        case CSS_TEXT_ALIGN_RIGHT:
-            text_pos_x = content_width - layout->str.width - layout->str.pos.x;
-            break;
-        default: // CSS_TEXT_ALIGN_CENTER
-            text_pos_x = (content_width - layout->str.width)/2 - layout->str.pos.x;
-            break;
-    }
-    text_pos_y = (content_height - layout->str.height)/2 - layout->str.pos.y;
-
     if (layout->str.s != '\0') {
+        PangoLayout *pango_layout = gr->text_layout;
+        double text_pos_x = box->border_width, text_pos_y = box->border_width;
+        sized_string_compute (&layout->str, box, pango_layout, layout->str.s);
+
+        css_text_align_t effective_text_align;
+        if (layout->text_align_override != CSS_TEXT_ALIGN_INITIAL) {
+            effective_text_align = layout->text_align_override;
+        } else {
+            effective_text_align = box->text_align;
+        }
+        switch (effective_text_align) {
+            case CSS_TEXT_ALIGN_LEFT:
+                text_pos_x += -layout->str.pos.x;
+                break;
+            case CSS_TEXT_ALIGN_RIGHT:
+                text_pos_x += content_width - layout->str.width - layout->str.pos.x;
+                break;
+            default: // CSS_TEXT_ALIGN_CENTER
+                text_pos_x += (content_width - layout->str.width)/2 - layout->str.pos.x;
+                break;
+        }
+        text_pos_y += (content_height - layout->str.height)/2 - layout->str.pos.y;
+
+        update_font_description (box, pango_layout);
+
         cairo_move_to (cr, text_pos_x, text_pos_y);
         cairo_set_source_rgba (cr, box->color.r, box->color.g, box->color.b,
                                box->color.a);
-        PangoLayout *pango_layout = gr->text_layout;
         pango_layout_set_text (pango_layout, layout->str.s, -1);
         pango_cairo_show_layout (cr, pango_layout);
 #if 0
@@ -348,6 +380,7 @@ void init_title_label (css_box_t *box)
     *box = (css_box_t){0};
     box->background_color = RGBA(0, 0, 0, 0);
     box->color = RGBA(0.2, 0.2, 0.2, 0.7);
+    box->font_weight = CSS_FONT_WEIGHT_BOLD;
 }
 
 #define GUI_H
