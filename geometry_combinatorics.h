@@ -1,6 +1,7 @@
 #if !defined(GEOMETRY_COMBINATORICS_H)
 #include <math.h>
 #include <time.h>
+#include <string.h>
 #include "common.h"
 
 // TODO: These are 128 bit structs, they may take up a lot of space, maybe have
@@ -1096,7 +1097,7 @@ bool matching_backtrack (int *l, int *curr_seq, int domain_size, bool *S_l,
                          int *num_invalid, int *invalid_restore_indx, int *invalid_perms)
 {
     (*l)--;
-    if (*l >= 1) {
+    if (*l >= 0) {
         int i;
         for (i=curr_seq[*l]+1; i<domain_size; i++) {
             S_l[i] = true;
@@ -1112,6 +1113,9 @@ bool matching_backtrack (int *l, int *curr_seq, int domain_size, bool *S_l,
         return false;
     }
 }
+
+void edges_from_permutation (int *all_perms, int perm, int n, int *e);
+void print_2_regular_cycle_decomposition (int *edges, int n);
 
 void matching_decompositions_over_complete_bipartite_graphs (int n)
 {
@@ -1137,7 +1141,13 @@ void matching_decompositions_over_complete_bipartite_graphs (int n)
 
     while (l>0) {
         if (l==n) {
-            print_decomp (n, decomp, all_perms);
+            int edges [4*n];
+            edges_from_permutation (all_perms, decomp[n-1], n, edges);
+            edges_from_permutation (all_perms, decomp[n-2], n, edges+2*n);
+            print_2_regular_cycle_decomposition (edges, n);
+
+            //print_decomp (n, decomp, all_perms);
+            //array_print (decomp, n);
             if (!matching_backtrack (&l, decomp, num_perms, S_l,
                                      &num_invalid, invalid_restore_indx, invalid_perms)) {
                 continue;
@@ -1178,6 +1188,144 @@ void matching_decompositions_over_complete_bipartite_graphs (int n)
             }
         }
     }
+}
+
+// TODO: Currently we receive an array of all permutations of which _perm_ is an
+// index, write an algorithm that computes it instead.
+void edges_from_permutation (int *all_perms, int perm, int n, int *e)
+{
+    // NOTE: _e_ has to be of size 2*n
+   int *permutation = &all_perms[perm*n];
+   int i;
+   for (i=0; i<n; i++) {
+       e[2*i] = i;
+       e[2*i+1] = permutation[i]+n-1;
+   }
+}
+
+void edges_from_edge_subset (int *graph, int n, int *e)
+{
+    int i;
+    for (i=0; i<2*n; i++) {
+        e[2*i] = graph[i]/n;
+        e[2*i+1] = graph[i]%n + n;
+    }
+}
+
+// NOTE: num_edges = ARRAY_SIZE(edges)/2
+void print_edges (int *edges, int num_edges)
+{
+    int i;
+    for (i=0; i<num_edges; i++) {
+        array_print (edges, 2);
+        edges += 2;
+    }
+    printf ("\n");
+}
+
+typedef struct {
+    int id;
+    bool visited;
+    int next_neighbor;
+    int neighbors[2];
+} order_2_node_t;
+
+order_2_node_t* next_not_visited (order_2_node_t *trav_graph, int size)
+{
+    int i;
+    for (i=0; i<size; i++) {
+        order_2_node_t *node = &trav_graph[i];
+        if (!node->visited) {
+            return &trav_graph[i];
+        }
+    }
+    return NULL;
+}
+
+void print_2_regular_cycle_decomposition (int *edges, int n)
+{
+    order_2_node_t trav_graph[2*n];
+    memset (trav_graph, 0, sizeof(order_2_node_t)*ARRAY_SIZE(trav_graph));
+    int i;
+    for (i=0; i<ARRAY_SIZE(trav_graph); i++) {
+        trav_graph[i].id = i;
+    }
+
+    int *e = edges;
+    for (i=0; i<2*n; i++) {
+        order_2_node_t *node = &trav_graph[e[0]];
+        node->neighbors[node->next_neighbor] = e[1];
+        node->next_neighbor++;
+
+        node = &trav_graph[e[1]];
+        node->neighbors[node->next_neighbor] = e[0];
+        node->next_neighbor++;
+        e += 2;
+    }
+
+    // NOTE: cycle_count[i] counts how many cycles of size 2*(i+2) are there.
+    int cycle_count[n-1];
+    array_clear (cycle_count, ARRAY_SIZE(cycle_count));
+    order_2_node_t *curr;
+    while ((curr = next_not_visited (trav_graph, ARRAY_SIZE(trav_graph)))) {
+        int start = curr->id;
+        int next_id = curr->neighbors[0];
+        int cycle_size = 0;
+        do {
+            cycle_size++;
+            int prev_id = curr->id;
+            curr->visited = true;
+            curr = &trav_graph[next_id];
+            next_id = curr->neighbors[0] == prev_id? curr->neighbors[1] : curr->neighbors[0];
+        } while (curr->id != start);
+        cycle_count[cycle_size/2-2]++;
+    }
+    array_print (cycle_count, ARRAY_SIZE(cycle_count));
+}
+
+
+int count_2_regular_subgraphs_of_k_n_n (int n)
+{
+    // A subset of k_n_n edges of size 2*n
+    int e_subs_2_n[2*n];
+
+    int i;
+    //for (i=0; i<n-1; i++) {
+    //    printf ("%d ", 2*(i+2));
+    //}
+    //printf ("\n");
+    //for (i=0; i<2*n-3; i++) {
+    //    printf ("-");
+    //}
+    //printf ("\n");
+
+    uint64_t num_subgraphs = binomial (n*n, 2*n);
+    int count = 0;
+    for (i=0; i<num_subgraphs; i++) {
+        int node_orders[2*n];
+        array_clear (node_orders, ARRAY_SIZE(node_orders));
+        subset_it_idx_for_id (i, n*n, e_subs_2_n, ARRAY_SIZE(e_subs_2_n));
+
+        bool is_regular = true;
+        int edges[4*n]; // 2vertices * 2partite * n
+        edges_from_edge_subset (e_subs_2_n, n, edges);
+
+        int *e;
+        for (e=edges; e < edges+ARRAY_SIZE(edges); e++) {
+            node_orders[e[0]] += 1;
+            if (node_orders[e[0]] > 2) {
+                is_regular = false;
+                break;
+            }
+        }
+
+        if (is_regular) {
+            //print_2_regular_graph (e_subs_2_n, n);
+            print_2_regular_cycle_decomposition (edges, n);
+            count++;
+        }
+    }
+    return count;
 }
 
 // Automatic color palette:

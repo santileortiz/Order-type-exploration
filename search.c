@@ -1,4 +1,4 @@
-//gcc -O2 -Wall -g -o bin/search search.c -lm
+//gcc -Wall -g -o bin/search search.c -lm
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -392,5 +392,8 @@ int main ()
     //print_edge_disjoint_sets (8, 8);
     //generate_edge_disjoint_triangle_sets (10, 13);
     //fast_edge_disjoint_sets (9, 10);
-    matching_decompositions_over_complete_bipartite_graphs (5);
+    matching_decompositions_over_complete_bipartite_graphs (6);
+
+    //int count = count_2_regular_subgraphs_of_k_n_n (5);
+    //printf ("Total: %d\n", count);
 }
