@@ -272,5 +272,91 @@ void FUNCNAME (TYPE *arr, int n)                            \
     }                                                       \
 }
 
+typedef struct {
+    uint32_t size;
+    uint32_t len;
+    int *data;
+} int_dyn_arr_t;
+
+void int_dyn_arr_init (int_dyn_arr_t *arr, uint32_t size)
+{
+    arr->data = malloc (size * sizeof (*arr->data));
+    if (!arr->data) {
+        printf ("Malloc failed.\n");
+    }
+    arr->len = 0;
+    arr->size = size;
+}
+
+void int_dyn_arr_grow (int_dyn_arr_t *arr, uint32_t new_size)
+{
+    assert (new_size < UINT32_MAX);
+    int *new_data;
+    if ((new_data = realloc (arr->data, new_size * sizeof(*arr->data)))) {
+        arr->data = new_data;
+        arr->size = new_size;
+    } else {
+        printf ("Error: Realloc failed.\n");
+        return;
+    }
+}
+
+void int_dyn_arr_append (int_dyn_arr_t *arr, int element)
+{
+    if (arr->len == arr->size) {
+        int_dyn_arr_grow (arr, 2*arr->size);
+    }
+    arr->data[arr->len++] = element;
+}
+
+void int_dyn_arr_insert_and_swap (int_dyn_arr_t *arr, uint32_t pos, int element)
+{
+    int_dyn_arr_append (arr, element);
+    swap (&arr->data[pos], &arr->data[arr->len-1]);
+}
+
+void int_dyn_arr_insert_and_shift (int_dyn_arr_t *arr, uint32_t pos, int element)
+{
+    assert (pos < arr->len);
+    if (arr->len == arr->size) {
+        int_dyn_arr_grow (arr, 2*arr->size);
+    }
+    
+    int i;
+    for (i=arr->len; i>pos; i--) {
+        arr->data[i] = arr->data[i-1];
+    }
+    arr->data[pos] = element;
+    arr->len++;
+}
+
+void int_dyn_arr_insert_multiple_and_shift (int_dyn_arr_t *arr, uint32_t pos, int *elements, int len)
+{
+    assert (pos < arr->len);
+    if (arr->len + len > arr->size) {
+        int new_size = arr->size;
+        while (new_size < arr->len + len) {
+            new_size *= 2;
+        }
+        int_dyn_arr_grow (arr, new_size);
+    }
+
+    int i;
+    for (i=arr->len+len-1; i>pos+len-1; i--) {
+        arr->data[i] = arr->data[i-len];
+    }
+
+    for (i=0; i<len; i++) {
+        arr->data[pos] = elements[i];
+        pos++;
+    }
+    arr->len += len;
+}
+
+void int_dyn_arr_print (int_dyn_arr_t *arr)
+{
+    array_print (arr->data, arr->len);
+}
+
 #define COMMON_H
 #endif
