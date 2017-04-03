@@ -80,6 +80,14 @@ void int_string_update (int_string_t *x, int i)
     snprintf (x->str, ARRAY_SIZE(x->str), "%d", i);
 }
 
+typedef enum {
+    APP_POINT_SET_MODE,
+    APP_GRID_MODE,
+    APP_TREE_MODE,
+
+    NUM_APP_MODES
+} app_mode_t;
+
 typedef struct {
     int app_is_initialized;
     int_string_t n;
@@ -98,10 +106,14 @@ typedef struct {
     iterator_mode_t it_mode;
     int64_t user_number;
 
+    app_mode_t app_mode;
+
     app_input_t input;
     char dragging[3];
+    vect2_t ptr_delta;
     vect2_t click_coord[3];
     bool mouse_clicked[3];
+    bool mouse_double_clicked[3];
     float time_since_last_click[3];
     float double_click_time;
     float min_distance_for_drag;
@@ -524,58 +536,9 @@ DRAW_CALLBACK(draw_separator)
 
 int end_execution = 0;
 
-bool update_and_render (app_graphics_t *graphics, app_input_t input)
+bool point_set_mode (app_state_t *st, app_graphics_t *graphics)
 {
-    static app_state_t *st = NULL;
-    char redraw = 0;
-
-    if (!st) {
-        int storage_size =  megabyte(60);
-        uint8_t* memory = calloc (storage_size, 1);
-        st = (app_state_t*)memory;
-        st->storage_size = storage_size;
-        memory_stack_init (&st->memory, st->storage_size-sizeof(app_state_t), memory+sizeof(app_state_t));
-
-        int temp_memory_size =  megabyte(10);
-        uint8_t* temp_memory = calloc (temp_memory_size, 1);
-        memory_stack_init (&st->temporary_memory, temp_memory_size, temp_memory);
-
-        int_string_update (&st->n, 8);
-        int_string_update (&st->k, thrackle_size (st->n.i));
-
-        st->it_mode = iterate_order_type;
-        st->user_number = -1;
-
-        st->max_zoom = 5000;
-        st->zoom = 1;
-        st->zoom_changed = 0;
-        st->old_zoom = 1;
-        st->app_is_initialized = 1;
-        st->old_graphics = *graphics;
-        st->input = input;
-        st->time_since_last_click[0] = -1;
-        st->time_since_last_click[1] = -1;
-        st->time_since_last_click[2] = -1;
-        st->double_click_time = 100;
-        st->min_distance_for_drag = 10;
-        st->view_db_ot = false;
-
-        set_n (st, st->n.i, graphics);
-
-        init_button (&st->css_styles[CSS_BUTTON]);
-        init_pressed_button (&st->css_styles[CSS_BUTTON_ACTIVE]);
-        init_background (&st->css_styles[CSS_BACKGROUND]);
-        init_text_entry (&st->css_styles[CSS_TEXT_ENTRY]);
-        init_text_entry_focused (&st->css_styles[CSS_TEXT_ENTRY_FOCUS]);
-        init_label (&st->css_styles[CSS_LABEL]);
-        init_title_label (&st->css_styles[CSS_TITLE_LABEL]);
-        st->focused_layout_box = -1;
-
-        redraw = 1;
-    }
-
-    st->temporary_memory.used = 0;
-
+    app_input_t input = st->input;
     if (10 <= input.keycode && input.keycode < 20) { // KEY_0-9
         if (st->user_number ==-1) {
             st->user_number++;
@@ -595,9 +558,6 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
                 end_execution = 1;
             }
             break;
-        case 24: //KEY_Q
-            end_execution = 1;
-            return false;
         case 33: //KEY_P
             print_order_type (st->ot);
             break;
@@ -605,14 +565,14 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
             if (st->zoom<st->max_zoom) {
                 st->zoom += 10;
                 st->zoom_changed = 1;
-                redraw = 1;
+                input.force_redraw = 1;
             }
             break;
         case 111://KEY_UP_ARROW
             if (st->zoom>10) {
                 st->zoom -= 10;
                 st->zoom_changed = 1;
-                redraw = 1;
+                input.force_redraw = 1;
             }
             break;
         case 23: //KEY_TAB
@@ -668,13 +628,13 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
                     subset_it_next (st->triangle_set_it);
                 }
             }
-            redraw = 1;
+            input.force_redraw = 1;
             break;
         case 55: //KEY_V
             st->view_db_ot = !st->view_db_ot;
             set_ot (st);
             focus_order_type (graphics, st);
-            redraw = 1;
+            input.force_redraw = 1;
             break;
         case 36: //KEY_ENTER
             if (st->it_mode == iterate_order_type) {
@@ -688,13 +648,9 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
                 subset_it_seek (st->triangle_set_it, st->user_number);
             }
             st->user_number = -1;
-            redraw = 1;
+            input.force_redraw = 1;
             break;
         default:
-            if (input.keycode >= 8) {
-                printf ("%" PRIu8 "\n", input.keycode);
-                //printf ("%" PRIu16 "\n", input.modifiers);
-            }
             break;
     }
 
@@ -704,63 +660,19 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
             st->zoom = st->max_zoom;
         }
         st->zoom_changed = 1;
-        redraw = 1;
+        input.force_redraw = 1;
     }
 
-    // TODO: This is a very rudimentary implementation for detection of Click,
-    // Double Click, and Dragging. See if it can be implemented cleanly with a
-    // state machine.
-    app_input_t prev_input = st->input;
-    if (input.mouse_down[0]) {
-        if (!prev_input.mouse_down[0]) {
-            st->click_coord[0] = input.ptr;
-            if (st->time_since_last_click[0] > 0 && st->time_since_last_click[0] < st->double_click_time) {
-                // DOUBLE CLICK
-                printf ("Double Click\n");
-                focus_order_type (graphics, st);
-                redraw = 1;
-
-                // We want to ignore this button press as an actual click, we
-                // use -10 to signal this.
-                st->time_since_last_click[0] = -10;
-            }
-        } else {
-            // button is being held
-            if (st->dragging[0] || vect2_distance (&input.ptr, &st->click_coord[0]) > st->min_distance_for_drag) {
-                // DRAGGING
-                graphics->T.dx += input.ptr.x - prev_input.ptr.x;
-                graphics->T.dy += (input.ptr.y - prev_input.ptr.y);
-                redraw = 1;
-
-                st->dragging[0] = 1;
-                st->time_since_last_click[0] = -10;
-            }
-        }
-    } else {
-        if (prev_input.mouse_down[0]) {
-            // CLICK
-            printf ("Click\n");
-            st->mouse_clicked[0] = true;
-            if (st->time_since_last_click[0] != -10) {
-
-                // button was released, start counter to see if
-                // it's a double click
-                st->time_since_last_click[0] = 0;
-            } else {
-                st->time_since_last_click[0] = -1;
-            }
-        } else if (st->time_since_last_click[0] >= 0) {
-            st->mouse_clicked[0] = false;
-            st->time_since_last_click[0] += input.time_elapsed_ms;
-            if (st->time_since_last_click[0] > st->double_click_time) {
-                st->time_since_last_click[0] = -1;
-            }
-        } else {
-            st->mouse_clicked[0] = false;
-        }
-        st->dragging[0] = 0;
+    if (st->dragging[0]) {
+        graphics->T.dx += st->ptr_delta.x;
+        graphics->T.dy += st->ptr_delta.y;
+        input.force_redraw = 1;
     }
-    st->input = input;
+
+    if (st->mouse_double_clicked[0]) {
+        focus_order_type (graphics, st);
+        input.force_redraw = 1;
+    }
 
     // Build layout
     bool update_panel = false;
@@ -804,7 +716,7 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
 
     bool blit_needed = false;
     cairo_t *cr = graphics->cr;
-    if (redraw || input.force_redraw) {
+    if (input.force_redraw) {
         cairo_set_source_rgb (cr, 1, 1, 1);
         cairo_paint (cr);
         //draw_point (graphics, VECT2(100,100), "0");
@@ -858,7 +770,336 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
 #endif
         }
     }
+    return blit_needed;
+}
 
+typedef struct {
+    memory_stack_t memory;
+    box_t panel_box;
+    int n;
+    vect2_t *point_set;
+    box_t src;
+
+    double point_radius;
+    double canvas_x, canvas_y;
+    bool loops_computed;
+    uint64_t num_loops;
+    int_dyn_arr_t edges_of_all_loops;
+    vect2_t *points;
+    box_t points_bb;
+} grid_mode_state_t;
+
+// Calculates a ratio by which multiply box a so that it fits inside box b
+double best_fit_ratio (double a_width, double a_height,
+                       double b_width, double b_height)
+{
+    if (a_width/a_height < b_width/b_height) {
+        return b_height/a_height;
+    } else {
+        return b_width/a_width;
+    }
+}
+
+void pixel_align_as_line (vect2_t *p)
+{
+    p->x = floor (p->x)+0.5;
+    p->y = floor (p->y)+0.5;
+}
+
+void apply_transform (transf_t *tr, vect2_t *p)
+{
+    p->x = tr->scale*p->x + tr->dx;
+    p->y = tr->scale*p->y + tr->dy;
+}
+
+void apply_transform_distance (transf_t *tr, vect2_t *p)
+{
+    p->x = tr->scale*p->x;
+    p->y = tr->scale*p->y;
+}
+
+void apply_inverse_transform (transf_t *tr, vect2_t *p)
+{
+    p->x = (p->x - tr->dx)/tr->scale;
+    p->y = (p->y - tr->dy)/tr->scale;
+}
+
+void apply_inverse_transform_distance (transf_t *tr, vect2_t *p)
+{
+    p->x = p->x/tr->scale;
+    p->y = p->y/tr->scale;
+}
+
+void compute_best_fit_box_to_box_transform (transf_t *tr, box_t *src, box_t *dest)
+{
+    double src_width = BOX_WIDTH(*src);
+    double src_height = BOX_HEIGHT(*src);
+    double dest_width = BOX_WIDTH(*dest);
+    double dest_height = BOX_HEIGHT(*dest);
+
+    tr->scale = best_fit_ratio (src_width, src_height,
+                                dest_width, dest_height);
+    tr->dx = dest->min.x + (dest_width-src_width*tr->scale)/2;
+    tr->dy = dest->min.y + (dest_height-src_height*tr->scale)/2;
+}
+
+#define cairo_BOX(cr,box) cairo_rectangle (cr, (box).min.x, (box).min.y, BOX_WIDTH(box), BOX_HEIGHT(box));
+void draw_graph (cairo_t *cr, grid_mode_state_t *grid_st, int id, box_t *dest)
+{
+    dest->min.x += grid_st->point_radius;
+    dest->min.y += grid_st->point_radius;
+    dest->max.x -= grid_st->point_radius;
+    dest->max.y -= grid_st->point_radius;
+    transf_t graph_to_dest;
+
+    box_t *src = &grid_st->points_bb;
+    compute_best_fit_box_to_box_transform (&graph_to_dest, src, dest);
+
+    cairo_set_source_rgb (cr,0,0,0);
+    int i;
+    for (i=0; i<2*grid_st->n; i++) {
+        vect2_t p = grid_st->points[i];
+        apply_transform (&graph_to_dest, &p);
+        cairo_arc (cr, p.x, p.y, grid_st->point_radius, 0, 2*M_PI);
+        cairo_fill (cr);
+    }
+
+    for (i=0; i<2*grid_st->n; i++) {
+        int e[2];
+        e[0] = grid_st->edges_of_all_loops.data[id*4*grid_st->n+2*i];
+        e[1] = grid_st->edges_of_all_loops.data[id*4*grid_st->n+2*i+1];
+        vect2_t p1 = grid_st->points[e[0]];
+        apply_transform (&graph_to_dest, &p1);
+        pixel_align_as_line (&p1);
+
+        vect2_t p2 = grid_st->points[e[1]];
+        apply_transform (&graph_to_dest, &p2);
+        pixel_align_as_line (&p2);
+
+        cairo_set_line_width (cr, 1);
+        cairo_move_to (cr, p1.x, p1.y);
+        cairo_line_to (cr, p2.x, p2.y);
+        cairo_stroke (cr);
+    }
+}
+
+bool grid_mode (app_state_t *st, app_graphics_t *gr)
+{
+    app_input_t input = st->input;
+    cairo_t *cr = gr->cr;
+    static bool is_grid_state_initialized = false;
+    static grid_mode_state_t grid_st;
+    if (!is_grid_state_initialized) {
+        grid_st.n = 5;
+        grid_st.loops_computed = false;
+        grid_st.points = calloc (2*grid_st.n, sizeof(vect2_t));
+
+        grid_st.canvas_x = 10;
+        grid_st.canvas_y = 10;
+        grid_st.point_radius = 5;
+
+        int64_t y_step = UINT8_MAX/(grid_st.n-1);
+        int64_t x_step = y_step;
+        int64_t y_pos = 0;
+        int i;
+        for (i=0; i<grid_st.n; i++) {
+            grid_st.points[i].x = 0;
+            grid_st.points[i].y = y_pos;
+
+            grid_st.points[i+grid_st.n].x = x_step;
+            grid_st.points[i+grid_st.n].y = y_pos;
+            y_pos += y_step;
+        }
+
+        BOX_X_Y_W_H (grid_st.points_bb, 0, 0, x_step, UINT8_MAX);
+        is_grid_state_initialized = true;
+    }
+
+    if (st->dragging[0]) {
+        grid_st.canvas_x += st->ptr_delta.x;
+        grid_st.canvas_y += st->ptr_delta.y;
+        input.force_redraw = true;
+    }
+
+    if (!grid_st.loops_computed) {
+        int_dyn_arr_init (&grid_st.edges_of_all_loops, 60);
+        grid_st.num_loops = count_2_regular_subgraphs_of_k_n_n (grid_st.n, &grid_st.edges_of_all_loops);
+        grid_st.loops_computed = true;
+    }
+
+    if (input.force_redraw) {
+        box_t dest;
+        int dest_width = 40;
+        int dest_height = (dest_width-2*grid_st.point_radius)/BOX_AR(grid_st.points_bb)+2*grid_st.point_radius;
+
+#if 0
+        cairo_BOX (cr, *dest);
+        cairo_set_source_rgba (cr, 0.2, 1, 0.4, 0.4);
+        cairo_fill (cr);
+#endif
+
+        cairo_set_source_rgb (cr, 1,1,1);
+        cairo_paint (cr);
+        
+        int i;
+        int x_slot = 0, y_slot = 0;
+        int x_step=10, y_step = 20;
+        int num_x_slots = grid_st.num_loops/binomial(grid_st.n,2);
+        for (i=0; i<grid_st.num_loops; i++) {
+            int x_pos = grid_st.canvas_x+(dest_width+x_step)*x_slot;
+            int y_pos = grid_st.canvas_y+(dest_height+y_step)*y_slot;
+            
+            BOX_X_Y_W_H (dest, x_pos, y_pos, dest_width, dest_height);
+            if (is_box_visible (&dest, gr)) {
+                draw_graph (cr, &grid_st, i, &dest);
+            }
+
+            if (x_slot == num_x_slots-1) {
+                x_slot = 0;
+                y_slot++;
+            } else {
+                x_slot++;
+            }
+        }
+    }
+    return true;
+}
+
+bool update_and_render (app_graphics_t *graphics, app_input_t input)
+{
+    static app_state_t *st = NULL;
+
+    if (!st) {
+        int storage_size =  megabyte(60);
+        uint8_t* memory = calloc (storage_size, 1);
+        st = (app_state_t*)memory;
+        st->storage_size = storage_size;
+        memory_stack_init (&st->memory, st->storage_size-sizeof(app_state_t), memory+sizeof(app_state_t));
+
+        int temp_memory_size =  megabyte(10);
+        uint8_t* temp_memory = calloc (temp_memory_size, 1);
+        memory_stack_init (&st->temporary_memory, temp_memory_size, temp_memory);
+
+        int_string_update (&st->n, 8);
+        int_string_update (&st->k, thrackle_size (st->n.i));
+
+        st->it_mode = iterate_order_type;
+        st->user_number = -1;
+
+        st->max_zoom = 5000;
+        st->zoom = 1;
+        st->zoom_changed = 0;
+        st->old_zoom = 1;
+        st->app_is_initialized = 1;
+        st->old_graphics = *graphics;
+        st->input = input;
+        st->time_since_last_click[0] = -1;
+        st->time_since_last_click[1] = -1;
+        st->time_since_last_click[2] = -1;
+        st->double_click_time = 100;
+        st->min_distance_for_drag = 10;
+        st->view_db_ot = false;
+
+        set_n (st, st->n.i, graphics);
+
+        init_button (&st->css_styles[CSS_BUTTON]);
+        init_pressed_button (&st->css_styles[CSS_BUTTON_ACTIVE]);
+        init_background (&st->css_styles[CSS_BACKGROUND]);
+        init_text_entry (&st->css_styles[CSS_TEXT_ENTRY]);
+        init_text_entry_focused (&st->css_styles[CSS_TEXT_ENTRY_FOCUS]);
+        init_label (&st->css_styles[CSS_LABEL]);
+        init_title_label (&st->css_styles[CSS_TITLE_LABEL]);
+        st->focused_layout_box = -1;
+
+        st->app_mode = APP_GRID_MODE;
+
+        input.force_redraw = 1;
+    }
+
+    st->temporary_memory.used = 0;
+
+    // TODO: This is a very rudimentary implementation for detection of Click,
+    // Double Click, and Dragging. See if it can be implemented cleanly with a
+    // state machine.
+    app_input_t prev_input = st->input;
+    if (input.mouse_down[0]) {
+        if (!prev_input.mouse_down[0]) {
+            st->click_coord[0] = input.ptr;
+            if (st->time_since_last_click[0] > 0 && st->time_since_last_click[0] < st->double_click_time) {
+                // DOUBLE CLICK
+                printf ("Double Click\n");
+                st->mouse_double_clicked[0] = true;
+
+                // We want to ignore this button press as an actual click, we
+                // use -10 to signal this.
+                st->time_since_last_click[0] = -10;
+            }
+        } else {
+            // button is being held
+            if (st->dragging[0] || vect2_distance (&input.ptr, &st->click_coord[0]) > st->min_distance_for_drag) {
+                // DRAGGING
+                st->dragging[0] = 1;
+                st->time_since_last_click[0] = -10;
+            }
+        }
+    } else {
+        if (prev_input.mouse_down[0]) {
+            // CLICK
+            printf ("Click\n");
+            st->mouse_clicked[0] = true;
+
+            st->mouse_double_clicked[0] = false;
+            if (st->time_since_last_click[0] != -10) {
+
+                // button was released, start counter to see if
+                // it's a double click
+                st->time_since_last_click[0] = 0;
+            } else {
+                st->time_since_last_click[0] = -1;
+            }
+        } else if (st->time_since_last_click[0] >= 0) {
+            st->mouse_clicked[0] = false;
+            st->time_since_last_click[0] += input.time_elapsed_ms;
+            if (st->time_since_last_click[0] > st->double_click_time) {
+                st->time_since_last_click[0] = -1;
+            }
+        } else {
+            st->mouse_clicked[0] = false;
+        }
+        st->dragging[0] = 0;
+    }
+
+    st->ptr_delta.x = input.ptr.x - prev_input.ptr.x;
+    st->ptr_delta.y = input.ptr.y - prev_input.ptr.y;
+
+    switch (input.keycode) {
+        case 58: //KEY_M
+            st->app_mode = (st->app_mode + 1)%NUM_APP_MODES;
+            input.force_redraw = true;
+            break;
+        case 24: //KEY_Q
+            end_execution = 1;
+            return false;
+        default:
+            //if (input.keycode >= 8) {
+            //    printf ("%" PRIu8 "\n", input.keycode);
+            //    //printf ("%" PRIu16 "\n", input.modifiers);
+            //}
+            break;
+    }
+
+    st->input = input;
+    bool blit_needed;
+    switch (st->app_mode) {
+        case APP_POINT_SET_MODE:
+            blit_needed = point_set_mode (st, graphics);
+            break;
+        case APP_GRID_MODE:
+            blit_needed = grid_mode (st, graphics);
+            break;
+        default:
+            invalid_code_path;
+    }
     cairo_surface_flush (cairo_get_target(graphics->cr));
     return blit_needed;
 }

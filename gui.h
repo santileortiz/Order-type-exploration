@@ -48,6 +48,15 @@ bool is_point_in_box (double p_x, double p_y, double x, double y, double width, 
     }
 }
 
+bool is_box_visible (box_t *box, app_graphics_t *gr)
+{
+    return
+        is_point_in_box (box->min.x, box->min.y, 0, 0, gr->width, gr->height) ||
+        is_point_in_box (box->max.x, box->max.y, 0, 0, gr->width, gr->height) ||
+        is_point_in_box (box->min.x, box->max.y, 0, 0, gr->width, gr->height) ||
+        is_point_in_box (box->max.x, box->min.y, 0, 0, gr->width, gr->height);
+}
+
 typedef struct {
     char *s;
     double width;

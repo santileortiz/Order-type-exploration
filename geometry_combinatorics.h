@@ -18,6 +18,11 @@ typedef union {
 
 typedef struct {
     int n;
+    vect2_t pts [1];
+} real_point_set_t;
+
+typedef struct {
+    int n;
     uint32_t id;
     vect2i_t pts [1];
 } order_type_t;
@@ -1284,7 +1289,7 @@ void print_2_regular_cycle_decomposition (int *edges, int n)
 }
 
 
-int count_2_regular_subgraphs_of_k_n_n (int n)
+uint32_t count_2_regular_subgraphs_of_k_n_n (int n, int_dyn_arr_t *edges_out)
 {
     // A subset of k_n_n edges of size 2*n
     int e_subs_2_n[2*n];
@@ -1300,7 +1305,7 @@ int count_2_regular_subgraphs_of_k_n_n (int n)
     //printf ("\n");
 
     uint64_t num_subgraphs = binomial (n*n, 2*n);
-    int count = 0;
+    uint32_t count = 0;
     for (i=0; i<num_subgraphs; i++) {
         int node_orders[2*n];
         array_clear (node_orders, ARRAY_SIZE(node_orders));
@@ -1321,7 +1326,13 @@ int count_2_regular_subgraphs_of_k_n_n (int n)
 
         if (is_regular) {
             //print_2_regular_graph (e_subs_2_n, n);
-            print_2_regular_cycle_decomposition (edges, n);
+            //print_2_regular_cycle_decomposition (edges, n);
+            if (edges_out) {
+                int j;
+                for (j=0; j<ARRAY_SIZE(edges); j++) {
+                    int_dyn_arr_append (edges_out, edges[j]);
+                }
+            }
             count++;
         }
     }
