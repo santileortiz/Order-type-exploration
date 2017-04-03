@@ -482,13 +482,22 @@ typedef struct {
     int *precomp;
 } subset_it_t;
 
-void subset_it_reset_idx (subset_it_t *it)
+void subset_it_reset_idx (int *idx, int k)
 {
-    int k = it->k;
     while (0<k) {
         k--;
-        it->idx[k] = k;
+        idx[k] = k;
     }
+}
+
+void subset_it_init (subset_it_t *it, int n, int k, int *idx)
+{
+    it->id = 0;
+    it->k = k;
+    it->n = n;
+    it->size = binomial (n, k);
+    it->precomp = NULL;
+    subset_it_reset_idx (idx, k);
 }
 
 subset_it_t *subset_it_new (int n, int k, memory_stack_t *stack)
@@ -503,12 +512,7 @@ subset_it_t *subset_it_new (int n, int k, memory_stack_t *stack)
         retval->idx = malloc (k*sizeof(int));
         retval->storage = NULL;
     }
-    retval->id = 0;
-    retval->k = k;
-    retval->n = n;
-    retval->size = binomial (n, k);
-    retval->precomp = NULL;
-    subset_it_reset_idx (retval);
+    subset_it_init (retval, n, k, retval->idx);
     return retval;
 }
 
@@ -604,36 +608,42 @@ void subset_it_seek (subset_it_t *it, uint64_t id)
     }
 }
 
+int subset_it_next_explicit (subset_it_t *it, int *idx)
+{
+    int j=it->k;
+    it->id++;
+    while (0<j) {
+        j--;
+        if (idx[j] < it->n-(it->k-j)) {
+            idx[j]++;
+            // reset indexes counting from changed one
+            while (j<it->k-1) {
+                idx[j+1] = idx[j]+1;
+                j++;
+            }
+            return 1;
+        }
+    }
+    assert (it->id == it->size);
+    return 0;
+}
+
 int subset_it_next (subset_it_t *it) 
 {
     if (it->id == it->size) {
         return 0;
     }
 
-    it->id++;
     if (it->precomp) {
         if (it->id < it->size) {
+            it->id++;
             it->idx += it->k;
             return 1;
         } else {
             return 0;
         }
     } else {
-        int j=it->k;
-        while (0<j) {
-            j--;
-            if (it->idx[j] < it->n-(it->k-j)) {
-                it->idx[j]++;
-                // Reset indexes counting from changed one
-                while (j<it->k-1) {
-                    it->idx[j+1] = it->idx[j]+1;
-                    j++;
-                }
-                return 1;
-            }
-        }
-        assert (it->id == it->size);
-        return 0;
+        return subset_it_next_explicit (it, it->idx);
     }
 }
 
@@ -1304,16 +1314,17 @@ uint32_t count_2_regular_subgraphs_of_k_n_n (int n, int_dyn_arr_t *edges_out)
     //}
     //printf ("\n");
 
-    uint64_t num_subgraphs = binomial (n*n, 2*n);
+    subset_it_t edge_subset_it;
+    subset_it_init (&edge_subset_it, n*n, 2*n, e_subs_2_n);
     uint32_t count = 0;
-    for (i=0; i<num_subgraphs; i++) {
+    for (i=0; i<edge_subset_it.size; i++) {
         int node_orders[2*n];
         array_clear (node_orders, ARRAY_SIZE(node_orders));
-        subset_it_idx_for_id (i, n*n, e_subs_2_n, ARRAY_SIZE(e_subs_2_n));
 
         bool is_regular = true;
         int edges[4*n]; // 2vertices * 2partite * n
         edges_from_edge_subset (e_subs_2_n, n, edges);
+        subset_it_next_explicit (&edge_subset_it, e_subs_2_n);
 
         int *e;
         for (e=edges; e < edges+ARRAY_SIZE(edges); e++) {
