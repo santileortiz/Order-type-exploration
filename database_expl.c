@@ -89,24 +89,58 @@ typedef enum {
 } app_mode_t;
 
 typedef struct {
-    int app_is_initialized;
+    box_t panel_box;
+    int n;
+    vect2_t *point_set;
+    box_t src;
+
+    double point_radius;
+    double canvas_x, canvas_y;
+    bool loops_computed;
+    uint64_t num_loops;
+    int_dyn_arr_t edges_of_all_loops;
+    vect2_t *points;
+    box_t points_bb;
+
+    memory_stack_t memory;
+} grid_mode_state_t;
+
+typedef struct {
     int_string_t n;
     int_string_t ot_id;
     order_type_t *ot;
     int_string_t k;
     int db;
 
-    cairo_matrix_t transf;
-    app_graphics_t old_graphics;
     double max_zoom;
     double zoom;
-    char zoom_changed;
+    bool zoom_changed;
     double old_zoom;
+    app_graphics_t old_graphics;
 
     iterator_mode_t it_mode;
     int64_t user_number;
 
+    subset_it_t *triangle_it;
+    subset_it_t *triangle_set_it;
+
+    int num_entities;
+    entity_t entities[300];
+
+    bool view_db_ot;
+    vect2_t visible_pts[50];
+
+    memory_stack_t memory;
+} point_set_mode_t;
+
+typedef struct {
+    bool is_initialized;
+    app_graphics_t old_graphics;
+
+    bool end_execution;
     app_mode_t app_mode;
+    point_set_mode_t *ps_mode;
+    grid_mode_state_t *grid_mode;
 
     app_input_t input;
     char dragging[3];
@@ -123,23 +157,14 @@ typedef struct {
     int focused_layout_box;
     layout_box_t layout_boxes[30];
 
-    subset_it_t *triangle_it;
-    subset_it_t *triangle_set_it;
-
     int storage_size;
     memory_stack_t memory;
 
     // NOTE: This will be cleared at every frame start
     memory_stack_t temporary_memory;
-
-    int num_entities;
-    entity_t entities[300];
-
-    bool view_db_ot;
-    vect2_t visible_pts[50];
 } app_state_t;
 
-void triangle_entity_add (app_state_t *st, int id, vect3_t color)
+void triangle_entity_add (point_set_mode_t *st, int id, vect3_t color)
 {
     assert (st->num_entities < ARRAY_SIZE(st->entities));
     entity_t *next_entity = &st->entities[st->num_entities];
@@ -152,7 +177,7 @@ void triangle_entity_add (app_state_t *st, int id, vect3_t color)
     next_entity->id = id;
 }
 
-void segment_entity_add (app_state_t *st, int id, vect3_t color)
+void segment_entity_add (point_set_mode_t *st, int id, vect3_t color)
 {
     assert (st->num_entities < ARRAY_SIZE(st->entities));
     entity_t *next_entity = &st->entities[st->num_entities];
@@ -198,7 +223,7 @@ void draw_triangle (app_graphics_t *graphics, vect2_t p1, vect2_t p2, vect2_t p3
     draw_segment (graphics, p3, p1, 3);
 }
 
-void draw_entities (app_state_t *st, app_graphics_t *graphics)
+void draw_entities (point_set_mode_t *st, app_graphics_t *graphics)
 {
 
     int idx[3];
@@ -252,7 +277,7 @@ void compute_transform (transf_t *T, vect2_t window_pt, vect2_t canvas_pt, doubl
 }
 
 #define WINDOW_MARGIN 40
-void focus_order_type (app_graphics_t *graphics, app_state_t *st)
+void focus_order_type (app_graphics_t *graphics, point_set_mode_t *st)
 {
     box_t box;
     get_bounding_box (st->visible_pts, st->ot->n, &box);
@@ -271,7 +296,7 @@ void focus_order_type (app_graphics_t *graphics, app_state_t *st)
     compute_transform (&graphics->T, margins, VECT2(box.min.x, box.max.y), st->zoom);
 }
 
-void set_ot (app_state_t *st)
+void set_ot (point_set_mode_t *st)
 {
     int_string_update (&st->ot_id, st->ot->id);
 
@@ -300,7 +325,7 @@ void set_ot (app_state_t *st)
     }
 }
 
-void set_n (app_state_t *st, int n, app_graphics_t *graphics)
+void set_n (point_set_mode_t *st, int n, app_graphics_t *graphics)
 {
     st->memory.used = 0; // Clears all storage
 
@@ -375,7 +400,7 @@ void set_n (app_state_t *st, int n, app_graphics_t *graphics)
 //    st->layout_boxes[0].box.max.x = st->layout_boxes[0].box.min.x+max_width+2*x_margin;
 //    st->layout_boxes[0].box.max.y = y_pos;
 //
-bool button (char *label, app_graphics_t *gr, double x, double y, app_state_t *st,
+bool button (char *label, app_graphics_t *gr, double x, double y, point_set_mode_t *st,
              double *width, double *height, bool *update_panel)
 {
     //cairo_t *cr = gr->cr;
@@ -534,50 +559,74 @@ DRAW_CALLBACK(draw_separator)
     cairo_stroke (cr);
 }
 
-int end_execution = 0;
-
 bool point_set_mode (app_state_t *st, app_graphics_t *graphics)
 {
+    point_set_mode_t *ps_mode = st->ps_mode;
+    if (!ps_mode) {
+        uint32_t panel_storage = megabyte(5);
+        uint8_t *base = push_size (&st->memory, panel_storage);
+        st->ps_mode = (point_set_mode_t*)base;
+        memory_stack_init (&st->ps_mode->memory,
+                           panel_storage-sizeof(point_set_mode_t),
+                           base+sizeof(point_set_mode_t));
+
+        ps_mode = st->ps_mode;
+        int_string_update (&ps_mode->n, 8);
+        int_string_update (&ps_mode->k, thrackle_size (ps_mode->n.i));
+
+        ps_mode->it_mode = iterate_order_type;
+        ps_mode->user_number = -1;
+
+        ps_mode->max_zoom = 5000;
+        ps_mode->zoom = 1;
+        ps_mode->zoom_changed = false;
+        ps_mode->old_zoom = 1;
+        ps_mode->old_graphics = *graphics;
+        ps_mode->view_db_ot = false;
+
+        set_n (ps_mode, ps_mode->n.i, graphics);
+    }
+
     app_input_t input = st->input;
     if (10 <= input.keycode && input.keycode < 20) { // KEY_0-9
-        if (st->user_number ==-1) {
-            st->user_number++;
+        if (ps_mode->user_number ==-1) {
+            ps_mode->user_number++;
         }
 
         int num = (input.keycode+1)%10;
-        st->user_number = st->user_number*10 + num; 
-        printf ("Input: %"PRIi64"\n", st->user_number);
+        ps_mode->user_number = ps_mode->user_number*10 + num; 
+        printf ("Input: %"PRIi64"\n", ps_mode->user_number);
         input.keycode = 0;
     }
 
     switch (input.keycode) {
         case 9: //KEY_ESC
-            if (st->user_number != -1) {
-                st->user_number = -1;
+            if (ps_mode->user_number != -1) {
+                ps_mode->user_number = -1;
             } else {
-                end_execution = 1;
+                st->end_execution = 1;
             }
             break;
         case 33: //KEY_P
-            print_order_type (st->ot);
+            print_order_type (ps_mode->ot);
             break;
         case 116://KEY_DOWN_ARROW
-            if (st->zoom<st->max_zoom) {
-                st->zoom += 10;
-                st->zoom_changed = 1;
+            if (ps_mode->zoom<ps_mode->max_zoom) {
+                ps_mode->zoom += 10;
+                ps_mode->zoom_changed = 1;
                 input.force_redraw = 1;
             }
             break;
         case 111://KEY_UP_ARROW
-            if (st->zoom>10) {
-                st->zoom -= 10;
-                st->zoom_changed = 1;
+            if (ps_mode->zoom>10) {
+                ps_mode->zoom -= 10;
+                ps_mode->zoom_changed = 1;
                 input.force_redraw = 1;
             }
             break;
         case 23: //KEY_TAB
-            st->it_mode = (st->it_mode+1)%num_iterator_mode;
-            switch (st->it_mode) {
+            ps_mode->it_mode = (ps_mode->it_mode+1)%num_iterator_mode;
+            switch (ps_mode->it_mode) {
                 case iterate_order_type:
                     printf ("Iterating order types\n");
                     break;
@@ -594,19 +643,19 @@ bool point_set_mode (app_state_t *st, app_graphics_t *graphics)
         case 57: //KEY_N
         case 113://KEY_LEFT_ARROW
         case 114://KEY_RIGHT_ARROW
-            if (st->it_mode == iterate_order_type) {
+            if (ps_mode->it_mode == iterate_order_type) {
                 if (XCB_KEY_BUT_MASK_SHIFT & input.modifiers
                         || input.keycode == 113) {
-                    db_prev (st->ot);
+                    db_prev (ps_mode->ot);
 
                 } else {
-                    db_next (st->ot);
+                    db_next (ps_mode->ot);
                 }
-                set_ot (st);
-                focus_order_type (graphics, st);
+                set_ot (ps_mode);
+                focus_order_type (graphics, ps_mode);
 
-            } else if (st->it_mode == iterate_n) {
-                int n = st->n.i;
+            } else if (ps_mode->it_mode == iterate_n) {
+                int n = ps_mode->n.i;
                 if (XCB_KEY_BUT_MASK_SHIFT & input.modifiers
                         || input.keycode == 113) {
                     n--;
@@ -619,35 +668,35 @@ bool point_set_mode (app_state_t *st, app_graphics_t *graphics)
                         n=3;
                     }
                 }
-                set_n (st, n, graphics);
-            } else if (st->it_mode == iterate_triangle_set) {
+                set_n (ps_mode, n, graphics);
+            } else if (ps_mode->it_mode == iterate_triangle_set) {
                 if (XCB_KEY_BUT_MASK_SHIFT & input.modifiers
                         || input.keycode == 113) {
-                    subset_it_prev (st->triangle_set_it);
+                    subset_it_prev (ps_mode->triangle_set_it);
                 } else {
-                    subset_it_next (st->triangle_set_it);
+                    subset_it_next (ps_mode->triangle_set_it);
                 }
             }
             input.force_redraw = 1;
             break;
         case 55: //KEY_V
-            st->view_db_ot = !st->view_db_ot;
-            set_ot (st);
-            focus_order_type (graphics, st);
+            ps_mode->view_db_ot = !ps_mode->view_db_ot;
+            set_ot (ps_mode);
+            focus_order_type (graphics, ps_mode);
             input.force_redraw = 1;
             break;
         case 36: //KEY_ENTER
-            if (st->it_mode == iterate_order_type) {
-                db_seek (st->ot, st->user_number);
-                set_ot (st);
-            } else if (st->it_mode == iterate_n) {
-                if (3 <= st->user_number && st->user_number <= 10) {
-                    set_n (st, st->user_number, graphics);
+            if (ps_mode->it_mode == iterate_order_type) {
+                db_seek (ps_mode->ot, ps_mode->user_number);
+                set_ot (ps_mode);
+            } else if (ps_mode->it_mode == iterate_n) {
+                if (3 <= ps_mode->user_number && ps_mode->user_number <= 10) {
+                    set_n (ps_mode, ps_mode->user_number, graphics);
                 }
-            } else if (st->it_mode == iterate_triangle_set) {
-                subset_it_seek (st->triangle_set_it, st->user_number);
+            } else if (ps_mode->it_mode == iterate_triangle_set) {
+                subset_it_seek (ps_mode->triangle_set_it, ps_mode->user_number);
             }
-            st->user_number = -1;
+            ps_mode->user_number = -1;
             input.force_redraw = 1;
             break;
         default:
@@ -655,11 +704,11 @@ bool point_set_mode (app_state_t *st, app_graphics_t *graphics)
     }
 
     if (input.wheel != 1) {
-        st->zoom *= input.wheel;
-        if (st->zoom > st->max_zoom) {
-            st->zoom = st->max_zoom;
+        ps_mode->zoom *= input.wheel;
+        if (ps_mode->zoom > ps_mode->max_zoom) {
+            ps_mode->zoom = ps_mode->max_zoom;
         }
-        st->zoom_changed = 1;
+        ps_mode->zoom_changed = 1;
         input.force_redraw = 1;
     }
 
@@ -670,7 +719,7 @@ bool point_set_mode (app_state_t *st, app_graphics_t *graphics)
     }
 
     if (st->mouse_double_clicked[0]) {
-        focus_order_type (graphics, st);
+        focus_order_type (graphics, ps_mode);
         input.force_redraw = 1;
     }
 
@@ -697,8 +746,8 @@ bool point_set_mode (app_state_t *st, app_graphics_t *graphics)
                          entry_labels, ARRAY_SIZE(entry_labels), st);
 
     title ("Point Set", &lay, st, graphics);
-    labeled_text_entry (st->n.str, &lay, st);
-    labeled_text_entry (st->ot_id.str, &lay, st);
+    labeled_text_entry (ps_mode->n.str, &lay, st);
+    labeled_text_entry (ps_mode->ot_id.str, &lay, st);
     {
         layout_box_t *sep = next_layout_box (st);
         BOX_X_Y_W_H(sep->box, lay.x_pos, lay.y_pos, bg_min_size.x-2*x_margin, 2);
@@ -706,7 +755,7 @@ bool point_set_mode (app_state_t *st, app_graphics_t *graphics)
         lay.y_pos += lay.y_step;
     }
     title ("Triangle Sets", &lay, st, graphics);
-    labeled_text_entry (st->k.str, &lay, st);
+    labeled_text_entry (ps_mode->k.str, &lay, st);
     labeled_text_entry ("0", &lay, st);
     labeled_text_entry ("-", &lay, st);
     labeled_text_entry ("-", &lay, st);
@@ -721,27 +770,27 @@ bool point_set_mode (app_state_t *st, app_graphics_t *graphics)
         cairo_paint (cr);
         //draw_point (graphics, VECT2(100,100), "0");
 
-        if (st->zoom_changed) {
+        if (ps_mode->zoom_changed) {
             vect2_t userspace_ptr = input.ptr;
             tr_window_to_canvas (graphics->T, &userspace_ptr);
-            compute_transform (&graphics->T, input.ptr, userspace_ptr, st->zoom);
+            compute_transform (&graphics->T, input.ptr, userspace_ptr, ps_mode->zoom);
         }
 
-        st->old_graphics = *graphics;
+        ps_mode->old_graphics = *graphics;
 
         // Construct drawing on canvas.
-        st->num_entities = 0;
+        ps_mode->num_entities = 0;
 
         int i;
         get_next_color (0);
-        for (i=0; i<st->k.i; i++) {
+        for (i=0; i<ps_mode->k.i; i++) {
             vect3_t color;
             get_next_color (&color);
-            triangle_entity_add (st, st->triangle_set_it->idx[i], color);
+            triangle_entity_add (ps_mode, ps_mode->triangle_set_it->idx[i], color);
         }
 
-        //printf ("dx: %f, dy: %f, s: %f, z: %f\n", graphics->T.dx, graphics->T.dy, graphics->T.scale, st->zoom);
-        draw_entities (st, graphics);
+        //printf ("dx: %f, dy: %f, s: %f, z: %f\n", graphics->T.dx, graphics->T.dy, graphics->T.scale, ps_mode->zoom);
+        draw_entities (ps_mode, graphics);
         blit_needed = true;
     }
 
@@ -772,22 +821,6 @@ bool point_set_mode (app_state_t *st, app_graphics_t *graphics)
     }
     return blit_needed;
 }
-
-typedef struct {
-    memory_stack_t memory;
-    box_t panel_box;
-    int n;
-    vect2_t *point_set;
-    box_t src;
-
-    double point_radius;
-    double canvas_x, canvas_y;
-    bool loops_computed;
-    uint64_t num_loops;
-    int_dyn_arr_t edges_of_all_loops;
-    vect2_t *points;
-    box_t points_bb;
-} grid_mode_state_t;
 
 // Calculates a ratio by which multiply box a so that it fits inside box b
 double best_fit_ratio (double a_width, double a_height,
@@ -885,52 +918,58 @@ void draw_graph (cairo_t *cr, grid_mode_state_t *grid_st, int id, box_t *dest)
 
 bool grid_mode (app_state_t *st, app_graphics_t *gr)
 {
-    app_input_t input = st->input;
-    cairo_t *cr = gr->cr;
-    static bool is_grid_state_initialized = false;
-    static grid_mode_state_t grid_st;
-    if (!is_grid_state_initialized) {
-        grid_st.n = 5;
-        grid_st.loops_computed = false;
-        grid_st.points = calloc (2*grid_st.n, sizeof(vect2_t));
+    grid_mode_state_t *grid_mode = st->grid_mode;
+    if (!st->grid_mode) {
+        uint32_t panel_storage = megabyte(5);
+        uint8_t *base = push_size (&st->memory, panel_storage);
+        st->grid_mode = (grid_mode_state_t*)base;
+        memory_stack_init (&st->grid_mode->memory,
+                           panel_storage-sizeof(grid_mode_state_t),
+                           base+sizeof(grid_mode_state_t));
 
-        grid_st.canvas_x = 10;
-        grid_st.canvas_y = 10;
-        grid_st.point_radius = 5;
+        grid_mode = st->grid_mode;
+        grid_mode->n = 5;
+        grid_mode->loops_computed = false;
+        grid_mode->points = push_array (&grid_mode->memory, 2*grid_mode->n, vect2_t);
 
-        int64_t y_step = UINT8_MAX/(grid_st.n-1);
+        grid_mode->canvas_x = 10;
+        grid_mode->canvas_y = 10;
+        grid_mode->point_radius = 5;
+
+        int64_t y_step = UINT8_MAX/(grid_mode->n-1);
         int64_t x_step = y_step;
         int64_t y_pos = 0;
         int i;
-        for (i=0; i<grid_st.n; i++) {
-            grid_st.points[i].x = 0;
-            grid_st.points[i].y = y_pos;
+        for (i=0; i<grid_mode->n; i++) {
+            grid_mode->points[i].x = 0;
+            grid_mode->points[i].y = y_pos;
 
-            grid_st.points[i+grid_st.n].x = x_step;
-            grid_st.points[i+grid_st.n].y = y_pos;
+            grid_mode->points[i+grid_mode->n].x = x_step;
+            grid_mode->points[i+grid_mode->n].y = y_pos;
             y_pos += y_step;
         }
 
-        BOX_X_Y_W_H (grid_st.points_bb, 0, 0, x_step, UINT8_MAX);
-        is_grid_state_initialized = true;
+        BOX_X_Y_W_H (grid_mode->points_bb, 0, 0, x_step, UINT8_MAX);
     }
 
+    app_input_t input = st->input;
+    cairo_t *cr = gr->cr;
     if (st->dragging[0]) {
-        grid_st.canvas_x += st->ptr_delta.x;
-        grid_st.canvas_y += st->ptr_delta.y;
+        grid_mode->canvas_x += st->ptr_delta.x;
+        grid_mode->canvas_y += st->ptr_delta.y;
         input.force_redraw = true;
     }
 
-    if (!grid_st.loops_computed) {
-        int_dyn_arr_init (&grid_st.edges_of_all_loops, 60);
-        grid_st.num_loops = count_2_regular_subgraphs_of_k_n_n (grid_st.n, &grid_st.edges_of_all_loops);
-        grid_st.loops_computed = true;
+    if (!grid_mode->loops_computed) {
+        int_dyn_arr_init (&grid_mode->edges_of_all_loops, 60);
+        grid_mode->num_loops = count_2_regular_subgraphs_of_k_n_n (grid_mode->n, &grid_mode->edges_of_all_loops);
+        grid_mode->loops_computed = true;
     }
 
     if (input.force_redraw) {
         box_t dest;
         int dest_width = 40;
-        int dest_height = (dest_width-2*grid_st.point_radius)/BOX_AR(grid_st.points_bb)+2*grid_st.point_radius;
+        int dest_height = (dest_width-2*grid_mode->point_radius)/BOX_AR(grid_mode->points_bb)+2*grid_mode->point_radius;
 
 #if 0
         cairo_BOX (cr, *dest);
@@ -944,14 +983,14 @@ bool grid_mode (app_state_t *st, app_graphics_t *gr)
         int i;
         int x_slot = 0, y_slot = 0;
         int x_step=10, y_step = 20;
-        int num_x_slots = grid_st.num_loops/binomial(grid_st.n,2);
-        for (i=0; i<grid_st.num_loops; i++) {
-            int x_pos = grid_st.canvas_x+(dest_width+x_step)*x_slot;
-            int y_pos = grid_st.canvas_y+(dest_height+y_step)*y_slot;
+        int num_x_slots = grid_mode->num_loops/binomial(grid_mode->n,2);
+        for (i=0; i<grid_mode->num_loops; i++) {
+            int x_pos = grid_mode->canvas_x+(dest_width+x_step)*x_slot;
+            int y_pos = grid_mode->canvas_y+(dest_height+y_step)*y_slot;
             
             BOX_X_Y_W_H (dest, x_pos, y_pos, dest_width, dest_height);
             if (is_box_visible (&dest, gr)) {
-                draw_graph (cr, &grid_st, i, &dest);
+                draw_graph (cr, grid_mode, i, &dest);
             }
 
             if (x_slot == num_x_slots-1) {
@@ -965,42 +1004,17 @@ bool grid_mode (app_state_t *st, app_graphics_t *gr)
     return true;
 }
 
-bool update_and_render (app_graphics_t *graphics, app_input_t input)
+bool update_and_render (app_state_t *st, app_graphics_t *graphics, app_input_t input)
 {
-    static app_state_t *st = NULL;
+    if (!st->is_initialized) {
+        st->end_execution = false;
+        st->is_initialized = true;
 
-    if (!st) {
-        int storage_size =  megabyte(60);
-        uint8_t* memory = calloc (storage_size, 1);
-        st = (app_state_t*)memory;
-        st->storage_size = storage_size;
-        memory_stack_init (&st->memory, st->storage_size-sizeof(app_state_t), memory+sizeof(app_state_t));
-
-        int temp_memory_size =  megabyte(10);
-        uint8_t* temp_memory = calloc (temp_memory_size, 1);
-        memory_stack_init (&st->temporary_memory, temp_memory_size, temp_memory);
-
-        int_string_update (&st->n, 8);
-        int_string_update (&st->k, thrackle_size (st->n.i));
-
-        st->it_mode = iterate_order_type;
-        st->user_number = -1;
-
-        st->max_zoom = 5000;
-        st->zoom = 1;
-        st->zoom_changed = 0;
-        st->old_zoom = 1;
-        st->app_is_initialized = 1;
-        st->old_graphics = *graphics;
-        st->input = input;
         st->time_since_last_click[0] = -1;
         st->time_since_last_click[1] = -1;
         st->time_since_last_click[2] = -1;
         st->double_click_time = 100;
         st->min_distance_for_drag = 10;
-        st->view_db_ot = false;
-
-        set_n (st, st->n.i, graphics);
 
         init_button (&st->css_styles[CSS_BUTTON]);
         init_pressed_button (&st->css_styles[CSS_BUTTON_ACTIVE]);
@@ -1078,7 +1092,7 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
             input.force_redraw = true;
             break;
         case 24: //KEY_Q
-            end_execution = 1;
+            st->end_execution = 1;
             return false;
         default:
             //if (input.keycode >= 8) {
@@ -1096,6 +1110,8 @@ bool update_and_render (app_graphics_t *graphics, app_input_t input)
             break;
         case APP_GRID_MODE:
             blit_needed = grid_mode (st, graphics);
+            break;
+        case APP_TREE_MODE:
             break;
         default:
             invalid_code_path;
@@ -1246,7 +1262,19 @@ int main (void)
     clock_gettime(CLOCK_MONOTONIC, &start_ticks);
     app_input_t app_input = {0};
     app_input.wheel = 1;
-    while (!end_execution) {
+
+    int storage_size =  megabyte(60);
+    uint8_t* memory = calloc (storage_size, 1);
+    app_state_t *st = (app_state_t*)memory;
+    st->storage_size = storage_size;
+    memory_stack_init (&st->memory, st->storage_size-sizeof(app_state_t), memory+sizeof(app_state_t));
+
+    // TODO: Should this be inside st->memory?
+    int temp_memory_size =  megabyte(10);
+    uint8_t* temp_memory = calloc (temp_memory_size, 1);
+    memory_stack_init (&st->temporary_memory, temp_memory_size, temp_memory);
+
+    while (!st->end_execution) {
         while ((event = xcb_poll_for_event (connection))) {
             // NOTE: The most significant bit of event->response_type is set if
             // the event was generated from a SendEvent request, here we don't
@@ -1294,7 +1322,7 @@ int main (void)
                     } break;
                 case XCB_CLIENT_MESSAGE:
                     if (((xcb_client_message_event_t*)event)->data.data32[0] == delete_window_atom) {
-                        end_execution = true;
+                        st->end_execution = true;
                     }
                     break;
                 default: 
@@ -1319,7 +1347,7 @@ int main (void)
         // TODO: How bad is this? should we actually measure it?
         app_input.time_elapsed_ms = target_frame_length_ms;
 
-        bool blit_needed = update_and_render (&graphics, app_input);
+        bool blit_needed = update_and_render (st, &graphics, app_input);
 
         cairo_status_t cr_stat = cairo_status (graphics.cr);
         if (cr_stat != CAIRO_STATUS_SUCCESS) {
