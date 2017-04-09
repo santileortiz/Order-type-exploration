@@ -89,21 +89,30 @@ typedef enum {
 } app_mode_t;
 
 typedef struct {
-    box_t panel_box;
     int n;
-    vect2_t *point_set;
-    box_t src;
-
+    vect2_t *points;
+    box_t points_bb;
     double point_radius;
+
     double canvas_x, canvas_y;
     bool loops_computed;
     uint64_t num_loops;
     int_dyn_arr_t edges_of_all_loops;
-    vect2_t *points;
-    box_t points_bb;
 
     memory_stack_t memory;
 } grid_mode_state_t;
+
+typedef struct {
+    vect2_t root_pos;
+
+    int n;
+    vect2_t *points;
+    box_t points_bb;
+    double point_radius;
+
+    int *all_perms;
+    memory_stack_t memory;
+} tree_mode_state_t;
 
 typedef struct {
     int_string_t n;
@@ -141,6 +150,7 @@ typedef struct {
     app_mode_t app_mode;
     point_set_mode_t *ps_mode;
     grid_mode_state_t *grid_mode;
+    tree_mode_state_t *tree_mode;
 
     app_input_t input;
     char dragging[3];
@@ -916,6 +926,26 @@ void draw_graph (cairo_t *cr, grid_mode_state_t *grid_st, int id, box_t *dest)
     }
 }
 
+void bipartite_points (int n, vect2_t *points, box_t *bounding_box)
+{
+    int64_t y_step = UINT8_MAX/(n-1);
+    int64_t x_step = y_step;
+    int64_t y_pos = 0;
+    int i;
+    for (i=0; i<n; i++) {
+        points[i].x = 0;
+        points[i].y = y_pos;
+
+        points[i+n].x = x_step;
+        points[i+n].y = y_pos;
+        y_pos += y_step;
+    }
+
+    if (bounding_box) {
+        BOX_X_Y_W_H (*bounding_box, 0, 0, x_step, UINT8_MAX);
+    }
+}
+
 bool grid_mode (app_state_t *st, app_graphics_t *gr)
 {
     grid_mode_state_t *grid_mode = st->grid_mode;
@@ -928,7 +958,7 @@ bool grid_mode (app_state_t *st, app_graphics_t *gr)
                            base+sizeof(grid_mode_state_t));
 
         grid_mode = st->grid_mode;
-        grid_mode->n = 5;
+        grid_mode->n = 3;
         grid_mode->loops_computed = false;
         grid_mode->points = push_array (&grid_mode->memory, 2*grid_mode->n, vect2_t);
 
@@ -936,20 +966,7 @@ bool grid_mode (app_state_t *st, app_graphics_t *gr)
         grid_mode->canvas_y = 10;
         grid_mode->point_radius = 5;
 
-        int64_t y_step = UINT8_MAX/(grid_mode->n-1);
-        int64_t x_step = y_step;
-        int64_t y_pos = 0;
-        int i;
-        for (i=0; i<grid_mode->n; i++) {
-            grid_mode->points[i].x = 0;
-            grid_mode->points[i].y = y_pos;
-
-            grid_mode->points[i+grid_mode->n].x = x_step;
-            grid_mode->points[i+grid_mode->n].y = y_pos;
-            y_pos += y_step;
-        }
-
-        BOX_X_Y_W_H (grid_mode->points_bb, 0, 0, x_step, UINT8_MAX);
+        bipartite_points (grid_mode->n, grid_mode->points, &grid_mode->points_bb);
     }
 
     app_input_t input = st->input;
@@ -969,7 +986,8 @@ bool grid_mode (app_state_t *st, app_graphics_t *gr)
     if (input.force_redraw) {
         box_t dest;
         int dest_width = 40;
-        int dest_height = (dest_width-2*grid_mode->point_radius)/BOX_AR(grid_mode->points_bb)+2*grid_mode->point_radius;
+        int dest_height = (dest_width-2*grid_mode->point_radius)/BOX_AR(grid_mode->points_bb)+
+            2*grid_mode->point_radius;
 
 #if 0
         cairo_BOX (cr, *dest);
@@ -1000,8 +1018,90 @@ bool grid_mode (app_state_t *st, app_graphics_t *gr)
                 x_slot++;
             }
         }
+        return true;
     }
-    return true;
+    return false;
+}
+
+bool tree_mode (app_state_t *st, app_graphics_t *gr)
+{
+    tree_mode_state_t *tree_mode = st->tree_mode;
+    cairo_t *cr = gr->cr;
+    int n = 3;
+    if (!st->tree_mode) {
+        uint32_t mode_storage = megabyte(5);
+        uint8_t *base = push_size (&st->memory, mode_storage);
+        st->tree_mode = (tree_mode_state_t*)base;
+        memory_stack_init (&st->tree_mode->memory,
+                           mode_storage-sizeof(tree_mode_state_t),
+                           base+sizeof(tree_mode_state_t));
+        tree_mode = st->tree_mode;
+        tree_mode->root_pos = VECT2 (100, 50);
+        tree_mode->n = n;
+        tree_mode->point_radius = 5;
+        tree_mode->points = push_array (&tree_mode->memory, 2*tree_mode->n, vect2_t);
+        bipartite_points (tree_mode->n, tree_mode->points, &tree_mode->points_bb);
+
+        int num_perms = factorial (n);
+        tree_mode->all_perms = push_array (&tree_mode->memory, num_perms * n, int);
+        compute_all_permutations (n, tree_mode->all_perms);
+    }
+
+    if (st->input.force_redraw) {
+
+        int match[] = {1, 2, 0};
+        int *e = push_array (&tree_mode->memory, 2*n, int);
+        int dest_width = 40;
+        int dest_height = (dest_width-2*tree_mode->point_radius)/BOX_AR(tree_mode->points_bb)+
+            2*tree_mode->point_radius;
+
+        cairo_set_source_rgb (cr, 1,1,1);
+        cairo_paint (cr);
+
+        int j;
+        for (j=0; j<ARRAY_SIZE(match); j++) {
+            box_t dest;
+            BOX_X_Y_W_H (dest, tree_mode->root_pos.x, tree_mode->root_pos.y+(dest_height+20)*j,
+                         dest_width, dest_height);
+
+            edges_from_permutation (tree_mode->all_perms, match[j], tree_mode->n, e);
+
+            dest.min.x += tree_mode->point_radius;
+            dest.min.y += tree_mode->point_radius;
+            dest.max.x -= tree_mode->point_radius;
+            dest.max.y -= tree_mode->point_radius;
+
+            transf_t graph_to_dest;
+            box_t *src = &tree_mode->points_bb;
+            compute_best_fit_box_to_box_transform (&graph_to_dest, src, &dest);
+
+            cairo_set_source_rgb (cr,0,0,0);
+            int i;
+            for (i=0; i<2*tree_mode->n; i++) {
+                vect2_t p = tree_mode->points[i];
+                apply_transform (&graph_to_dest, &p);
+                cairo_arc (cr, p.x, p.y, tree_mode->point_radius, 0, 2*M_PI);
+                cairo_fill (cr);
+            }
+
+            cairo_set_line_width (cr, 1);
+            for (i=0; i<tree_mode->n; i++) {
+                vect2_t p1 = tree_mode->points[e[2*i]];
+                apply_transform (&graph_to_dest, &p1);
+                pixel_align_as_line (&p1);
+
+                vect2_t p2 = tree_mode->points[e[2*i+1]];
+                apply_transform (&graph_to_dest, &p2);
+                pixel_align_as_line (&p2);
+
+                cairo_move_to (cr, p1.x, p1.y);
+                cairo_line_to (cr, p2.x, p2.y);
+                cairo_stroke (cr);
+            }
+        }
+        return true;
+    }
+    return false;
 }
 
 bool update_and_render (app_state_t *st, app_graphics_t *graphics, app_input_t input)
@@ -1112,6 +1212,7 @@ bool update_and_render (app_state_t *st, app_graphics_t *graphics, app_input_t i
             blit_needed = grid_mode (st, graphics);
             break;
         case APP_TREE_MODE:
+            blit_needed = tree_mode (st, graphics);
             break;
         default:
             invalid_code_path;
