@@ -355,5 +355,148 @@ void int_dyn_arr_print (int_dyn_arr_t *arr)
     array_print (arr->data, arr->len);
 }
 
+// This is a simple contiguous buffer, arbitrary sized objects are pushed and
+// it grows automatically doubling it's previous size.
+//
+// NOTE: We use zero is initialization unless min_size is used
+// WARNING: Don't create pointers into this structure because they won't work
+// after a realloc happens.
+#define CONT_BUFF_MIN_SIZE 1024
+typedef struct {
+    uint32_t min_size;
+    uint32_t size;
+    uint32_t used;
+    void *data;
+} cont_buff_t;
+
+void* cont_buff_push (cont_buff_t *buff, int size)
+{
+    if (buff->used + size >= buff->size) {
+        void *new_data;
+        if (buff->size == 0) {
+            int new_size = MAX (CONT_BUFF_MIN_SIZE, buff->min_size);
+            if ((buff->data = malloc (new_size))) {
+                buff->size = new_size;
+            } else {
+                printf ("Malloc failed.\n");
+            }
+        } else if ((new_data = realloc (buff->data, 2*buff->size))) {
+            buff->data = new_data;
+            buff->size = 2*buff->size;
+        } else {
+            printf ("Error: Realloc failed.\n");
+            return NULL;
+        }
+    }
+
+    void *ret = (uint8_t*)buff->data + buff->used;
+    buff->used += size;
+    return ret;
+}
+
+// NOTE: The same cont_buff_t can be used again after this.
+void cont_buff_destroy (cont_buff_t *buff)
+{
+    free (buff->data);
+    buff->data = NULL;
+    buff->size = 0;
+    buff->used = 0;
+}
+
+// Memory pool that grows as needed, and can be freed easily.
+#define MEM_POOL_MIN_BIN_SIZE 1024
+typedef struct {
+    uint32_t min_bin_size;
+    uint32_t size;
+    uint32_t used;
+    void *base;
+} mem_pool_t;
+
+struct _bin_info_t {
+    void *base;
+    uint32_t size;
+    struct _bin_info_t *prev_bin_info;
+};
+
+typedef struct _bin_info_t bin_info_t;
+
+#define mem_pool_push_struct(pool, type) mem_pool_push_size(pool, sizeof(type))
+#define mem_pool_push_array(pool, n, type) mem_pool_push_size(pool, n*sizeof(type))
+void* mem_pool_push_size (mem_pool_t *pool, int size)
+{
+    if (pool->used + size >= pool->size) {
+        int new_bin_size = MAX (MAX (MEM_POOL_MIN_BIN_SIZE, pool->min_bin_size), size);
+        void *new_bin;
+        bin_info_t *new_info;
+        if ((new_bin = malloc (new_bin_size + sizeof(bin_info_t)))) {
+            new_info = (bin_info_t*)((uint8_t*)new_bin + new_bin_size);
+        } else {
+            printf ("Malloc failed.\n");
+            return NULL;
+        }
+
+        new_info->base = new_bin;
+        new_info->size = new_bin_size;
+
+        if (pool->base == NULL) {
+            new_info->prev_bin_info = NULL;
+        } else {
+            bin_info_t *prev_info = (bin_info_t*)((uint8_t*)pool->base + pool->size);
+            new_info->prev_bin_info = prev_info;
+        }
+
+        pool->used = 0;
+        pool->size = new_bin_size;
+        pool->base = new_bin;
+    }
+
+    void *ret = (uint8_t*)pool->base + pool->used;
+    pool->used += size;
+    return ret;
+}
+
+// NOTE: _pool_ can be reused after this.
+void mem_pool_destroy (mem_pool_t *pool)
+{
+    bin_info_t *curr_info = (bin_info_t*)((uint8_t*)pool->base + pool->size);
+    while (curr_info->prev_bin_info != NULL) {
+        void *to_free = curr_info->base;
+        curr_info = curr_info->prev_bin_info;
+        free (to_free);
+    }
+    free (curr_info->base);
+    pool->size = 0;
+    pool->used = 0;
+    pool->base = NULL;
+}
+
+typedef struct {
+    mem_pool_t *pool;
+    void* base;
+    uint32_t used;
+} pool_temp_marker_t;
+
+pool_temp_marker_t mem_pool_begin_temporary_memory (mem_pool_t *pool)
+{
+    pool_temp_marker_t res;
+    res.used = pool->used;
+    res.base = pool->base;
+    res.pool = pool;
+    return res;
+}
+
+void mem_pool_end_temporary_memory (pool_temp_marker_t mrkr)
+{
+    bin_info_t *curr_info = (bin_info_t*)((uint8_t*)mrkr.pool->base + mrkr.pool->size);
+    while (curr_info->base != mrkr.base) {
+        void *to_free = curr_info->base;
+        curr_info = curr_info->prev_bin_info;
+        free (to_free);
+    }
+    mrkr.pool->size = curr_info->size;
+    mrkr.pool->base = curr_info->base;
+    mrkr.pool->used = mrkr.used;
+}
+
 #define COMMON_H
 #endif
