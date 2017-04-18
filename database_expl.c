@@ -110,8 +110,12 @@ typedef struct {
     box_t points_bb;
     double point_radius;
 
+    uint64_t num_nodes;
+
     int *all_perms;
     memory_stack_t memory;
+
+    mem_pool_t pool;
 } tree_mode_state_t;
 
 typedef struct {
@@ -926,10 +930,16 @@ void draw_graph (cairo_t *cr, grid_mode_state_t *grid_st, int id, box_t *dest)
     }
 }
 
-void bipartite_points (int n, vect2_t *points, box_t *bounding_box)
+void bipartite_points (int n, vect2_t *points, box_t *bounding_box, double bb_ar)
 {
     int64_t y_step = UINT8_MAX/(n-1);
-    int64_t x_step = y_step;
+
+    int64_t x_step;
+    if (bb_ar == 0) {
+        x_step = y_step;
+    } else {
+        x_step = UINT8_MAX/bb_ar;
+    }
     int64_t y_pos = 0;
     int i;
     for (i=0; i<n; i++) {
@@ -966,7 +976,7 @@ bool grid_mode (app_state_t *st, app_graphics_t *gr)
         grid_mode->canvas_y = 10;
         grid_mode->point_radius = 5;
 
-        bipartite_points (grid_mode->n, grid_mode->points, &grid_mode->points_bb);
+        bipartite_points (grid_mode->n, grid_mode->points, &grid_mode->points_bb, 0);
     }
 
     app_input_t input = st->input;
@@ -1023,11 +1033,294 @@ bool grid_mode (app_state_t *st, app_graphics_t *gr)
     return false;
 }
 
+// The followng is an implementation of the algorithm developed in [1] to draw
+// trees in linear time.
+//
+// [1] Buchheim, C., Jünger, M. and Leipert, S. (2006), Drawing rooted trees in
+// linear time. Softw: Pract. Exper., 36: 651–665. doi:10.1002/spe.713
+int sibling_distance;
+struct _layout_tree_node_t {
+    double mod;
+    double prelim;
+    double change;
+    double shift;
+    uint32_t node_id;
+    uint32_t val;
+    struct _layout_tree_node_t *parent;
+    struct _layout_tree_node_t *ancestor;
+    struct _layout_tree_node_t *thread;
+    box_t box;
+    uint32_t child_id; // position among its siblings
+    uint32_t num_children;
+    struct _layout_tree_node_t *children[1];
+};
+typedef struct _layout_tree_node_t layout_tree_node_t;
+
+#define push_layout_node(buff, num_children) (num_children)>1? \
+                         mem_pool_push_size((buff), sizeof(layout_tree_node_t) + \
+                        (num_children-1)*sizeof(layout_tree_node_t*)) : \
+                         mem_pool_push_size((buff), sizeof(layout_tree_node_t))
+
+#define create_layout_tree(pool,node) create_layout_tree_helper(pool, node, NULL, 0, 0)
+layout_tree_node_t* create_layout_tree_helper (mem_pool_t *pool, backtrack_node_t *node,
+                                               layout_tree_node_t *parent, uint32_t child_id,
+                                               uint32_t node_id)
+{
+    layout_tree_node_t *lay_node = push_layout_node (pool, node->num_children);
+    *lay_node = (layout_tree_node_t){0};
+    lay_node->ancestor = lay_node;
+    lay_node->parent = parent;
+    lay_node->child_id = child_id;
+    lay_node->node_id = node->id;
+    lay_node->val = node->val;
+    lay_node->num_children = node->num_children;
+
+    int ch_id;
+    for (ch_id=0; ch_id<node->num_children; ch_id++) {
+        lay_node->children[ch_id] =
+            create_layout_tree_helper (pool, node->children[ch_id], lay_node, ch_id, node_id);
+        node_id += lay_node->children[ch_id]->num_children + 1;
+    }
+    return lay_node;
+}
+
+#define rightmost(v) (v->children[v->num_children-1])
+#define leftmost(v) (v->children[0])
+#define left_sibling(v) (v->parent->children[v->child_id-1])
+
+layout_tree_node_t* tree_layout_next_left (layout_tree_node_t *v)
+{
+    if (v->num_children > 0) {
+        return leftmost(v);
+    } else {
+        return v->thread;
+    }
+}
+
+layout_tree_node_t* tree_layout_next_right (layout_tree_node_t *v)
+{
+    if (v->num_children > 0) {
+        return rightmost(v);
+    } else {
+        return v->thread;
+    }
+}
+
+void tree_layout_move_subtree (layout_tree_node_t *w_m, layout_tree_node_t *w_p, double shift)
+{
+    double subtrees = w_p->child_id - w_m->child_id;
+    w_p->change -= shift/subtrees;
+    w_p->shift += shift;
+    w_m->change += shift/subtrees;
+    w_p->prelim += shift;
+    w_p->mod += shift;
+}
+
+void tree_layout_execute_shifts (layout_tree_node_t *v)
+{
+    double shift = 0;
+    double change = 0;
+    int ch_id;
+    for (ch_id = v->num_children-1; ch_id >= 0; ch_id--) {
+        layout_tree_node_t *w = v->children[ch_id];
+        w->prelim += shift;
+        w->mod += shift;
+        change += w->change;
+        shift += w->shift + change;
+    }
+}
+
+layout_tree_node_t* tree_layout_ancestor (layout_tree_node_t *v_i_m, layout_tree_node_t *v,
+                           layout_tree_node_t *default_ancestor)
+{
+    if (v_i_m->ancestor->parent == v->parent) {
+        return v_i_m->ancestor;
+    } else {
+        return default_ancestor;
+    }
+}
+
+void tree_layout_apportion (layout_tree_node_t *v, layout_tree_node_t **default_ancestor)
+{
+    layout_tree_node_t *v_i_p, *v_o_p, *v_i_m, *v_o_m;
+    double s_i_p, s_o_p, s_i_m, s_o_m;
+    if (v->child_id > 0) {
+        v_i_p = v_o_p = v;
+        v_i_m = left_sibling(v);
+        v_o_m = leftmost(v_i_p->parent);
+        s_i_p = v_i_p->mod;
+        s_o_p = v_o_p->mod;
+        s_i_m = v_i_m->mod;
+        s_o_m = v_o_m->mod;
+        while (tree_layout_next_right (v_i_m) != NULL && tree_layout_next_left (v_i_p) != NULL) {
+            v_i_m = tree_layout_next_right (v_i_m);
+            v_i_p = tree_layout_next_left (v_i_p);
+            v_o_m = tree_layout_next_left (v_o_m);
+            v_o_p = tree_layout_next_right (v_o_p);
+            v_o_p->ancestor = v;
+            double shift = (v_i_m->prelim + s_i_m) - (v_i_p->prelim + s_i_p) + sibling_distance;
+            if (shift > 0) {
+                tree_layout_move_subtree (tree_layout_ancestor (v_i_m, v, *default_ancestor), v, shift);
+                s_i_p += shift;
+                s_o_p += shift;
+            }
+            s_i_m += v_i_m->mod;
+            s_i_p += v_i_p->mod;
+            s_o_m += v_o_m->mod;
+            s_o_p += v_o_p->mod;
+        }
+        if (tree_layout_next_right (v_i_m) != NULL && tree_layout_next_right (v_o_p) == NULL) {
+            v_o_p->thread = tree_layout_next_right (v_i_m);
+            v_o_p->mod += s_i_m - s_o_p;
+        }
+
+        if (tree_layout_next_left (v_i_p) != NULL && tree_layout_next_left (v_o_m) == NULL) {
+            v_o_m->thread = tree_layout_next_left (v_o_m);
+            v_o_m->mod += s_i_p - s_o_m;
+            *default_ancestor = v;
+        }
+    }
+}
+
+void tree_layout_first_walk (layout_tree_node_t *v)
+{
+    if (v->num_children == 0) {
+        v->prelim = 0;
+        if (v->child_id > 0) {
+            layout_tree_node_t *w = left_sibling(v);
+            v->prelim = w->prelim + sibling_distance;
+        }
+    } else {
+        layout_tree_node_t *default_ancestor = v->children[0];
+        int ch_id;
+        for (ch_id=0; ch_id<v->num_children; ch_id++) {
+            layout_tree_node_t *w = v->children[ch_id];
+            tree_layout_first_walk (w);
+            tree_layout_apportion (w, &default_ancestor);
+        }
+
+        tree_layout_execute_shifts (v);
+        int midpoint = (leftmost(v)->prelim + rightmost(v)->prelim)/2;
+        if (v->child_id > 0) {
+            v->prelim = left_sibling(v)->prelim + sibling_distance;
+            v->mod = v->prelim - midpoint;
+        } else {
+            v->prelim = midpoint;
+        }
+    }
+}
+
+#define tree_layout_second_walk(r,x,y,size,margins) \
+    tree_layout_second_walk_helper(r,x,y,size,margins,-r->prelim,0)
+void tree_layout_second_walk_helper (layout_tree_node_t *v,
+                                     double x, double y,
+                                     vect2_t size, vect2_t margins,
+                                     double m, double l)
+{
+    BOX_X_Y_W_H(v->box, x+v->prelim + m, y+l*(size.y+margins.y), size.x, size.y);
+    int ch_id;
+    for (ch_id = 0; ch_id<v->num_children; ch_id++) {
+        layout_tree_node_t *w = v->children[ch_id];
+        tree_layout_second_walk_helper (w, x, y, size, margins, m+v->mod, l+1);
+    }
+}
+
+#define layout_tree_preorder_print(r) layout_tree_preorder_print_helper(r,0)
+void layout_tree_preorder_print_helper (layout_tree_node_t *v, int l)
+{
+    int i = l;
+    while (i>0) {
+        printf (" ");
+        i--;
+    }
+    printf ("[%d] x: %f, y: %f\n", v->node_id, v->box.min.x, v->box.min.y);
+
+    int ch_id;
+    for (ch_id=0; ch_id<v->num_children; ch_id++) {
+        layout_tree_preorder_print_helper (v->children[ch_id], l+1);
+    }
+}
+
+#define backtrack_tree_preorder_print(r) backtrack_tree_preorder_print_helper(r,0)
+void backtrack_tree_preorder_print_helper (backtrack_node_t *v, int l)
+{
+    int i = l;
+    while (i>0) {
+        printf (" ");
+        i--;
+    }
+    printf ("[%d] : %d\n", v->id, v->val);
+
+    int ch_id;
+    for (ch_id=0; ch_id<v->num_children; ch_id++) {
+        backtrack_tree_preorder_print_helper (v->children[ch_id], l+1);
+    }
+}
+
+void draw_permutation (cairo_t *cr, uint64_t perm_id, box_t *dest, tree_mode_state_t *tree_mode)
+{
+    int e[2*tree_mode->n];
+    edges_from_permutation (tree_mode->all_perms, perm_id, tree_mode->n, e);
+
+    box_t l_dest = *dest;
+    l_dest.min.x += tree_mode->point_radius;
+    l_dest.min.y += tree_mode->point_radius;
+    l_dest.max.x -= tree_mode->point_radius;
+    l_dest.max.y -= tree_mode->point_radius;
+
+    transf_t graph_to_dest;
+    box_t *src = &tree_mode->points_bb;
+    compute_best_fit_box_to_box_transform (&graph_to_dest, src, &l_dest);
+
+    cairo_set_source_rgb (cr,0,0,0);
+    int i;
+    for (i=0; i<2*tree_mode->n; i++) {
+        vect2_t p = tree_mode->points[i];
+        apply_transform (&graph_to_dest, &p);
+        cairo_arc (cr, p.x, p.y, tree_mode->point_radius, 0, 2*M_PI);
+        cairo_fill (cr);
+    }
+
+    cairo_set_line_width (cr, 2);
+    for (i=0; i<tree_mode->n; i++) {
+        vect2_t p1 = tree_mode->points[e[2*i]];
+        apply_transform (&graph_to_dest, &p1);
+        //pixel_align_as_line (&p1);
+
+        vect2_t p2 = tree_mode->points[e[2*i+1]];
+        apply_transform (&graph_to_dest, &p2);
+        //pixel_align_as_line (&p2);
+
+        cairo_move_to (cr, p1.x, p1.y);
+        cairo_line_to (cr, p2.x, p2.y);
+        cairo_stroke (cr);
+    }
+}
+
+void draw_layout_tree_preorder (cairo_t *cr, layout_tree_node_t *v, tree_mode_state_t *tree_mode)
+{
+    if (v->val == -1) {
+        vect2_t p = VECT2 (v->box.min.x + BOX_WIDTH(v->box)/2, v->box.min.y + BOX_HEIGHT(v->box)/2);
+        cairo_arc (cr, p.x, p.y, 7, 0, 2*M_PI);
+        cairo_fill (cr);
+    } else {
+        draw_permutation (cr, v->val, &v->box, tree_mode);
+    }
+
+    int ch_id;
+    for (ch_id=0; ch_id<v->num_children; ch_id++) {
+        draw_layout_tree_preorder (cr, v->children[ch_id], tree_mode);
+    }
+}
+
 bool tree_mode (app_state_t *st, app_graphics_t *gr)
 {
     tree_mode_state_t *tree_mode = st->tree_mode;
     cairo_t *cr = gr->cr;
-    int n = 3;
+
+    static backtrack_node_t **nodes;
+
+    int n = 4;
     if (!st->tree_mode) {
         uint32_t mode_storage = megabyte(5);
         uint8_t *base = push_size (&st->memory, mode_storage);
@@ -1038,67 +1331,49 @@ bool tree_mode (app_state_t *st, app_graphics_t *gr)
         tree_mode = st->tree_mode;
         tree_mode->root_pos = VECT2 (100, 50);
         tree_mode->n = n;
-        tree_mode->point_radius = 5;
+        tree_mode->point_radius = 4;
         tree_mode->points = push_array (&tree_mode->memory, 2*tree_mode->n, vect2_t);
-        bipartite_points (tree_mode->n, tree_mode->points, &tree_mode->points_bb);
+        bipartite_points (tree_mode->n, tree_mode->points, &tree_mode->points_bb, 1.618);
 
-        int num_perms = factorial (n);
-        tree_mode->all_perms = push_array (&tree_mode->memory, num_perms * n, int);
-        compute_all_permutations (n, tree_mode->all_perms);
+        nodes = matching_decompositions_over_complete_bipartite_graphs (n, &tree_mode->pool,
+                                                                &tree_mode->num_nodes,
+                                                                &tree_mode->all_perms);
+        int i;
+        for (i=0; i<tree_mode->num_nodes; i++) {
+            if (nodes[i]->id == 0) {
+                break;
+            }
+        }
+    }
+
+    if (st->dragging[0]) {
+        tree_mode->root_pos.x += st->ptr_delta.x;
+        tree_mode->root_pos.y += st->ptr_delta.y;
+        st->input.force_redraw = true;
     }
 
     if (st->input.force_redraw) {
-
-        int match[] = {1, 2, 0};
-        int *e = push_array (&tree_mode->memory, 2*n, int);
-        int dest_width = 40;
+        int dest_width = 50;
         int dest_height = (dest_width-2*tree_mode->point_radius)/BOX_AR(tree_mode->points_bb)+
             2*tree_mode->point_radius;
 
+        vect2_t dest_size = VECT2 (dest_width, dest_height);
+        vect2_t margins = VECT2 (30, 20);
+
+        sibling_distance = dest_width + margins.x;
+        mem_pool_t layout_tree = {0};
+        layout_tree_node_t *root = create_layout_tree (&layout_tree, nodes[tree_mode->num_nodes-1]);
+        tree_layout_first_walk (root);
+        tree_layout_second_walk (root, tree_mode->root_pos.x, tree_mode->root_pos.y, dest_size, margins);
+        //layout_tree_preorder_print (root);
+        //printf ("\n");
+
+
         cairo_set_source_rgb (cr, 1,1,1);
         cairo_paint (cr);
+        cairo_set_source_rgb (cr,0,0,0);
+        draw_layout_tree_preorder (cr, root, tree_mode);
 
-        int j;
-        for (j=0; j<ARRAY_SIZE(match); j++) {
-            box_t dest;
-            BOX_X_Y_W_H (dest, tree_mode->root_pos.x, tree_mode->root_pos.y+(dest_height+20)*j,
-                         dest_width, dest_height);
-
-            edges_from_permutation (tree_mode->all_perms, match[j], tree_mode->n, e);
-
-            dest.min.x += tree_mode->point_radius;
-            dest.min.y += tree_mode->point_radius;
-            dest.max.x -= tree_mode->point_radius;
-            dest.max.y -= tree_mode->point_radius;
-
-            transf_t graph_to_dest;
-            box_t *src = &tree_mode->points_bb;
-            compute_best_fit_box_to_box_transform (&graph_to_dest, src, &dest);
-
-            cairo_set_source_rgb (cr,0,0,0);
-            int i;
-            for (i=0; i<2*tree_mode->n; i++) {
-                vect2_t p = tree_mode->points[i];
-                apply_transform (&graph_to_dest, &p);
-                cairo_arc (cr, p.x, p.y, tree_mode->point_radius, 0, 2*M_PI);
-                cairo_fill (cr);
-            }
-
-            cairo_set_line_width (cr, 1);
-            for (i=0; i<tree_mode->n; i++) {
-                vect2_t p1 = tree_mode->points[e[2*i]];
-                apply_transform (&graph_to_dest, &p1);
-                pixel_align_as_line (&p1);
-
-                vect2_t p2 = tree_mode->points[e[2*i+1]];
-                apply_transform (&graph_to_dest, &p2);
-                pixel_align_as_line (&p2);
-
-                cairo_move_to (cr, p1.x, p1.y);
-                cairo_line_to (cr, p2.x, p2.y);
-                cairo_stroke (cr);
-            }
-        }
         return true;
     }
     return false;
@@ -1125,7 +1400,7 @@ bool update_and_render (app_state_t *st, app_graphics_t *graphics, app_input_t i
         init_title_label (&st->css_styles[CSS_TITLE_LABEL]);
         st->focused_layout_box = -1;
 
-        st->app_mode = APP_GRID_MODE;
+        st->app_mode = APP_TREE_MODE;
 
         input.force_redraw = 1;
     }

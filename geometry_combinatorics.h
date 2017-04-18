@@ -1108,9 +1108,71 @@ void compute_all_permutations (int n, int *res)
 // backtraching algorithms. I won't reuse it yet, because I want to spend more
 // time designing more generic backtracking code that is easy to use (try to
 // avoid function pointers).
-bool matching_backtrack (int *l, int *curr_seq, int domain_size, bool *S_l,
-                         int *num_invalid, int *invalid_restore_indx, int *invalid_perms)
+void edges_from_permutation (int *all_perms, int perm, int n, int *e);
+void print_2_regular_cycle_decomposition (int *edges, int n);
+
+struct _backtrack_node_t {
+    int id;
+    int val;
+    int num_children;
+    struct _backtrack_node_t *children[1];
+};
+typedef struct _backtrack_node_t backtrack_node_t;
+
+char* push_node (char* buff, int id, backtrack_node_t **children, int num_children)
 {
+    backtrack_node_t* node = (backtrack_node_t*)buff;
+    node->id = id;
+    node->num_children = num_children;
+    int i;
+    for (i=0; i<num_children; i++) {
+        node->children[i] = children[i];
+    }
+
+    if (num_children > 1) {
+        return buff+sizeof(backtrack_node_t)+(num_children-1)*sizeof(backtrack_node_t*);
+    } else {
+        return buff+sizeof(backtrack_node_t);
+    }
+}
+
+// This algorithm returns a contiguous array of pointers to all resulting
+// nodes with res[0] being the root of the tree.
+//
+// Memory Allocations:
+// -------------------
+//
+// Everything will be allocated inside _pool_. Some data besides the resulting
+// tree (Ex. _all_perms_ array) nedds to be stored, for this we use the local
+// memory pool temp_pool. If this data is useful to the caller, it can instead
+// be stored in _pool_ if a pointer is supplied as argument (_ret_all_perms_).
+#define MAX_NODE_SIZE(n) (sizeof(backtrack_node_t) + (n-1)*sizeof(backtrack_node_t*))
+#define ID_NODE(node_stack,i,n) ((backtrack_node_t*)((char*)node_stack + i*MAX_NODE_SIZE(n)))
+#define PUSH_NODE_PTR(buff,node_ptr) {backtrack_node_t **_node_pos = \
+                                          cont_buff_push (buff, sizeof(backtrack_node_t*)); \
+                                      *_node_pos = pushed_node;}
+
+bool matching_backtrack (int *l, int *curr_seq, int domain_size, bool *S_l,
+                         int *num_invalid, int *invalid_restore_indx, int *invalid_perms,
+                         mem_pool_t *pool, cont_buff_t *nodes, backtrack_node_t *node_stack)
+{
+    backtrack_node_t *finished = ID_NODE (node_stack, *l, domain_size);
+    uint32_t node_size;
+    if (finished->num_children > 1) {
+        node_size = sizeof(backtrack_node_t)+(finished->num_children-1)*sizeof(backtrack_node_t*);
+    } else {
+        node_size = sizeof(backtrack_node_t);
+    }
+    backtrack_node_t *pushed_node = mem_pool_push_size (pool, node_size);
+    pushed_node->id = finished->id;
+    pushed_node->val = finished->val;
+    pushed_node->num_children = finished->num_children;
+    int i;
+    for (i=0; i<finished->num_children; i++) {
+        pushed_node->children[i] = finished->children[i];
+    }
+    PUSH_NODE_PTR (nodes, pushed_node);
+
     (*l)--;
     if (*l >= 0) {
         int i;
@@ -1123,20 +1185,39 @@ bool matching_backtrack (int *l, int *curr_seq, int domain_size, bool *S_l,
             S_l[invalid_perms[i]] = false;
         }
 
+        backtrack_node_t *parent = ID_NODE (node_stack, *l, domain_size);
+        parent->children[parent->num_children] = pushed_node;
+        parent->num_children++;
+        //printf ("p_id: %d p_ch#: %d ch_id:%d\n", parent->id, parent->num_children, pushed_node->id);
+
         return true;
     } else {
         return false;
     }
 }
 
-void edges_from_permutation (int *all_perms, int perm, int n, int *e);
-void print_2_regular_cycle_decomposition (int *edges, int n);
-
-void matching_decompositions_over_complete_bipartite_graphs (int n)
+backtrack_node_t** matching_decompositions_over_complete_bipartite_graphs
+                                            (int n,
+                                             mem_pool_t *pool, uint64_t *num_nodes,
+                                             int **ret_all_perms)
 {
+    assert (num_nodes != NULL);
     int num_perms = factorial (n);
-    int *all_perms = malloc (sizeof(int) * num_perms * n);
+
+    mem_pool_t temp_pool = {0};
+    int *all_perms;
+    if (ret_all_perms == NULL) {
+        all_perms = mem_pool_push_array (&temp_pool, num_perms * n, int);
+    } else {
+        all_perms = mem_pool_push_array (pool, num_perms * n, int);
+        *ret_all_perms = all_perms;
+    }
+
+    backtrack_node_t *node_stack = mem_pool_push_size (&temp_pool, (n+1)*MAX_NODE_SIZE(num_perms));
+
     compute_all_permutations (n, all_perms);
+
+    cont_buff_t nodes = {0};
 
     int decomp[n];
     decomp[0] = 0;
@@ -1154,17 +1235,27 @@ void matching_decompositions_over_complete_bipartite_graphs (int n)
         S_l[i] = true;
     }
 
+    *ID_NODE(node_stack,0,num_perms) = (backtrack_node_t){0};
+    ID_NODE(node_stack,0,num_perms)->val = -1;
+    ID_NODE(node_stack,1,num_perms)->id = 0;
+
+    *ID_NODE(node_stack,1,num_perms) = (backtrack_node_t){0};
+    ID_NODE(node_stack,1,num_perms)->val = 0;
+    ID_NODE(node_stack,1,num_perms)->id = 1;
+    *num_nodes = 2;
+
     while (l>0) {
         if (l==n) {
-            int edges [4*n];
-            edges_from_permutation (all_perms, decomp[n-1], n, edges);
-            edges_from_permutation (all_perms, decomp[n-2], n, edges+2*n);
-            print_2_regular_cycle_decomposition (edges, n);
+            //int edges [4*n];
+            //edges_from_permutation (all_perms, decomp[n-1], n, edges);
+            //edges_from_permutation (all_perms, decomp[n-2], n, edges+2*n);
+            //print_2_regular_cycle_decomposition (edges, n);
 
             //print_decomp (n, decomp, all_perms);
             //array_print (decomp, n);
             if (!matching_backtrack (&l, decomp, num_perms, S_l,
-                                     &num_invalid, invalid_restore_indx, invalid_perms)) {
+                                     &num_invalid, invalid_restore_indx, invalid_perms,
+                                     pool, &nodes, node_stack)) {
                 continue;
             }
         } else {
@@ -1194,15 +1285,31 @@ void matching_decompositions_over_complete_bipartite_graphs (int n)
                 decomp[l] = min_S_l;
                 S_l[min_S_l] = false;
                 l++;
+
+                *ID_NODE(node_stack, l, num_perms) = (backtrack_node_t){0};
+                ID_NODE(node_stack, l, num_perms)->id = *num_nodes;
+                ID_NODE(node_stack, l, num_perms)->val = min_S_l;
+                (*num_nodes)++;
                 break;
             }
 
             if (!matching_backtrack (&l, decomp, num_perms, S_l,
-                                     &num_invalid, invalid_restore_indx, invalid_perms)) {
+                                     &num_invalid, invalid_restore_indx, invalid_perms,
+                                     pool, &nodes, node_stack)) {
                 break;
             }
         }
     }
+
+    backtrack_node_t **perm_nodes = mem_pool_push_array (pool, *num_nodes, backtrack_node_t*);
+    backtrack_node_t **node_arr = nodes.data;
+    for (i=0; i<*num_nodes; i++) {
+        perm_nodes[i] = node_arr[i];
+    }
+    cont_buff_destroy (&nodes);
+    mem_pool_destroy (&temp_pool);
+
+    return perm_nodes;
 }
 
 // TODO: Currently we receive an array of all permutations of which _perm_ is an

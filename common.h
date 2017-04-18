@@ -46,6 +46,8 @@ typedef struct {
 
 #define BOX_X_Y_W_H(box,n_x,n_y,n_w,n_h) {(box).min.x=(n_x);(box).max.x=(n_x)+(n_w); \
                                           (box).min.y=(n_y);(box).max.y=(n_y)+(n_h);}
+#define BOX_CENTER_X_Y_W_H(box,n_x,n_y,n_w,n_h) {(box).min.x=(n_x)-(n_w)/2;(box).max.x=(n_x)+(n_w)/2; \
+                                                 (box).min.y=(n_y)-(n_h)/2;(box).max.y=(n_y)+(n_h)/2;}
 #define BOX_POS_SIZE(box,pos,size) BOX_X_Y_W_H(box,(pos).x,(pos).y,(size).x,(size).y)
 
 #define BOX_WIDTH(box) ((box).max.x-(box).min.x)
@@ -421,7 +423,7 @@ struct _bin_info_t {
 typedef struct _bin_info_t bin_info_t;
 
 #define mem_pool_push_struct(pool, type) mem_pool_push_size(pool, sizeof(type))
-#define mem_pool_push_array(pool, n, type) mem_pool_push_size(pool, n*sizeof(type))
+#define mem_pool_push_array(pool, n, type) mem_pool_push_size(pool, (n)*sizeof(type))
 void* mem_pool_push_size (mem_pool_t *pool, int size)
 {
     if (pool->used + size >= pool->size) {
