@@ -1,4 +1,4 @@
-//gcc -pg -g -Wall database_expl.c -o bin/database_expl -lcairo -lX11-xcb -lX11 -lxcb -lm -lpango-1.0 -lpangocairo-1.0 -I/usr/include/pango-1.0 -I/usr/include/cairo -I/usr/include/glib-2.0 -I/usr/lib/x86_64-linux-gnu/glib-2.0/include
+//gcc -O2 -g -Wall database_expl.c -o bin/database_expl -lcairo -lX11-xcb -lX11 -lxcb -lm -lpango-1.0 -lpangocairo-1.0 -I/usr/include/pango-1.0 -I/usr/include/cairo -I/usr/include/glib-2.0 -I/usr/lib/x86_64-linux-gnu/glib-2.0/include
 // Dependencies:
 // sudo apt-get install libxcb1-dev libcairo2-dev
 #include <X11/Xlib-xcb.h>
@@ -1033,6 +1033,77 @@ bool grid_mode (app_state_t *st, app_graphics_t *gr)
     return false;
 }
 
+
+typedef enum {VTN_FULL, VTN_COMPACT, VTN_IGNORED} vtn_state_t;
+
+struct _view_tree_node_t {
+    vtn_state_t state;
+    uint32_t node_id;
+    uint32_t val;
+    box_t box;
+
+    uint32_t num_children;
+    struct _view_tree_node_t *children[1];
+};
+typedef struct _view_tree_node_t view_tree_node_t;
+
+#define push_view_node(pool, num_children) (num_children)>1? \
+                       mem_pool_push_size((pool), sizeof(view_tree_node_t) + \
+                       (num_children-1)*sizeof(view_tree_node_t*)) : \
+                       mem_pool_push_size((pool), sizeof(view_tree_node_t))
+view_tree_node_t* create_view_tree (mem_pool_t *pool, backtrack_node_t *node)
+{
+    view_tree_node_t *view_node = push_view_node (pool, node->num_children);
+    *view_node = (view_tree_node_t){0};
+    view_node->node_id = node->id;
+    view_node->val = node->val;
+    view_node->num_children = node->num_children;
+
+    int ch_id;
+    for (ch_id=0; ch_id<node->num_children; ch_id++) {
+        view_node->children[ch_id] =
+            create_view_tree (pool, node->children[ch_id]);
+    }
+    return view_node;
+}
+
+int view_tree_ignore (view_tree_node_t *view_node, int depth, int l)
+{
+    if (view_node->num_children == 0) {
+        if (l < depth) {
+            view_node->state = VTN_IGNORED;
+        }
+        return 1;
+    }
+
+    int ch_id, h = 0;
+    for (ch_id=0; ch_id<view_node->num_children; ch_id++) {
+        h = MAX(h, view_tree_ignore (view_node->children[ch_id], depth, l+1));
+    }
+
+    if (h+l != depth) {
+        view_node->state = VTN_IGNORED;
+    }
+
+    return h+1;
+}
+
+#define view_tree_print(r) view_tree_print_helper(r,0)
+void view_tree_print_helper (view_tree_node_t *v, int l)
+{
+    int i = l;
+    while (i>0) {
+        printf (" ");
+        i--;
+    }
+    printf ("[%d] %d\n", v->node_id, v->state);
+
+    int ch_id;
+    for (ch_id=0; ch_id<v->num_children; ch_id++) {
+        view_tree_print_helper (v->children[ch_id], l+1);
+    }
+}
+
 // The followng is an implementation of the algorithm developed in [1] to draw
 // trees in linear time.
 //
@@ -1045,11 +1116,10 @@ struct _layout_tree_node_t {
     double change;
     double shift;
     uint32_t node_id;
-    uint32_t val;
     struct _layout_tree_node_t *parent;
     struct _layout_tree_node_t *ancestor;
     struct _layout_tree_node_t *thread;
-    box_t box;
+    box_t *box;
     uint32_t child_id; // position among its siblings
     uint32_t num_children;
     struct _layout_tree_node_t *children[1];
@@ -1061,25 +1131,31 @@ typedef struct _layout_tree_node_t layout_tree_node_t;
                         (num_children-1)*sizeof(layout_tree_node_t*)) : \
                          mem_pool_push_size((buff), sizeof(layout_tree_node_t))
 
-#define create_layout_tree(pool,node) create_layout_tree_helper(pool, node, NULL, 0, 0)
-layout_tree_node_t* create_layout_tree_helper (mem_pool_t *pool, backtrack_node_t *node,
-                                               layout_tree_node_t *parent, uint32_t child_id,
-                                               uint32_t node_id)
+#define create_layout_tree(pool,node) create_layout_tree_helper(pool, node, NULL, 0)
+layout_tree_node_t* create_layout_tree_helper (mem_pool_t *pool, view_tree_node_t *node,
+                                               layout_tree_node_t *parent, uint32_t child_id)
 {
     layout_tree_node_t *lay_node = push_layout_node (pool, node->num_children);
     *lay_node = (layout_tree_node_t){0};
+    lay_node->box = &node->box;
     lay_node->ancestor = lay_node;
     lay_node->parent = parent;
     lay_node->child_id = child_id;
-    lay_node->node_id = node->id;
-    lay_node->val = node->val;
-    lay_node->num_children = node->num_children;
+    lay_node->node_id = node->node_id;
 
-    int ch_id;
+    view_tree_node_t *not_ignored[node->num_children];
+    int ch_id, num_not_ignored = 0;
     for (ch_id=0; ch_id<node->num_children; ch_id++) {
+        if (node->children[ch_id]->state != VTN_IGNORED) {
+            not_ignored[num_not_ignored] = node->children[ch_id];
+            num_not_ignored++;
+        }
+    }
+    lay_node->num_children = num_not_ignored;
+
+    for (ch_id=0; ch_id<num_not_ignored; ch_id++) {
         lay_node->children[ch_id] =
-            create_layout_tree_helper (pool, node->children[ch_id], lay_node, ch_id, node_id);
-        node_id += lay_node->children[ch_id]->num_children + 1;
+            create_layout_tree_helper (pool, not_ignored[ch_id], lay_node, ch_id);
     }
     return lay_node;
 }
@@ -1217,7 +1293,7 @@ void tree_layout_second_walk_helper (layout_tree_node_t *v,
                                      vect2_t size, vect2_t margins,
                                      double m, double l)
 {
-    BOX_X_Y_W_H(v->box, x+v->prelim + m, y+l*(size.y+margins.y), size.x, size.y);
+    BOX_X_Y_W_H(*(v->box), x+v->prelim + m, y+l*(size.y+margins.y), size.x, size.y);
     int ch_id;
     for (ch_id = 0; ch_id<v->num_children; ch_id++) {
         layout_tree_node_t *w = v->children[ch_id];
@@ -1233,7 +1309,7 @@ void layout_tree_preorder_print_helper (layout_tree_node_t *v, int l)
         printf (" ");
         i--;
     }
-    printf ("[%d] x: %f, y: %f\n", v->node_id, v->box.min.x, v->box.min.y);
+    printf ("[%d] x: %f, y: %f\n", v->node_id, v->box->min.x, v->box->min.y);
 
     int ch_id;
     for (ch_id=0; ch_id<v->num_children; ch_id++) {
@@ -1297,7 +1373,7 @@ void draw_permutation (cairo_t *cr, uint64_t perm_id, box_t *dest, tree_mode_sta
     }
 }
 
-void draw_layout_tree_preorder (cairo_t *cr, layout_tree_node_t *v, tree_mode_state_t *tree_mode)
+void draw_view_tree_preorder (cairo_t *cr, view_tree_node_t *v, tree_mode_state_t *tree_mode)
 {
     if (v->val == -1) {
         vect2_t p = VECT2 (v->box.min.x + BOX_WIDTH(v->box)/2, v->box.min.y + BOX_HEIGHT(v->box)/2);
@@ -1309,7 +1385,9 @@ void draw_layout_tree_preorder (cairo_t *cr, layout_tree_node_t *v, tree_mode_st
 
     int ch_id;
     for (ch_id=0; ch_id<v->num_children; ch_id++) {
-        draw_layout_tree_preorder (cr, v->children[ch_id], tree_mode);
+        if (v->children[ch_id]->state != VTN_IGNORED) {
+            draw_view_tree_preorder (cr, v->children[ch_id], tree_mode);
+        }
     }
 }
 
@@ -1361,8 +1439,13 @@ bool tree_mode (app_state_t *st, app_graphics_t *gr)
         vect2_t margins = VECT2 (30, 20);
 
         sibling_distance = dest_width + margins.x;
+        mem_pool_t view_tree = {0};
+        view_tree_node_t *view_root = create_view_tree (&view_tree, nodes[tree_mode->num_nodes-1]);
+        view_tree_ignore (view_root, n, 0);
+        //view_tree_print (view_root);
+
         mem_pool_t layout_tree = {0};
-        layout_tree_node_t *root = create_layout_tree (&layout_tree, nodes[tree_mode->num_nodes-1]);
+        layout_tree_node_t *root = create_layout_tree (&layout_tree, view_root);
         tree_layout_first_walk (root);
         tree_layout_second_walk (root, tree_mode->root_pos.x, tree_mode->root_pos.y, dest_size, margins);
         //layout_tree_preorder_print (root);
@@ -1372,7 +1455,7 @@ bool tree_mode (app_state_t *st, app_graphics_t *gr)
         cairo_set_source_rgb (cr, 1,1,1);
         cairo_paint (cr);
         cairo_set_source_rgb (cr,0,0,0);
-        draw_layout_tree_preorder (cr, root, tree_mode);
+        draw_view_tree_preorder (cr, view_root, tree_mode);
 
         return true;
     }
