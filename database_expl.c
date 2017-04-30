@@ -1,7 +1,8 @@
-//gcc -O2 -g -Wall database_expl.c -o bin/database_expl -lcairo -lX11-xcb -lX11 -lxcb -lm -lpango-1.0 -lpangocairo-1.0 -I/usr/include/pango-1.0 -I/usr/include/cairo -I/usr/include/glib-2.0 -I/usr/lib/x86_64-linux-gnu/glib-2.0/include
+//gcc -O2 -g -pg -Wall database_expl.c -o bin/database_expl -lcairo -lX11-xcb -lX11 -lxcb -lxcb-sync -lm -lpango-1.0 -lpangocairo-1.0 -I/usr/include/pango-1.0 -I/usr/include/cairo -I/usr/include/glib-2.0 -I/usr/lib/x86_64-linux-gnu/glib-2.0/include
 // Dependencies:
 // sudo apt-get install libxcb1-dev libcairo2-dev
 #include <X11/Xlib-xcb.h>
+#include <xcb/sync.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -1514,7 +1515,7 @@ bool update_and_render (app_state_t *st, app_graphics_t *graphics, app_input_t i
         init_title_label (&st->css_styles[CSS_TITLE_LABEL]);
         st->focused_layout_box = -1;
 
-        st->app_mode = APP_TREE_MODE;
+        st->app_mode = APP_POINT_SET_MODE;
 
         input.force_redraw = 1;
     }
@@ -1624,6 +1625,26 @@ xcb_atom_t get_x11_atom (xcb_connection_t *c, const char *value)
     return res;
 }
 
+char* get_x11_atom_name (xcb_connection_t *c, xcb_atom_t atom)
+{
+    xcb_get_atom_name_cookie_t ck = xcb_get_atom_name (c, atom);
+    xcb_generic_error_t *err = NULL;
+    xcb_get_atom_name_reply_t * reply = xcb_get_atom_name_reply (c, ck, &err);
+    if (err != NULL) {
+        printf ("Error while requesting atom.\n");
+    }
+
+    return xcb_get_atom_name_name (reply);
+}
+
+void increment_sync_counter (xcb_sync_int64_t *counter)
+{
+    counter->lo++;
+    if (counter->lo == 0) {
+        counter->hi++;
+    }
+}
+
 int main (void)
 {
     // Setup clocks
@@ -1685,15 +1706,40 @@ int main (void)
 
     // Set WM_PROTOCOLS property
     xcb_atom_t delete_window_atom = get_x11_atom (connection, "WM_DELETE_WINDOW");
-    xcb_atom_t atoms[] = {delete_window_atom};
+    xcb_atom_t net_wm_sync = get_x11_atom (connection, "_NET_WM_SYNC_REQUEST");
+    xcb_atom_t atoms[] = {delete_window_atom, net_wm_sync};
+
+    xcb_atom_t wm_protocols = get_x11_atom (connection, "WM_PROTOCOLS");
     xcb_change_property (connection,
             XCB_PROP_MODE_REPLACE,
             window,
-            get_x11_atom (connection, "WM_PROTOCOLS"),
+            wm_protocols,
             XCB_ATOM_ATOM,
             32,
             ARRAY_SIZE(atoms),
             atoms);
+
+    // Set up counters for _NET_WM_SYNC_REQUEST protocol on extended mode
+    xcb_sync_int64_t counter_val = {0, 0}; //{HI, LO}
+    xcb_gcontext_t counters[2];
+    counters[0] = xcb_generate_id (connection);
+    xcb_sync_create_counter (connection, counters[0], counter_val);
+
+    counters[1] = xcb_generate_id (connection);
+    xcb_sync_create_counter (connection, counters[1], counter_val);
+    
+    // NOTE: These atoms are used to recognize the ClientMessage type
+    xcb_atom_t net_wm_frame_drawn = get_x11_atom (connection, "_NET_WM_FRAME_DRAWN");
+    xcb_atom_t net_wm_frame_timings = get_x11_atom (connection, "_NET_WM_FRAME_TIMINGS");
+
+    xcb_change_property (connection,
+            XCB_PROP_MODE_REPLACE,
+            window,
+            get_x11_atom (connection, "_NET_WM_SYNC_REQUEST_COUNTER"),
+            XCB_ATOM_CARDINAL,
+            32,
+            ARRAY_SIZE(counters),
+            counters);
 
     xcb_gcontext_t  gc = xcb_generate_id (connection);
     xcb_pixmap_t backbuffer = xcb_generate_id (connection);
@@ -1810,17 +1856,48 @@ int main (void)
                         app_input.mouse_down[button_pressed-1] = 0;
                     }
                     } break;
-                case XCB_CLIENT_MESSAGE:
-                    if (((xcb_client_message_event_t*)event)->data.data32[0] == delete_window_atom) {
-                        st->end_execution = true;
+                case XCB_CLIENT_MESSAGE: {
+                    bool handled = false;
+                    xcb_client_message_event_t *client_message = ((xcb_client_message_event_t*)event);
+                     
+                    // WM_DELETE_WINDOW protocol
+                    if (client_message->type == wm_protocols) {
+                        if (client_message->data.data32[0] == delete_window_atom) {
+                            st->end_execution = true;
+                        }
+                        handled = true;
                     }
-                    break;
+
+                    // _NET_WM_SYNC_REQUEST protocol using the extended mode
+                    if (client_message->type == wm_protocols && client_message->data.data32[0] == net_wm_sync) {
+                        counter_val.lo = client_message->data.data32[2];
+                        counter_val.hi = client_message->data.data32[3];
+                        handled = true;
+                    } else if (client_message->type == net_wm_frame_drawn) {
+                        handled = true;
+                    } else if (client_message->type == net_wm_frame_timings) {
+                        handled = true;
+                    }
+
+                    if (!handled) {
+                        printf ("Unrecognized Client Message: %s\n", get_x11_atom_name (connection, client_message->type));
+                    }
+                    } break;
+                case 0: { // XCB_ERROR
+                    xcb_generic_error_t *error = (xcb_generic_error_t*)event;
+                    printf("Received X11 error %d\n", error->error_code);
+                    } break;
                 default: 
                     /* Unknown event type, ignore it */
                     continue;
             }
             free (event);
         }
+
+        // Notify X11: Start of frame
+        increment_sync_counter (&counter_val);
+        assert (counter_val.lo % 2 == 1);
+        xcb_sync_set_counter (connection, counters[1], counter_val);
 
         if (make_pixmap_bigger) {
             pixmap_width = graphics.width;
@@ -1838,6 +1915,11 @@ int main (void)
         app_input.time_elapsed_ms = target_frame_length_ms;
 
         bool blit_needed = update_and_render (st, &graphics, app_input);
+
+        // Notify X11: End of frame
+        increment_sync_counter (&counter_val);
+        assert (counter_val.lo % 2 == 0);
+        xcb_sync_set_counter (connection, counters[1], counter_val);
 
         cairo_status_t cr_stat = cairo_status (graphics.cr);
         if (cr_stat != CAIRO_STATUS_SUCCESS) {
