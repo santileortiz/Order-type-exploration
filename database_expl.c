@@ -1035,10 +1035,12 @@ bool grid_mode (app_state_t *st, app_graphics_t *gr)
 }
 
 
-typedef enum {VTN_FULL, VTN_COMPACT, VTN_IGNORED} vtn_state_t;
+typedef enum {VTN_OPEN, VTN_CLOSED, VTN_IGNORED} vtn_state_t;
+typedef enum {VTN_FULL, VTN_COMPACT} vtn_view_type_t;
 
 struct _view_tree_node_t {
     vtn_state_t state;
+    vtn_view_type_t view_type;
     uint32_t node_id;
     uint32_t val;
     box_t box;
@@ -1148,9 +1150,9 @@ layout_tree_node_t* create_layout_tree_helper (mem_pool_t *pool,
     lay_node->child_id = child_id;
     lay_node->node_id = node->node_id;
 
-    if (node->state == VTN_COMPACT) {
+    if (node->view_type == VTN_COMPACT) {
         lay_node->width = compact_width + sibling_separation;
-    } else if (node->state == VTN_FULL) {
+    } else if (node->view_type == VTN_FULL) {
         lay_node->width = full_width + sibling_separation;
     }
 
@@ -1163,7 +1165,7 @@ layout_tree_node_t* create_layout_tree_helper (mem_pool_t *pool,
         }
     }
 
-    if (node->state == VTN_FULL) {
+    if (node->state == VTN_OPEN) {
         lay_node->num_children = num_not_ignored;
         for (ch_id=0; ch_id<num_not_ignored; ch_id++) {
             lay_node->children[ch_id] =
@@ -1396,7 +1398,7 @@ void draw_view_tree_preorder (cairo_t *cr, view_tree_node_t *v, double x, double
     dest_box.max.x = v->box.max.x+x;
     dest_box.min.y = v->box.min.y+y;
     dest_box.max.y = v->box.max.y+y;
-    if (v->state == VTN_COMPACT || v->val == -1) {
+    if (v->view_type == VTN_COMPACT || v->val == -1) {
         vect2_t p = VECT2 (dest_box.min.x + BOX_WIDTH(dest_box)/2, dest_box.min.y + BOX_HEIGHT(dest_box)/2);
         cairo_arc (cr, p.x, p.y, 7, 0, 2*M_PI);
         cairo_fill (cr);
@@ -1405,7 +1407,7 @@ void draw_view_tree_preorder (cairo_t *cr, view_tree_node_t *v, double x, double
     }
 
 
-    if (v->state == VTN_FULL) {
+    if (v->state == VTN_OPEN) {
         int ch_id;
         for (ch_id=0; ch_id<v->num_children; ch_id++) {
             if (v->children[ch_id]->state != VTN_IGNORED) {
@@ -1422,7 +1424,7 @@ bool tree_mode (app_state_t *st, app_graphics_t *gr)
 
     static view_tree_node_t *view_root;
 
-    int n = 5;
+    int n = 4;
     if (!st->tree_mode) {
         uint32_t mode_storage = megabyte(5);
         uint8_t *base = push_size (&st->memory, mode_storage);
@@ -1461,7 +1463,8 @@ bool tree_mode (app_state_t *st, app_graphics_t *gr)
         for (ch_id=1; ch_id<view_root->num_children; ch_id++) {
             view_tree_node_t *w = view_root->children[ch_id];
             if (w->state != VTN_IGNORED) {
-                w->state = VTN_COMPACT;
+                w->view_type = VTN_COMPACT;
+                w->state = VTN_CLOSED;
             }
         }
 
