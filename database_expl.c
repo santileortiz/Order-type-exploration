@@ -1730,6 +1730,7 @@ int main (void)
     uint16_t pixmap_width = WINDOW_WIDTH;
     uint16_t pixmap_height = WINDOW_HEIGHT;
     bool make_pixmap_bigger = false;
+    bool force_blit = false;
 
     float frame_rate = 60;
     float target_frame_length_ms = 1000/(frame_rate);
@@ -1761,7 +1762,7 @@ int main (void)
                     uint16_t new_width = ((xcb_configure_notify_event_t*)event)->width;
                     uint16_t new_height = ((xcb_configure_notify_event_t*)event)->height;
                     if (new_width > pixmap_width || new_height > pixmap_height) {
-                        make_pixmap_bigger = 1;
+                        make_pixmap_bigger = true;
                     }
                     graphics.width = new_width;
                     graphics.height = new_height;
@@ -1776,7 +1777,7 @@ int main (void)
                     break;
                 case XCB_EXPOSE:
                     // We should tell which areas need exposing
-                    app_input.force_redraw = 1;
+                    force_blit = true;
                     break;
                 case XCB_BUTTON_PRESS: {
                     char button_pressed = ((xcb_key_press_event_t*)event)->detail;
@@ -1849,6 +1850,7 @@ int main (void)
                     pixmap_width, pixmap_height);
             cairo_xlib_surface_set_drawable (cairo_get_target (graphics.cr), backbuffer,
                     pixmap_width, pixmap_height);
+            app_input.force_redraw = true;
             make_pixmap_bigger = false;
         }
 
@@ -1879,7 +1881,7 @@ int main (void)
             printf ("Frame missed! %f ms elapsed\n", time_elapsed);
         }
 
-        if (blit_needed) {
+        if (blit_needed || force_blit) {
             xcb_copy_area (connection,
                     backbuffer,  /* drawable we want to paste */
                     window, /* drawable on which we copy the previous Drawable */
@@ -1887,6 +1889,7 @@ int main (void)
                     0,0,0,0,
                     graphics.width,         /* pixel width of the region we want to copy */
                     graphics.height);      /* pixel height of the region we want to copy */
+            force_blit = false;
         }
 
         clock_gettime(CLOCK_MONOTONIC, &end_ticks);
