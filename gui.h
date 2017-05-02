@@ -10,10 +10,60 @@ int _g_gui_num_colors = 0;
 vect4_t _g_gui_colors[50];
 
 typedef struct {
-    double scale;
+    double scale_x;
+    double scale_y;
     double dx;
     double dy;
 } transf_t;
+
+void apply_transform (transf_t *tr, vect2_t *p)
+{
+    p->x = tr->scale_x*p->x + tr->dx;
+    p->y = tr->scale_y*p->y + tr->dy;
+}
+
+void apply_transform_distance (transf_t *tr, vect2_t *p)
+{
+    p->x = tr->scale_x*p->x;
+    p->y = tr->scale_y*p->y;
+}
+
+void apply_inverse_transform (transf_t *tr, vect2_t *p)
+{
+    p->x = (p->x - tr->dx)/tr->scale_x;
+    p->y = (p->y - tr->dy)/tr->scale_y;
+}
+
+void apply_inverse_transform_distance (transf_t *tr, vect2_t *p)
+{
+    p->x = p->x/tr->scale_x;
+    p->y = p->y/tr->scale_y;
+}
+
+// Calculates a ratio by which multiply box a so that it fits inside box b
+double best_fit_ratio (double a_width, double a_height,
+                       double b_width, double b_height)
+{
+    if (a_width/a_height < b_width/b_height) {
+        return b_height/a_height;
+    } else {
+        return b_width/a_width;
+    }
+}
+
+void compute_best_fit_box_to_box_transform (transf_t *tr, box_t *src, box_t *dest)
+{
+    double src_width = BOX_WIDTH(*src);
+    double src_height = BOX_HEIGHT(*src);
+    double dest_width = BOX_WIDTH(*dest);
+    double dest_height = BOX_HEIGHT(*dest);
+
+    tr->scale_x = best_fit_ratio (src_width, src_height,
+                                dest_width, dest_height);
+    tr->scale_y = tr->scale_x;
+    tr->dx = dest->min.x + (dest_width-src_width*tr->scale_x)/2;
+    tr->dy = dest->min.y + (dest_height-src_height*tr->scale_y)/2;
+}
 
 // TODO: Maybe in the future we want this to be defined for each different
 // plattform we support. Maybe move _width_ and _height_ to app_input_t. Also
@@ -24,7 +74,6 @@ typedef struct {
     PangoLayout *text_layout;
     uint16_t width;
     uint16_t height;
-    transf_t T;
 } app_graphics_t;
 
 void rounded_box_path (cairo_t *cr, double x, double y, double width, double height, double radius)

@@ -38,18 +38,6 @@ typedef struct {
     vect2_t ptr;
 } app_input_t;
 
-void tr_canvas_to_window (transf_t tr, vect2_t *p)
-{
-    p->x = tr.scale*p->x+tr.dx;
-    p->y = tr.scale*(CANVAS_SIZE-p->y)+tr.dy;
-}
-
-void tr_window_to_canvas (transf_t tr, vect2_t *p)
-{
-    p->x = (p->x - tr.dx)/tr.scale;
-    p->y = (tr.scale*CANVAS_SIZE + tr.dy - p->y )/(tr.scale);
-}
-
 typedef enum {triangle, segment} entity_type;
 typedef struct {
     entity_type type;
@@ -130,7 +118,7 @@ typedef struct {
     double zoom;
     bool zoom_changed;
     double old_zoom;
-    app_graphics_t old_graphics;
+    transf_t points_to_canvas;
 
     iterator_mode_t it_mode;
     int64_t user_number;
@@ -149,7 +137,6 @@ typedef struct {
 
 typedef struct {
     bool is_initialized;
-    app_graphics_t old_graphics;
 
     bool end_execution;
     app_mode_t app_mode;
@@ -205,80 +192,83 @@ void segment_entity_add (point_set_mode_t *st, int id, vect3_t color)
     next_entity->id = id;
 }
 
-void draw_point (app_graphics_t *graphics, vect2_t p, char *label)
+void draw_point (cairo_t *cr, vect2_t p, char *label, transf_t *T)
 {
-    cairo_t *cr = graphics->cr;
-    tr_canvas_to_window (graphics->T, &p);
+    if (T != NULL) {
+        apply_transform (T, &p);
+    }
     cairo_arc (cr, p.x, p.y, 5, 0, 2*M_PI);
     cairo_fill (cr);
 
     p.x -= 10;
     p.y -= 10;
-    cairo_move_to (graphics->cr, p.x, p.y);
-    cairo_show_text (graphics->cr, label);
+    cairo_move_to (cr, p.x, p.y);
+    cairo_show_text (cr, label);
 }
 
-void draw_segment (app_graphics_t *graphics, vect2_t p1, vect2_t p2, double line_width)
+void draw_segment (cairo_t *cr, vect2_t p1, vect2_t p2, double line_width, transf_t *T)
 {
-    cairo_t *cr = graphics->cr;
     cairo_set_line_width (cr, line_width);
 
-    tr_canvas_to_window (graphics->T, &p1);
-    tr_canvas_to_window (graphics->T, &p2);
+    if (T != NULL) {
+        apply_transform (T, &p1);
+        apply_transform (T, &p2);
+    }
 
     cairo_move_to (cr, (double)p1.x, (double)p1.y);
     cairo_line_to (cr, (double)p2.x, (double)p2.y);
     cairo_stroke (cr);
 }
 
-void draw_triangle (app_graphics_t *graphics, vect2_t p1, vect2_t p2, vect2_t p3)
+void draw_triangle (cairo_t *cr, vect2_t p1, vect2_t p2, vect2_t p3, transf_t *T)
 {
-    draw_segment (graphics, p1, p2, 3);
-    draw_segment (graphics, p2, p3, 3);
-    draw_segment (graphics, p3, p1, 3);
+    draw_segment (cr, p1, p2, 3, T);
+    draw_segment (cr, p2, p3, 3, T);
+    draw_segment (cr, p3, p1, 3, T);
 }
 
 void draw_entities (point_set_mode_t *st, app_graphics_t *graphics)
 {
-
     int idx[3];
     int i;
     int n = st->n.i;
 
     vect2_t *pts = st->visible_pts;
+    cairo_t *cr = graphics->cr;
+    transf_t *T = &st->points_to_canvas;
 
-    cairo_set_source_rgb (graphics->cr, 0, 0, 0);
+    cairo_set_source_rgb (cr, 0, 0, 0);
     for (i=0; i<binomial(n, 2); i++) {
         subset_it_idx_for_id (i, n, idx, 2);
         vect2_t p1 = pts[idx[0]];
         vect2_t p2 = pts[idx[1]];
-        draw_segment (graphics, p1, p2, 1);
+        draw_segment (cr, p1, p2, 1, T);
     }
 
     for (i=0; i<st->num_entities; i++) {
         entity_t *entity = &st->entities[i];
-        cairo_set_source_rgb (graphics->cr, entity->color.r, entity->color.g, entity->color.b);
+        cairo_set_source_rgb (cr, entity->color.r, entity->color.g, entity->color.b);
         switch (entity->type) {
             case segment: {
                 subset_it_idx_for_id (entity->id, n, idx, 2);
                 vect2_t p1 = pts[idx[0]];
                 vect2_t p2 = pts[idx[1]];
-                draw_segment (graphics, p1, p2, 1);
+                draw_segment (cr, p1, p2, 1, T);
                 } break;
             case triangle: {
                 subset_it_idx_for_id (entity->id, n, idx, 3);
-                draw_triangle (graphics, pts[idx[0]], pts[idx[1]], pts[idx[2]]);
+                draw_triangle (cr, pts[idx[0]], pts[idx[1]], pts[idx[2]], T);
                 } break;
             default:
                 invalid_code_path;
         }
     }
 
-    cairo_set_source_rgb (graphics->cr, 0, 0, 0);
+    cairo_set_source_rgb (cr, 0, 0, 0);
     for (i=0; i<n; i++) {
         char str[4];
         snprintf (str, ARRAY_SIZE(str), "%i", i);
-        draw_point (graphics, pts[i], str);
+        draw_point (cr, pts[i], str, T);
     }
 }
 
@@ -286,9 +276,10 @@ void draw_entities (point_set_mode_t *st, app_graphics_t *graphics)
 // in the canvas we want mapped to it, and the zoom value.
 void compute_transform (transf_t *T, vect2_t window_pt, vect2_t canvas_pt, double zoom)
 {
-    T->scale = zoom;
-    T->dx = window_pt.x - (canvas_pt.x)*T->scale;
-    T->dy = window_pt.y - (CANVAS_SIZE - canvas_pt.y)*T->scale;
+    T->scale_x = zoom;
+    T->scale_y = -zoom;
+    T->dx = window_pt.x - canvas_pt.x*T->scale_x;
+    T->dy = window_pt.y - canvas_pt.y*T->scale_y;
 }
 
 #define WINDOW_MARGIN 40
@@ -296,19 +287,15 @@ void focus_order_type (app_graphics_t *graphics, point_set_mode_t *st)
 {
     box_t box;
     get_bounding_box (st->visible_pts, st->ot->n, &box);
-    double box_aspect_ratio = (double)(box.max.x-box.min.x)/(box.max.y-box.min.y);
-    double window_aspect_ratio = (double)(graphics->width)/(graphics->height);
-    vect2_t margins;
-    if (box_aspect_ratio < window_aspect_ratio) {
-        st->zoom = (double)(graphics->height - 2*WINDOW_MARGIN)/((double)(box.max.y - box.min.y));
-        margins.y = WINDOW_MARGIN;
-        margins.x = (graphics->width - (box.max.x-box.min.x)*st->zoom)/2;
-    } else {
-        st->zoom = (double)(graphics->width - 2*WINDOW_MARGIN)/((double)(box.max.x - box.min.x));
-        margins.x = WINDOW_MARGIN;
-        margins.y = (graphics->height - (box.max.y-box.min.y)*st->zoom)/2;
-    }
-    compute_transform (&graphics->T, margins, VECT2(box.min.x, box.max.y), st->zoom);
+    st->zoom = best_fit_ratio (BOX_WIDTH(box), BOX_HEIGHT(box),
+                               graphics->width - 2*WINDOW_MARGIN,
+                               graphics->height - 2*WINDOW_MARGIN);
+
+    double x_center = ((graphics->width - 2*WINDOW_MARGIN) - BOX_WIDTH(box)*st->zoom)/2;
+    double y_center = ((graphics->height - 2*WINDOW_MARGIN) - BOX_HEIGHT(box)*st->zoom)/2;
+    compute_transform (&st->points_to_canvas,
+                       VECT2(WINDOW_MARGIN+x_center, WINDOW_MARGIN+y_center),
+                       VECT2(box.min.x, box.max.y), st->zoom);
 }
 
 void set_ot (point_set_mode_t *st)
@@ -596,8 +583,12 @@ bool point_set_mode (app_state_t *st, app_graphics_t *graphics)
         ps_mode->zoom = 1;
         ps_mode->zoom_changed = false;
         ps_mode->old_zoom = 1;
-        ps_mode->old_graphics = *graphics;
         ps_mode->view_db_ot = false;
+
+        ps_mode->points_to_canvas.dx = WINDOW_MARGIN;
+        ps_mode->points_to_canvas.dy = WINDOW_MARGIN;
+        ps_mode->points_to_canvas.scale_x = (double)(graphics->height-2*WINDOW_MARGIN)/CANVAS_SIZE;
+        ps_mode->points_to_canvas.scale_y = ps_mode->points_to_canvas.scale_x;
 
         set_n (ps_mode, ps_mode->n.i, graphics);
     }
@@ -728,8 +719,8 @@ bool point_set_mode (app_state_t *st, app_graphics_t *graphics)
     }
 
     if (st->dragging[0]) {
-        graphics->T.dx += st->ptr_delta.x;
-        graphics->T.dy += st->ptr_delta.y;
+        ps_mode->points_to_canvas.dx += st->ptr_delta.x;
+        ps_mode->points_to_canvas.dy += st->ptr_delta.y;
         input.force_redraw = 1;
     }
 
@@ -786,12 +777,10 @@ bool point_set_mode (app_state_t *st, app_graphics_t *graphics)
         //draw_point (graphics, VECT2(100,100), "0");
 
         if (ps_mode->zoom_changed) {
-            vect2_t userspace_ptr = input.ptr;
-            tr_window_to_canvas (graphics->T, &userspace_ptr);
-            compute_transform (&graphics->T, input.ptr, userspace_ptr, ps_mode->zoom);
+            vect2_t window_ptr_pos = input.ptr;
+            apply_inverse_transform (&ps_mode->points_to_canvas, &window_ptr_pos);
+            compute_transform (&ps_mode->points_to_canvas, input.ptr, window_ptr_pos, ps_mode->zoom);
         }
-
-        ps_mode->old_graphics = *graphics;
 
         // Construct drawing on canvas.
         ps_mode->num_entities = 0;
@@ -837,58 +826,10 @@ bool point_set_mode (app_state_t *st, app_graphics_t *graphics)
     return blit_needed;
 }
 
-// Calculates a ratio by which multiply box a so that it fits inside box b
-double best_fit_ratio (double a_width, double a_height,
-                       double b_width, double b_height)
-{
-    if (a_width/a_height < b_width/b_height) {
-        return b_height/a_height;
-    } else {
-        return b_width/a_width;
-    }
-}
-
 void pixel_align_as_line (vect2_t *p)
 {
     p->x = floor (p->x)+0.5;
     p->y = floor (p->y)+0.5;
-}
-
-void apply_transform (transf_t *tr, vect2_t *p)
-{
-    p->x = tr->scale*p->x + tr->dx;
-    p->y = tr->scale*p->y + tr->dy;
-}
-
-void apply_transform_distance (transf_t *tr, vect2_t *p)
-{
-    p->x = tr->scale*p->x;
-    p->y = tr->scale*p->y;
-}
-
-void apply_inverse_transform (transf_t *tr, vect2_t *p)
-{
-    p->x = (p->x - tr->dx)/tr->scale;
-    p->y = (p->y - tr->dy)/tr->scale;
-}
-
-void apply_inverse_transform_distance (transf_t *tr, vect2_t *p)
-{
-    p->x = p->x/tr->scale;
-    p->y = p->y/tr->scale;
-}
-
-void compute_best_fit_box_to_box_transform (transf_t *tr, box_t *src, box_t *dest)
-{
-    double src_width = BOX_WIDTH(*src);
-    double src_height = BOX_HEIGHT(*src);
-    double dest_width = BOX_WIDTH(*dest);
-    double dest_height = BOX_HEIGHT(*dest);
-
-    tr->scale = best_fit_ratio (src_width, src_height,
-                                dest_width, dest_height);
-    tr->dx = dest->min.x + (dest_width-src_width*tr->scale)/2;
-    tr->dy = dest->min.y + (dest_height-src_height*tr->scale)/2;
 }
 
 #define cairo_BOX(cr,box) cairo_rectangle (cr, (box).min.x, (box).min.y, BOX_WIDTH(box), BOX_HEIGHT(box));
@@ -1786,9 +1727,6 @@ int main (void)
     graphics.text_layout = text_layout;
     graphics.width = WINDOW_WIDTH;
     graphics.height = WINDOW_HEIGHT;
-    graphics.T.dx = WINDOW_MARGIN;
-    graphics.T.dy = WINDOW_MARGIN;
-    graphics.T.scale = (double)(graphics.height-2*WINDOW_MARGIN)/CANVAS_SIZE;
     uint16_t pixmap_width = WINDOW_WIDTH;
     uint16_t pixmap_height = WINDOW_HEIGHT;
     bool make_pixmap_bigger = false;
