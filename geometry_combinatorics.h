@@ -54,6 +54,32 @@ void convex_ot_scale (order_type_t *ot, int radius)
     }
 }
 
+void bipartite_points (int n, vect2_t *points, box_t *bounding_box, double bb_ar)
+{
+    int64_t y_step = UINT8_MAX/(n-1);
+
+    int64_t x_step;
+    if (bb_ar == 0) {
+        x_step = y_step;
+    } else {
+        x_step = UINT8_MAX/bb_ar;
+    }
+    int64_t y_pos = 0;
+    int i;
+    for (i=0; i<n; i++) {
+        points[i].x = 0;
+        points[i].y = y_pos;
+
+        points[i+n].x = x_step;
+        points[i+n].y = y_pos;
+        y_pos += y_step;
+    }
+
+    if (bounding_box) {
+        BOX_X_Y_W_H (*bounding_box, 0, 0, x_step, UINT8_MAX);
+    }
+}
+
 typedef struct {
     int origin;
     int key;

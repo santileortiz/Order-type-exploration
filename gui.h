@@ -76,6 +76,12 @@ typedef struct {
     uint16_t height;
 } app_graphics_t;
 
+void pixel_align_as_line (vect2_t *p, int line_width)
+{
+    p->x = floor (p->x)+(double)(line_width%2)/2;
+    p->y = floor (p->y)+(double)(line_width%2)/2;
+}
+
 void rounded_box_path (cairo_t *cr, double x, double y, double width, double height, double radius)
 {
     cairo_move_to (cr, x, y+radius);
