@@ -1,4 +1,3 @@
-//gcc -Wall -g -o bin/search search.c -lm
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>

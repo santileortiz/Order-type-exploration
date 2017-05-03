@@ -1,4 +1,3 @@
-//gcc -g -Wall -o bin/save_file_to_pdf save_file_to_pdf.c -lcairo -lm
 #include <stdio.h>
 #include <stdlib.h>
 #include <cairo/cairo.h>
