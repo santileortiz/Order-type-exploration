@@ -271,6 +271,7 @@ int main (void)
     // TODO: What happens if there is more than 1 screen?, probably will
     // have to iterate with xcb_setup_roots_iterator(), and xcb_screen_next ().
     xcb_screen_t *screen = xcb_setup_roots_iterator (xcb_get_setup (connection)).data;
+    printf ("(%d, %d)\n", screen->width_in_pixels, screen->height_in_pixels);
 
     uint8_t depth;
     xcb_visualtype_t *visual = get_visual_max_depth (connection, screen, &depth);
@@ -370,11 +371,11 @@ int main (void)
     xcb_pixmap_t backbuffer = xcb_generate_id (connection);
     xcb_create_gc (connection, gc, window, 0, NULL);
     xcb_create_pixmap (connection,
-                       depth,           /* depth of the screen */
-                       backbuffer,      /* id of the pixmap */
-                       window,
-                       WINDOW_WIDTH,    /* pixel width of the window */
-                       WINDOW_HEIGHT);  /* pixel height of the window */
+                       depth,                      /* depth of the screen */
+                       backbuffer,                 /* id of the pixmap */
+                       window,                     /* based on this drawable */
+                       screen->width_in_pixels,    /* pixel width of the screen */
+                       screen->height_in_pixels);  /* pixel height of the screen */
 
     xcb_map_window (connection, window);
     xcb_flush (connection);
@@ -391,7 +392,7 @@ int main (void)
     Visual *Xlib_visual = Visual_from_visualid (dpy, visual->visual_id);
     cairo_surface_t *surface =
         cairo_xlib_surface_create (dpy, backbuffer, Xlib_visual,
-                                   WINDOW_WIDTH, WINDOW_HEIGHT);
+                                   screen->width_in_pixels, screen->height_in_pixels);
     cairo_t *cr = cairo_create (surface);
 
     // PangoLayout for text handling
@@ -440,13 +441,8 @@ int main (void)
             // care about the source of the event.
             switch (event->response_type & ~0x80) {
                 case XCB_CONFIGURE_NOTIFY: {
-                    uint16_t new_width = ((xcb_configure_notify_event_t*)event)->width;
-                    uint16_t new_height = ((xcb_configure_notify_event_t*)event)->height;
-                    if (new_width > pixmap_width || new_height > pixmap_height) {
-                        make_pixmap_bigger = true;
-                    }
-                    graphics.width = new_width;
-                    graphics.height = new_height;
+                    graphics.width = ((xcb_configure_notify_event_t*)event)->width;
+                    graphics.height = ((xcb_configure_notify_event_t*)event)->height;
                     } break;
                 case XCB_MOTION_NOTIFY: {
                     app_input.ptr.x = ((xcb_motion_notify_event_t*)event)->event_x;
@@ -534,19 +530,6 @@ int main (void)
             }
         }
 
-        if (make_pixmap_bigger) {
-            pixmap_width = graphics.width;
-            pixmap_height = graphics.height;
-            xcb_free_pixmap (connection, backbuffer);
-            backbuffer = xcb_generate_id (connection);
-            xcb_create_pixmap (connection, depth, backbuffer, window,
-                    pixmap_width, pixmap_height);
-            cairo_xlib_surface_set_drawable (cairo_get_target (graphics.cr), backbuffer,
-                    pixmap_width, pixmap_height);
-            app_input.force_redraw = true;
-            make_pixmap_bigger = false;
-        }
-
         // TODO: How bad is this? should we actually measure it?
         app_input.time_elapsed_ms = target_frame_length_ms;
 
@@ -560,12 +543,12 @@ int main (void)
 
         if (blit_needed || force_blit) {
             xcb_copy_area (connection,
-                           backbuffer,  /* drawable we want to paste */
-                           window, /* drawable on which we copy the previous Drawable */
+                           backbuffer,        /* drawable we want to paste */
+                           window,            /* drawable on which we copy the previous Drawable */
                            gc,
                            0,0,0,0,
-                           graphics.width,         /* pixel width of the region we want to copy */
-                           graphics.height);      /* pixel height of the region we want to copy */
+                           graphics.width,    /* pixel width of the region we want to copy */
+                           graphics.height);  /* pixel height of the region we want to copy */
             force_blit = false;
         }
 
