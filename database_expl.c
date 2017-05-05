@@ -2,6 +2,7 @@
 // sudo apt-get install libxcb1-dev libcairo2-dev
 #include <X11/Xlib-xcb.h>
 #include <xcb/sync.h>
+#include <X11/Xutil.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -149,12 +150,13 @@ bool update_and_render (struct app_state_t *st, app_graphics_t *graphics, app_in
 
 xcb_atom_t get_x11_atom (xcb_connection_t *c, const char *value)
 {
-    xcb_atom_t res;
+    xcb_atom_t res = XCB_ATOM_NONE;
     xcb_generic_error_t *err = NULL;
     xcb_intern_atom_cookie_t ck = xcb_intern_atom (c, 0, strlen(value), value);
     xcb_intern_atom_reply_t *reply = xcb_intern_atom_reply (c, ck, &err);
     if (err != NULL) {
         printf ("Error while requesting atom.\n");
+        free (err);
     }
     res = reply->atom;
     free(reply);
@@ -167,7 +169,8 @@ char* get_x11_atom_name (xcb_connection_t *c, xcb_atom_t atom)
     xcb_generic_error_t *err = NULL;
     xcb_get_atom_name_reply_t * reply = xcb_get_atom_name_reply (c, ck, &err);
     if (err != NULL) {
-        printf ("Error while requesting atom.\n");
+        printf ("Error while requesting atom's name.\n");
+        free (err);
     }
 
     return xcb_get_atom_name_name (reply);
@@ -179,6 +182,64 @@ void increment_sync_counter (xcb_sync_int64_t *counter)
     if (counter->lo == 0) {
         counter->hi++;
     }
+}
+
+xcb_visualtype_t* get_visual_struct_from_visualid (xcb_connection_t *c, xcb_screen_t *screen, xcb_visualid_t id)
+{
+    xcb_visualtype_t  *visual_type = NULL;    /* the returned visual type */
+
+    /* you init the connection and screen_nbr */
+
+    xcb_depth_iterator_t depth_iter;
+    if (screen) {
+        depth_iter = xcb_screen_allowed_depths_iterator (screen);
+        for (; depth_iter.rem; xcb_depth_next (&depth_iter)) {
+            xcb_visualtype_iterator_t visual_iter;
+
+            visual_iter = xcb_depth_visuals_iterator (depth_iter.data);
+            for (; visual_iter.rem; xcb_visualtype_next (&visual_iter)) {
+                if (id == visual_iter.data->visual_id) {
+                    visual_type = visual_iter.data;
+                    //break;
+                }
+            }
+        }
+    }
+    return visual_type;
+}
+
+xcb_visualtype_t* get_visual_max_depth (xcb_connection_t *c, xcb_screen_t *screen, uint8_t *found_depth)
+{
+    xcb_visualtype_t  *visual_type = NULL;    /* the returned visual type */
+
+    /* you init the connection and screen_nbr */
+
+    *found_depth = 0;
+    xcb_depth_iterator_t depth_iter;
+    if (screen) {
+        depth_iter = xcb_screen_allowed_depths_iterator (screen);
+        for (; depth_iter.rem; xcb_depth_next (&depth_iter)) {
+            xcb_visualtype_iterator_t visual_iter;
+            visual_iter = xcb_depth_visuals_iterator (depth_iter.data);
+            if (visual_iter.rem) {
+                if (*found_depth < depth_iter.data->depth) {
+                    *found_depth = depth_iter.data->depth;
+                    visual_type = visual_iter.data;
+                }
+            }
+        }
+    }
+    printf ("Max depth found: %d\n", *found_depth);
+    return visual_type;
+}
+
+Visual* Visual_from_visualid (Display *dpy, xcb_visualid_t visualid)
+{
+    XVisualInfo templ = {0};
+    templ.visualid = visualid;
+    int n;
+    XVisualInfo *found = XGetVisualInfo (dpy, VisualIDMask, &templ, &n);
+    return found->visual;
 }
 
 int main (void)
@@ -211,23 +272,51 @@ int main (void)
     // have to iterate with xcb_setup_roots_iterator(), and xcb_screen_next ().
     xcb_screen_t *screen = xcb_setup_roots_iterator (xcb_get_setup (connection)).data;
 
+    uint8_t depth;
+    xcb_visualtype_t *visual = get_visual_max_depth (connection, screen, &depth);
+    xcb_colormap_t colormap = xcb_generate_id (connection);
+    xcb_create_colormap (connection, XCB_COLORMAP_ALLOC_NONE, colormap, screen->root, visual->visual_id); 
+
+    // Create a window
+    uint32_t event_mask = XCB_EVENT_MASK_EXPOSURE|XCB_EVENT_MASK_KEY_PRESS|
+                             XCB_EVENT_MASK_STRUCTURE_NOTIFY|XCB_EVENT_MASK_BUTTON_PRESS|
+                             XCB_EVENT_MASK_BUTTON_RELEASE|XCB_EVENT_MASK_POINTER_MOTION;
+    uint32_t mask = XCB_CW_EVENT_MASK|
+                    // NOTE: These are required to use depth of 32 when the root window
+                    // has a different depth.
+                    XCB_CW_BORDER_PIXEL|XCB_CW_COLORMAP; 
+
+    uint32_t values[] = {// , // XCB_CW_BACK_PIXMAP
+                         // , // XCB_CW_BACK_PIXEL
+                         // , // XCB_CW_BORDER_PIXMAP
+                         0  , // XCB_CW_BORDER_PIXEL
+                         // , // XCB_CW_BIT_GRAVITY
+                         // , // XCB_CW_WIN_GRAVITY
+                         // , // XCB_CW_BACKING_STORE
+                         // , // XCB_CW_BACKING_PLANES
+                         // , // XCB_CW_BACKING_PIXEL     
+                         // , // XCB_CW_OVERRIDE_REDIRECT
+                         // , // XCB_CW_SAVE_UNDER
+                         event_mask, //XCB_CW_EVENT_MASK
+                         // , // XCB_CW_DONT_PROPAGATE
+                         colormap, // XCB_CW_COLORMAP
+                         //  // XCB_CW_CURSOR
+                         };
+
     // Create a window
     xcb_drawable_t  window = xcb_generate_id (connection);
-    uint32_t mask = XCB_CW_EVENT_MASK;
-    uint32_t values[2] = {XCB_EVENT_MASK_EXPOSURE|XCB_EVENT_MASK_KEY_PRESS|
-            XCB_EVENT_MASK_STRUCTURE_NOTIFY|XCB_EVENT_MASK_BUTTON_PRESS|
-            XCB_EVENT_MASK_BUTTON_RELEASE|XCB_EVENT_MASK_POINTER_MOTION};
-
     xcb_create_window (connection,         /* connection          */
-            XCB_COPY_FROM_PARENT,          /* depth               */
+            depth,                         /* depth               */
             window,                        /* window Id           */
             screen->root,                  /* parent window       */
             0, 0,                          /* x, y                */
             WINDOW_WIDTH, WINDOW_HEIGHT,   /* width, height       */
-            10,                            /* border_width        */
+            0,                             /* border_width        */
             XCB_WINDOW_CLASS_INPUT_OUTPUT, /* class               */
-            XCB_COPY_FROM_PARENT,          /* visual              */
+            visual->visual_id,             /* visual              */
             mask, values);                 /* masks */
+
+    xcb_window_t root_window = screen->root;
 
     // Set window title
     char *title = "Order Type";
@@ -257,7 +346,7 @@ int main (void)
 
     // Set up counters for _NET_WM_SYNC_REQUEST protocol on extended mode
     xcb_sync_int64_t counter_val = {0, 0}; //{HI, LO}
-    xcb_gcontext_t counters[2];
+    xcb_sync_counter_t counters[2];
     counters[0] = xcb_generate_id (connection);
     xcb_sync_create_counter (connection, counters[0], counter_val);
 
@@ -279,13 +368,13 @@ int main (void)
 
     xcb_gcontext_t  gc = xcb_generate_id (connection);
     xcb_pixmap_t backbuffer = xcb_generate_id (connection);
-    xcb_create_gc (connection, gc, window, 0, values);
+    xcb_create_gc (connection, gc, window, 0, NULL);
     xcb_create_pixmap (connection,
-            screen->root_depth,     /* depth of the screen */
-            backbuffer,  /* id of the pixmap */
-            window,
-            WINDOW_WIDTH,     /* pixel width of the window */
-            WINDOW_HEIGHT);  /* pixel height of the window */
+                       depth,           /* depth of the screen */
+                       backbuffer,      /* id of the pixmap */
+                       window,
+                       WINDOW_WIDTH,    /* pixel width of the window */
+                       WINDOW_HEIGHT);  /* pixel height of the window */
 
     xcb_map_window (connection, window);
     xcb_flush (connection);
@@ -299,9 +388,9 @@ int main (void)
     // <cairo>/src/cairo-xcb-screen.c and see if the issue has been resolved, if
     // it has, then go back to xcb for consistency with the rest of the code.
     // (As of git cffa452f44e it hasn't been solved).
-    Visual *default_visual = DefaultVisual(dpy, DefaultScreen(dpy));
+    Visual *Xlib_visual = Visual_from_visualid (dpy, visual->visual_id);
     cairo_surface_t *surface =
-        cairo_xlib_surface_create (dpy, window, default_visual,
+        cairo_xlib_surface_create (dpy, backbuffer, Xlib_visual,
                                    WINDOW_WIDTH, WINDOW_HEIGHT);
     cairo_t *cr = cairo_create (surface);
 
@@ -373,6 +462,8 @@ int main (void)
                     break;
                 case XCB_BUTTON_PRESS: {
                     char button_pressed = ((xcb_key_press_event_t*)event)->detail;
+                    int16_t root_x = ((xcb_key_press_event_t*)event)->root_x;
+                    int16_t root_y = ((xcb_key_press_event_t*)event)->root_y;
                     if (button_pressed == 4) {
                         app_input.wheel *= 1.2;
                     } else if (button_pressed == 5) {
@@ -406,6 +497,9 @@ int main (void)
                     if (client_message->type == wm_protocols && client_message->data.data32[0] == net_wm_sync) {
                         counter_val.lo = client_message->data.data32[2];
                         counter_val.hi = client_message->data.data32[3];
+                        if (counter_val.lo % 2 != 0) {
+                            increment_sync_counter (&counter_val);
+                        }
                         handled = true;
                     } else if (client_message->type == net_wm_frame_drawn) {
                         handled = true;
@@ -428,17 +522,24 @@ int main (void)
             free (event);
         }
 
-        // Notify X11: Start of frame
-        increment_sync_counter (&counter_val);
-        assert (counter_val.lo % 2 == 1);
-        xcb_sync_set_counter (connection, counters[1], counter_val);
+        {
+            // Notify X11: Start of frame
+            increment_sync_counter (&counter_val);
+            assert (counter_val.lo % 2 == 1);
+            xcb_void_cookie_t ck = xcb_sync_set_counter_checked (connection, counters[1], counter_val);
+            xcb_generic_error_t *error; 
+            if ((error = xcb_request_check(connection, ck))) { 
+                printf("Error setting counter %d\n", error->error_code); 
+                free(error); 
+            }
+        }
 
         if (make_pixmap_bigger) {
             pixmap_width = graphics.width;
             pixmap_height = graphics.height;
             xcb_free_pixmap (connection, backbuffer);
             backbuffer = xcb_generate_id (connection);
-            xcb_create_pixmap (connection, screen->root_depth, backbuffer, window,
+            xcb_create_pixmap (connection, depth, backbuffer, window,
                     pixmap_width, pixmap_height);
             cairo_xlib_surface_set_drawable (cairo_get_target (graphics.cr), backbuffer,
                     pixmap_width, pixmap_height);
@@ -451,15 +552,33 @@ int main (void)
 
         bool blit_needed = update_and_render (st, &graphics, app_input);
 
-        // Notify X11: End of frame
-        increment_sync_counter (&counter_val);
-        assert (counter_val.lo % 2 == 0);
-        xcb_sync_set_counter (connection, counters[1], counter_val);
-
         cairo_status_t cr_stat = cairo_status (graphics.cr);
         if (cr_stat != CAIRO_STATUS_SUCCESS) {
             printf ("Cairo error: %s\n", cairo_status_to_string (cr_stat));
             return 0;
+        }
+
+        if (blit_needed || force_blit) {
+            xcb_copy_area (connection,
+                           backbuffer,  /* drawable we want to paste */
+                           window, /* drawable on which we copy the previous Drawable */
+                           gc,
+                           0,0,0,0,
+                           graphics.width,         /* pixel width of the region we want to copy */
+                           graphics.height);      /* pixel height of the region we want to copy */
+            force_blit = false;
+        }
+
+        {
+            // Notify X11: End of frame
+            increment_sync_counter (&counter_val);
+            assert (counter_val.lo % 2 == 0);
+            xcb_void_cookie_t ck = xcb_sync_set_counter_checked (connection, counters[1], counter_val);
+            xcb_generic_error_t *error; 
+            if ((error = xcb_request_check(connection, ck))) { 
+                printf("Error setting counter %d\n", error->error_code); 
+                free(error); 
+            }
         }
 
         clock_gettime (CLOCK_MONOTONIC, &end_ticks);
@@ -471,17 +590,6 @@ int main (void)
             nanosleep (&sleep_ticks, NULL);
         } else {
             printf ("Frame missed! %f ms elapsed\n", time_elapsed);
-        }
-
-        if (blit_needed || force_blit) {
-            xcb_copy_area (connection,
-                    backbuffer,  /* drawable we want to paste */
-                    window, /* drawable on which we copy the previous Drawable */
-                    gc,
-                    0,0,0,0,
-                    graphics.width,         /* pixel width of the region we want to copy */
-                    graphics.height);      /* pixel height of the region we want to copy */
-            force_blit = false;
         }
 
         clock_gettime(CLOCK_MONOTONIC, &end_ticks);
