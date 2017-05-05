@@ -6,6 +6,14 @@
 #define RGBA VECT4
 #define RGB(r,g,b) VECT4(r,g,b,1)
 
+void cairo_clear (cairo_t *cr)
+{
+    cairo_save (cr);
+    cairo_set_operator (cr, CAIRO_OPERATOR_CLEAR);
+    cairo_paint (cr);
+    cairo_restore (cr);
+}
+
 int _g_gui_num_colors = 0;
 vect4_t _g_gui_colors[50];
 

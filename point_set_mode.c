@@ -614,6 +614,7 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
     bool blit_needed = false;
     cairo_t *cr = graphics->cr;
     if (input.force_redraw) {
+        cairo_clear (cr);
         cairo_set_source_rgb (cr, 1, 1, 1);
         cairo_paint (cr);
         //draw_point (graphics, VECT2(100,100), "0");
