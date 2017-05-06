@@ -242,50 +242,48 @@ Visual* Visual_from_visualid (Display *dpy, xcb_visualid_t visualid)
     return found->visual;
 }
 
-int main (void)
-{
-    // Setup clocks
-    setup_clocks ();
+struct x_state {
+    xcb_connection_t *xcb_c;
+    Display *xlib_dpy;
 
-    //////////////////
-    // X11 setup
-    // By default xcb is used, because it allows more granularity if we ever reach
-    // performance issues, but for cases when we need Xlib functions we have an
-    // Xlib Display too.
-
-    Display *dpy = XOpenDisplay (NULL);
-    if (!dpy) {
-        printf ("Could not open display\n");
-        return -1;
-    }
-
-    xcb_connection_t *connection = XGetXCBConnection (dpy);
-    if (!connection) {
-        printf ("Could not get XCB connection from Xlib Display\n");
-        return -1;
-    }
-    XSetEventQueueOwner (dpy, XCBOwnsEventQueue);
-
-    /* Get the first screen */
-    // TODO: Get the default screen instead of assuming it's 0.
-    // TODO: What happens if there is more than 1 screen?, probably will
-    // have to iterate with xcb_setup_roots_iterator(), and xcb_screen_next ().
-    xcb_screen_t *screen = xcb_setup_roots_iterator (xcb_get_setup (connection)).data;
-    printf ("(%d, %d)\n", screen->width_in_pixels, screen->height_in_pixels);
-
+    xcb_screen_t *screen;
+    xcb_visualtype_t *visual;
     uint8_t depth;
-    xcb_visualtype_t *visual = get_visual_max_depth (connection, screen, &depth);
-    xcb_colormap_t colormap = xcb_generate_id (connection);
-    xcb_create_colormap (connection, XCB_COLORMAP_ALLOC_NONE, colormap, screen->root, visual->visual_id); 
 
-    // Create a window
+    xcb_drawable_t window;
+    xcb_pixmap_t backbuffer;
+
+    xcb_gcontext_t gc;
+
+    xcb_atom_t wm_protocols_a;
+    xcb_atom_t delete_window_a;
+
+    xcb_sync_counter_t counters[2];
+    xcb_sync_int64_t counter_val;
+    xcb_atom_t net_wm_sync_a;
+    xcb_atom_t net_wm_frame_drawn_a;
+    xcb_atom_t net_wm_frame_timings_a;
+};
+
+void x11_create_window (struct x_state *x_st, char *title)
+{
     uint32_t event_mask = XCB_EVENT_MASK_EXPOSURE|XCB_EVENT_MASK_KEY_PRESS|
                              XCB_EVENT_MASK_STRUCTURE_NOTIFY|XCB_EVENT_MASK_BUTTON_PRESS|
                              XCB_EVENT_MASK_BUTTON_RELEASE|XCB_EVENT_MASK_POINTER_MOTION;
-    uint32_t mask = XCB_CW_EVENT_MASK|
-                    // NOTE: These are required to use depth of 32 when the root window
-                    // has a different depth.
-                    XCB_CW_BORDER_PIXEL|XCB_CW_COLORMAP; 
+    uint32_t mask = XCB_CW_EVENT_MASK;
+
+    x_st->visual = get_visual_max_depth (x_st->xcb_c, x_st->screen, &x_st->depth);
+
+    // Boilerplate code required to get maximum depth available
+    // 
+    // These attributes are required to have different depth than the root
+    // window. Avoids inheriting pixmaps with depths that don't match.
+
+    mask |= XCB_CW_BORDER_PIXEL|XCB_CW_COLORMAP; 
+    xcb_colormap_t colormap = xcb_generate_id (x_st->xcb_c);
+    xcb_create_colormap (x_st->xcb_c, XCB_COLORMAP_ALLOC_NONE,
+                         colormap, x_st->screen->root, x_st->visual->visual_id); 
+
 
     uint32_t values[] = {// , // XCB_CW_BACK_PIXMAP
                          // , // XCB_CW_BACK_PIXEL
@@ -304,83 +302,148 @@ int main (void)
                          //  // XCB_CW_CURSOR
                          };
 
-    // Create a window
-    xcb_drawable_t  window = xcb_generate_id (connection);
-    xcb_create_window (connection,         /* connection          */
-            depth,                         /* depth               */
-            window,                        /* window Id           */
-            screen->root,                  /* parent window       */
+    x_st->window = xcb_generate_id (x_st->xcb_c);
+    xcb_create_window (x_st->xcb_c,        /* connection          */
+            x_st->depth,                   /* depth               */
+            x_st->window,                  /* window Id           */
+            x_st->screen->root,            /* parent window       */
             0, 0,                          /* x, y                */
             WINDOW_WIDTH, WINDOW_HEIGHT,   /* width, height       */
             0,                             /* border_width        */
             XCB_WINDOW_CLASS_INPUT_OUTPUT, /* class               */
-            visual->visual_id,             /* visual              */
+            x_st->visual->visual_id,       /* visual              */
             mask, values);                 /* masks */
 
-    xcb_window_t root_window = screen->root;
-
     // Set window title
-    char *title = "Order Type";
-    xcb_change_property (connection,
+    xcb_change_property (x_st->xcb_c,
             XCB_PROP_MODE_REPLACE,
-            window,
+            x_st->window,
             XCB_ATOM_WM_NAME,
             XCB_ATOM_STRING,
             8,
             strlen (title),
             title);
+}
 
-    // Set WM_PROTOCOLS property
-    xcb_atom_t delete_window_atom = get_x11_atom (connection, "WM_DELETE_WINDOW");
-    xcb_atom_t net_wm_sync = get_x11_atom (connection, "_NET_WM_SYNC_REQUEST");
-    xcb_atom_t atoms[] = {delete_window_atom, net_wm_sync};
+void x11_setup_icccm_and_ewmh_protocols (struct x_state *x_st)
+{
+    xcb_atom_t net_wm_protocols_value[2];
 
-    xcb_atom_t wm_protocols = get_x11_atom (connection, "WM_PROTOCOLS");
-    xcb_change_property (connection,
+    /////////////////////////////
+    // WM_DELETE_WINDOW protocol
+    x_st->delete_window_a = get_x11_atom (x_st->xcb_c, "WM_DELETE_WINDOW");
+
+    /////////////////////////////////
+    // _NET_WM_SYNC_REQUEST protocol
+    x_st->net_wm_sync_a = get_x11_atom (x_st->xcb_c, "_NET_WM_SYNC_REQUEST");
+    // NOTE: Following are used to recognize the ClientMessage type.
+    x_st->net_wm_frame_drawn_a = get_x11_atom (x_st->xcb_c, "_NET_WM_FRAME_DRAWN");
+    x_st->net_wm_frame_timings_a = get_x11_atom (x_st->xcb_c, "_NET_WM_FRAME_TIMINGS");
+
+    // Set up counters for extended mode
+    x_st->counter_val = (xcb_sync_int64_t){0, 0}; //{HI, LO}
+    x_st->counters[0] = xcb_generate_id (x_st->xcb_c);
+    xcb_sync_create_counter (x_st->xcb_c, x_st->counters[0], x_st->counter_val);
+
+    x_st->counters[1] = xcb_generate_id (x_st->xcb_c);
+    xcb_sync_create_counter (x_st->xcb_c, x_st->counters[1], x_st->counter_val);
+
+    xcb_change_property (x_st->xcb_c,
             XCB_PROP_MODE_REPLACE,
-            window,
-            wm_protocols,
-            XCB_ATOM_ATOM,
-            32,
-            ARRAY_SIZE(atoms),
-            atoms);
-
-    // Set up counters for _NET_WM_SYNC_REQUEST protocol on extended mode
-    xcb_sync_int64_t counter_val = {0, 0}; //{HI, LO}
-    xcb_sync_counter_t counters[2];
-    counters[0] = xcb_generate_id (connection);
-    xcb_sync_create_counter (connection, counters[0], counter_val);
-
-    counters[1] = xcb_generate_id (connection);
-    xcb_sync_create_counter (connection, counters[1], counter_val);
-    
-    // NOTE: These atoms are used to recognize the ClientMessage type
-    xcb_atom_t net_wm_frame_drawn = get_x11_atom (connection, "_NET_WM_FRAME_DRAWN");
-    xcb_atom_t net_wm_frame_timings = get_x11_atom (connection, "_NET_WM_FRAME_TIMINGS");
-
-    xcb_change_property (connection,
-            XCB_PROP_MODE_REPLACE,
-            window,
-            get_x11_atom (connection, "_NET_WM_SYNC_REQUEST_COUNTER"),
+            x_st->window,
+            get_x11_atom (x_st->xcb_c, "_NET_WM_SYNC__REQUEST_COUNTER"),
             XCB_ATOM_CARDINAL,
             32,
-            ARRAY_SIZE(counters),
-            counters);
+            ARRAY_SIZE(x_st->counters),
+            x_st->counters);
 
-    xcb_gcontext_t  gc = xcb_generate_id (connection);
-    xcb_pixmap_t backbuffer = xcb_generate_id (connection);
-    xcb_create_gc (connection, gc, window, 0, NULL);
-    xcb_create_pixmap (connection,
-                       depth,                      /* depth of the screen */
-                       backbuffer,                 /* id of the pixmap */
-                       window,                     /* based on this drawable */
-                       screen->width_in_pixels,    /* pixel width of the screen */
-                       screen->height_in_pixels);  /* pixel height of the screen */
+    /////////////////////////////
+    // Set WM_PROTOCOLS property
+    x_st->wm_protocols_a = get_x11_atom (x_st->xcb_c, "WM_PROTOCOLS");
+    net_wm_protocols_value[0] = x_st->delete_window_a;
+    net_wm_protocols_value[1] = x_st->net_wm_sync_a;
 
-    xcb_map_window (connection, window);
-    xcb_flush (connection);
+    xcb_change_property (x_st->xcb_c,
+            XCB_PROP_MODE_REPLACE,
+            x_st->window,
+            x_st->wm_protocols_a,
+            XCB_ATOM_ATOM,
+            32,
+            ARRAY_SIZE(net_wm_protocols_value),
+            net_wm_protocols_value);
+}
 
-    // Create a cairo surface on window
+void blocking_xcb_sync_set_counter (xcb_connection_t *c, xcb_sync_counter_t counter, xcb_sync_int64_t *val)
+{
+    xcb_void_cookie_t ck = xcb_sync_set_counter_checked (c, counter, *val);
+    xcb_generic_error_t *error; 
+    if ((error = xcb_request_check(c, ck))) { 
+        printf("Error setting counter %d\n", error->error_code); 
+        free(error); 
+    }
+}
+
+void x11_notify_start_of_frame (struct x_state *x_st)
+{
+    increment_sync_counter (&x_st->counter_val);
+    assert (x_st->counter_val.lo % 2 == 1);
+    blocking_xcb_sync_set_counter (x_st->xcb_c, x_st->counters[1], &x_st->counter_val);
+}
+
+void x11_notify_end_of_frame (struct x_state *x_st)
+{
+    increment_sync_counter (&x_st->counter_val);
+    assert (x_st->counter_val.lo % 2 == 0);
+    blocking_xcb_sync_set_counter (x_st->xcb_c, x_st->counters[1], &x_st->counter_val);
+}
+
+int main (void)
+{
+    // Setup clocks
+    setup_clocks ();
+
+    //////////////////
+    // X11 setup
+    // By default xcb is used, because it allows more granularity if we ever reach
+    // performance issues, but for cases when we need Xlib functions we have an
+    // Xlib Display too.
+    struct x_state x_st;
+
+    x_st.xlib_dpy = XOpenDisplay (NULL);
+    if (!x_st.xlib_dpy) {
+        printf ("Could not open display\n");
+        return -1;
+    }
+
+    x_st.xcb_c = XGetXCBConnection (x_st.xlib_dpy);
+    if (!x_st.xcb_c) {
+        printf ("Could not get XCB x_st.xcb_c from Xlib Display\n");
+        return -1;
+    }
+    XSetEventQueueOwner (x_st.xlib_dpy, XCBOwnsEventQueue);
+
+    /* Get the first screen */
+    // TODO: Get the default screen instead of assuming it's 0.
+    // TODO: What happens if there is more than 1 screen?, probably will
+    // have to iterate with xcb_setup_roots_iterator(), and xcb_screen_next ().
+    x_st.screen = xcb_setup_roots_iterator (xcb_get_setup (x_st.xcb_c)).data;
+
+    x11_create_window (&x_st, "Order Type");
+
+    x11_setup_icccm_and_ewmh_protocols (&x_st);
+
+    // Crerate backbuffer pixmap
+    x_st.gc = xcb_generate_id (x_st.xcb_c);
+    xcb_create_gc (x_st.xcb_c, x_st.gc, x_st.window, 0, NULL);
+    x_st.backbuffer = xcb_generate_id (x_st.xcb_c);
+    xcb_create_pixmap (x_st.xcb_c,
+                       x_st.depth,                      /* depth of the screen */
+                       x_st.backbuffer,                 /* id of the pixmap */
+                       x_st.window,                     /* based on this drawable */
+                       x_st.screen->width_in_pixels,    /* pixel width of the screen */
+                       x_st.screen->height_in_pixels);  /* pixel height of the screen */
+
+    // Create a cairo surface on backbuffer
     //
     // NOTE: Ideally we should be using cairo_xcb_* functions, but font
     // options are ignored because the patch that added this functionality was
@@ -389,11 +452,14 @@ int main (void)
     // <cairo>/src/cairo-xcb-screen.c and see if the issue has been resolved, if
     // it has, then go back to xcb for consistency with the rest of the code.
     // (As of git cffa452f44e it hasn't been solved).
-    Visual *Xlib_visual = Visual_from_visualid (dpy, visual->visual_id);
+    Visual *Xlib_visual = Visual_from_visualid (x_st.xlib_dpy, x_st.visual->visual_id);
     cairo_surface_t *surface =
-        cairo_xlib_surface_create (dpy, backbuffer, Xlib_visual,
-                                   screen->width_in_pixels, screen->height_in_pixels);
+        cairo_xlib_surface_create (x_st.xlib_dpy, x_st.backbuffer, Xlib_visual,
+                                   x_st.screen->width_in_pixels, x_st.screen->height_in_pixels);
     cairo_t *cr = cairo_create (surface);
+
+    xcb_map_window (x_st.xcb_c, x_st.window);
+    xcb_flush (x_st.xcb_c);
 
     // PangoLayout for text handling
     PangoLayout *text_layout = pango_cairo_create_layout (cr);
@@ -435,7 +501,7 @@ int main (void)
     memory_stack_init (&st->temporary_memory, temp_memory_size, temp_memory);
 
     while (!st->end_execution) {
-        while ((event = xcb_poll_for_event (connection))) {
+        while ((event = xcb_poll_for_event (x_st.xcb_c))) {
             // NOTE: The most significant bit of event->response_type is set if
             // the event was generated from a SendEvent request, here we don't
             // care about the source of the event.
@@ -482,29 +548,29 @@ int main (void)
                     xcb_client_message_event_t *client_message = ((xcb_client_message_event_t*)event);
                      
                     // WM_DELETE_WINDOW protocol
-                    if (client_message->type == wm_protocols) {
-                        if (client_message->data.data32[0] == delete_window_atom) {
+                    if (client_message->type == x_st.wm_protocols_a) {
+                        if (client_message->data.data32[0] == x_st.delete_window_a) {
                             st->end_execution = true;
                         }
                         handled = true;
                     }
 
                     // _NET_WM_SYNC_REQUEST protocol using the extended mode
-                    if (client_message->type == wm_protocols && client_message->data.data32[0] == net_wm_sync) {
-                        counter_val.lo = client_message->data.data32[2];
-                        counter_val.hi = client_message->data.data32[3];
-                        if (counter_val.lo % 2 != 0) {
-                            increment_sync_counter (&counter_val);
+                    if (client_message->type == x_st.wm_protocols_a && client_message->data.data32[0] == x_st.net_wm_sync_a) {
+                        x_st.counter_val.lo = client_message->data.data32[2];
+                        x_st.counter_val.hi = client_message->data.data32[3];
+                        if (x_st.counter_val.lo % 2 != 0) {
+                            increment_sync_counter (&x_st.counter_val);
                         }
                         handled = true;
-                    } else if (client_message->type == net_wm_frame_drawn) {
+                    } else if (client_message->type == x_st.net_wm_frame_drawn_a) {
                         handled = true;
-                    } else if (client_message->type == net_wm_frame_timings) {
+                    } else if (client_message->type == x_st.net_wm_frame_timings_a) {
                         handled = true;
                     }
 
                     if (!handled) {
-                        printf ("Unrecognized Client Message: %s\n", get_x11_atom_name (connection, client_message->type));
+                        printf ("Unrecognized Client Message: %s\n", get_x11_atom_name (x_st.xcb_c, client_message->type));
                     }
                     } break;
                 case 0: { // XCB_ERROR
@@ -518,17 +584,7 @@ int main (void)
             free (event);
         }
 
-        {
-            // Notify X11: Start of frame
-            increment_sync_counter (&counter_val);
-            assert (counter_val.lo % 2 == 1);
-            xcb_void_cookie_t ck = xcb_sync_set_counter_checked (connection, counters[1], counter_val);
-            xcb_generic_error_t *error; 
-            if ((error = xcb_request_check(connection, ck))) { 
-                printf("Error setting counter %d\n", error->error_code); 
-                free(error); 
-            }
-        }
+        x11_notify_start_of_frame (&x_st);
 
         // TODO: How bad is this? should we actually measure it?
         app_input.time_elapsed_ms = target_frame_length_ms;
@@ -542,27 +598,17 @@ int main (void)
         }
 
         if (blit_needed || force_blit) {
-            xcb_copy_area (connection,
-                           backbuffer,        /* drawable we want to paste */
-                           window,            /* drawable on which we copy the previous Drawable */
-                           gc,
+            xcb_copy_area (x_st.xcb_c,
+                           x_st.backbuffer,        /* drawable we want to paste */
+                           x_st.window,            /* drawable on which we copy the previous Drawable */
+                           x_st.gc,
                            0,0,0,0,
                            graphics.width,    /* pixel width of the region we want to copy */
                            graphics.height);  /* pixel height of the region we want to copy */
             force_blit = false;
         }
 
-        {
-            // Notify X11: End of frame
-            increment_sync_counter (&counter_val);
-            assert (counter_val.lo % 2 == 0);
-            xcb_void_cookie_t ck = xcb_sync_set_counter_checked (connection, counters[1], counter_val);
-            xcb_generic_error_t *error; 
-            if ((error = xcb_request_check(connection, ck))) { 
-                printf("Error setting counter %d\n", error->error_code); 
-                free(error); 
-            }
-        }
+        x11_notify_end_of_frame (&x_st);
 
         clock_gettime (CLOCK_MONOTONIC, &end_ticks);
         float time_elapsed = time_elapsed_in_ms (&start_ticks, &end_ticks);
@@ -579,7 +625,7 @@ int main (void)
         //printf ("FPS: %f\n", 1000/time_elapsed_in_ms (&start_ticks, &end_ticks));
         start_ticks = end_ticks;
 
-        xcb_flush (connection);
+        xcb_flush (x_st.xcb_c);
         app_input.keycode = 0;
         app_input.wheel = 1;
         app_input.force_redraw = 0;
@@ -589,7 +635,7 @@ int main (void)
     // care to free them, the process will end anyway.
     // cairo_surface_destroy(surface);
     // cairo_destroy (cr);
-    // xcb_disconnect (connection);
+    // xcb_disconnect (x_st.xcb_c);
 
     return 0;
 }
