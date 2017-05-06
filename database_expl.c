@@ -229,7 +229,6 @@ xcb_visualtype_t* get_visual_max_depth (xcb_connection_t *c, xcb_screen_t *scree
             }
         }
     }
-    printf ("Max depth found: %d\n", *found_depth);
     return visual_type;
 }
 

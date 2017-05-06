@@ -13,22 +13,34 @@ typedef struct {
 } entity_t;
 
 typedef enum {
-    iterate_order_type,
-    iterate_triangle_set,
-    iterate_n,
-    num_iterator_mode
-} iterator_mode_t;
+    foc_none,
+    foc_n,
+    foc_ot,
+    foc_k,
+    foc_ts,
+    foc_edj,
+    foc_th,
+
+    num_focus_options
+} focus_options_t;
 
 typedef struct {
-    int i;
+    uint64_t i;
     char str[20];
-} int_string_t;
+} uint64_string_t;
 
 struct point_set_mode_t {
-    int_string_t n;
-    int_string_t ot_id;
+    uint64_string_t n;
+    uint64_string_t ot_id;
     order_type_t *ot;
-    int_string_t k;
+    uint64_string_t k;
+    uint64_string_t ts_id;
+    uint64_string_t edj_id;
+    uint64_string_t th_id;
+
+    bool editing_entry;
+    uint64_string_t temp_number;
+
     int db;
 
     double max_zoom;
@@ -37,8 +49,7 @@ struct point_set_mode_t {
     double old_zoom;
     transf_t points_to_canvas;
 
-    iterator_mode_t it_mode;
-    int64_t user_number;
+    focus_options_t foc_st;
 
     subset_it_t *triangle_it;
     subset_it_t *triangle_set_it;
