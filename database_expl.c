@@ -474,9 +474,6 @@ int main (void)
     graphics.text_layout = text_layout;
     graphics.width = WINDOW_WIDTH;
     graphics.height = WINDOW_HEIGHT;
-    uint16_t pixmap_width = WINDOW_WIDTH;
-    uint16_t pixmap_height = WINDOW_HEIGHT;
-    bool make_pixmap_bigger = false;
     bool force_blit = false;
 
     float frame_rate = 60;
@@ -523,8 +520,6 @@ int main (void)
                     break;
                 case XCB_BUTTON_PRESS: {
                     char button_pressed = ((xcb_key_press_event_t*)event)->detail;
-                    int16_t root_x = ((xcb_key_press_event_t*)event)->root_x;
-                    int16_t root_y = ((xcb_key_press_event_t*)event)->root_y;
                     if (button_pressed == 4) {
                         app_input.wheel *= 1.2;
                     } else if (button_pressed == 5) {

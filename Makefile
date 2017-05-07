@@ -17,7 +17,7 @@ DEFAULT_PROG = database_expl
 #DEFAULT_PROG = search
 #DEFAULT_PROG = save_file_to_pdf
 
-FLAGS = -g #Debug
+FLAGS = -g -Wall #Debug
 #FLAGS = -O2 -Wall #Release
 #FLAGS = -O2 -pg -Wall #Profile release
 

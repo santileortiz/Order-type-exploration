@@ -440,6 +440,9 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
         ps_mode->points_to_canvas.scale_x = (double)(graphics->height-2*WINDOW_MARGIN)/CANVAS_SIZE;
         ps_mode->points_to_canvas.scale_y = ps_mode->points_to_canvas.scale_x;
 
+        ps_mode->rebuild_panel = true;
+        ps_mode->redraw_canvas = true;
+
         set_n (ps_mode, ps_mode->n.i, graphics);
     }
 
@@ -454,7 +457,6 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
         int new_number = ps_mode->temp_number.i*10 + digit;
         int_string_update (&ps_mode->temp_number, new_number);
         input.force_redraw = true;
-        //printf ("Input: %"PRIi64"\n", ps_mode->user_number);
         input.keycode = 0;
     }
 
@@ -464,7 +466,7 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
                 ps_mode->temp_number.i = -1;
             } else {
                 ps_mode->foc_st = foc_none;
-                input.force_redraw = true;
+                ps_mode->rebuild_panel = true;
             }
             break;
         case 33: //KEY_P
@@ -484,7 +486,7 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
                 ps_mode->foc_st = (ps_mode->foc_st+1)%(num_focus_options);
                 if (ps_mode->foc_st == foc_none) { ps_mode->foc_st++; }
             }
-            input.force_redraw = true;
+            ps_mode->rebuild_panel = true;
             break;
         case 57: //KEY_N
         case 113://KEY_LEFT_ARROW
@@ -523,13 +525,14 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
                     subset_it_next (ps_mode->triangle_set_it);
                 }
             }
-            input.force_redraw = true;
+            ps_mode->rebuild_panel = true;
+            ps_mode->redraw_canvas = true;
             break;
         case 55: //KEY_V
             ps_mode->view_db_ot = !ps_mode->view_db_ot;
             set_ot (ps_mode);
             focus_order_type (graphics, ps_mode);
-            input.force_redraw = true;
+            ps_mode->redraw_canvas = true;
             break;
         case 36: //KEY_ENTER
             if (ps_mode->foc_st == foc_ot) {
@@ -544,7 +547,7 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
                 subset_it_seek (ps_mode->triangle_set_it, ps_mode->temp_number.i);
             }
             ps_mode->editing_entry = false;
-            input.force_redraw = true;
+            ps_mode->redraw_canvas = true;
             break;
         default:
             break;
@@ -556,68 +559,69 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
             ps_mode->zoom = ps_mode->max_zoom;
         }
         ps_mode->zoom_changed = true;
-        input.force_redraw = true;
+        ps_mode->redraw_canvas = true;
     }
 
     if (st->dragging[0]) {
         ps_mode->points_to_canvas.dx += st->ptr_delta.x;
         ps_mode->points_to_canvas.dy += st->ptr_delta.y;
-        input.force_redraw = true;
+        ps_mode->redraw_canvas = true;
     }
 
     if (st->mouse_double_clicked[0]) {
         focus_order_type (graphics, ps_mode);
-        input.force_redraw = true;
+        ps_mode->redraw_canvas = true;
     }
 
     // Build layout
-    bool update_panel = false;
-    st->num_layout_boxes = 0;
-    vect2_t bg_pos = VECT2(10, 10);
-    vect2_t bg_min_size = VECT2(200, 0);
-    st->layout_boxes[st->num_layout_boxes].box.min = bg_pos;
-    st->layout_boxes[st->num_layout_boxes].style = &st->css_styles[CSS_BACKGROUND];
-    st->num_layout_boxes++;
-    double x_margin = 12, x_step = 12;
-    double y_margin = 12, y_step = 12;
+    if (ps_mode->rebuild_panel) {
+        st->num_layout_boxes = 0;
+        vect2_t bg_pos = VECT2(10, 10);
+        vect2_t bg_min_size = VECT2(200, 0);
+        st->layout_boxes[st->num_layout_boxes].box.min = bg_pos;
+        st->layout_boxes[st->num_layout_boxes].style = &st->css_styles[CSS_BACKGROUND];
+        st->num_layout_boxes++;
+        double x_margin = 12, x_step = 12;
+        double y_margin = 12, y_step = 12;
 
-    char *entry_labels[] = {"n:",
-                            "Order Type:",
-                            "k:",
-                            "Triangle Set:",
-                            "Edge Disj. Set:",
-                            "Thrackle:"};
-    labeled_entries_layout_t lay;
-    init_labeled_layout (&lay, graphics, x_step, y_step,
-                         bg_pos.x+x_margin, bg_pos.y+y_margin, bg_min_size.x,
-                         entry_labels, ARRAY_SIZE(entry_labels), st);
+        char *entry_labels[] = {"n:",
+                                "Order Type:",
+                                "k:",
+                                "Triangle Set:",
+                                "Edge Disj. Set:",
+                                "Thrackle:"};
+        labeled_entries_layout_t lay;
+        init_labeled_layout (&lay, graphics, x_step, y_step,
+                             bg_pos.x+x_margin, bg_pos.y+y_margin, bg_min_size.x,
+                             entry_labels, ARRAY_SIZE(entry_labels), st);
 
-    title ("Point Set", &lay, st, graphics);
-    labeled_text_entry_focus (ps_mode->n.str, &lay, st, ps_mode->foc_st==foc_n);
-    labeled_text_entry_focus (ps_mode->ot_id.str, &lay, st, ps_mode->foc_st==foc_ot);
-    {
-        layout_box_t *sep = next_layout_box (st);
-        BOX_X_Y_W_H(sep->box, lay.x_pos, lay.y_pos, bg_min_size.x-2*x_margin, 2);
-        sep->draw = draw_separator;
-        lay.y_pos += lay.y_step;
-    }
-    title ("Triangle Sets", &lay, st, graphics);
-    labeled_text_entry_focus (ps_mode->k.str, &lay, st, ps_mode->foc_st==foc_k);
-    labeled_text_entry_focus ("0", &lay, st, ps_mode->foc_st==foc_ts);
-    labeled_text_entry_focus ("-", &lay, st, ps_mode->foc_st==foc_edj);
-    labeled_text_entry_focus ("-", &lay, st, ps_mode->foc_st==foc_th);
+        title ("Point Set", &lay, st, graphics);
+        labeled_text_entry_focus (ps_mode->n.str, &lay, st, ps_mode->foc_st==foc_n);
+        labeled_text_entry_focus (ps_mode->ot_id.str, &lay, st, ps_mode->foc_st==foc_ot);
+        {
+            layout_box_t *sep = next_layout_box (st);
+            BOX_X_Y_W_H(sep->box, lay.x_pos, lay.y_pos, bg_min_size.x-2*x_margin, 2);
+            sep->draw = draw_separator;
+            lay.y_pos += lay.y_step;
+        }
+        title ("Triangle Sets", &lay, st, graphics);
+        labeled_text_entry_focus (ps_mode->k.str, &lay, st, ps_mode->foc_st==foc_k);
+        labeled_text_entry_focus ("0", &lay, st, ps_mode->foc_st==foc_ts);
+        labeled_text_entry_focus ("-", &lay, st, ps_mode->foc_st==foc_edj);
+        labeled_text_entry_focus ("-", &lay, st, ps_mode->foc_st==foc_th);
 
-    st->layout_boxes[0].box.max.x = st->layout_boxes[0].box.min.x + bg_min_size.x;
-    st->layout_boxes[0].box.max.y = lay.y_pos;
+        st->layout_boxes[0].box.max.x = st->layout_boxes[0].box.min.x + bg_min_size.x;
+        st->layout_boxes[0].box.max.y = lay.y_pos;
 
-    if (ps_mode->editing_entry) {
-        layout_box_t *focused_box = &st->layout_boxes[st->focused_layout_box];
-        focused_box->str.s = ps_mode->temp_number.str;
+        if (ps_mode->editing_entry) {
+            layout_box_t *focused_box = &st->layout_boxes[st->focused_layout_box];
+            focused_box->str.s = ps_mode->temp_number.str;
+        }
     }
 
     bool blit_needed = false;
     cairo_t *cr = graphics->cr;
-    if (input.force_redraw) {
+    if (input.force_redraw || ps_mode->redraw_canvas) {
         cairo_clear (cr);
         cairo_set_source_rgb (cr, 1, 1, 1);
         cairo_paint (cr);
@@ -640,12 +644,12 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
             triangle_entity_add (ps_mode, ps_mode->triangle_set_it->idx[i], color);
         }
 
-        //printf ("dx: %f, dy: %f, s: %f, z: %f\n", graphics->T.dx, graphics->T.dy, graphics->T.scale, ps_mode->zoom);
         draw_entities (ps_mode, graphics);
+        ps_mode->redraw_panel = true;
         blit_needed = true;
     }
 
-    if (blit_needed || update_panel) {
+    if (ps_mode->redraw_panel) {
         int i;
         for (i=0; i<st->num_layout_boxes; i++) {
             if (st->layout_boxes[i].status_changed) {
@@ -669,6 +673,12 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
             cairo_stroke (cr);
 #endif
         }
+        blit_needed = true;
     }
+
+    ps_mode->rebuild_panel = false;
+    ps_mode->redraw_panel = false;
+    ps_mode->redraw_canvas = false;
+
     return blit_needed;
 }
