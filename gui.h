@@ -141,6 +141,8 @@ typedef enum {
 typedef enum {
     CSS_BUTTON,
     CSS_BUTTON_ACTIVE,
+    CSS_BUTTON_SA,
+    CSS_BUTTON_SA_ACTIVE,
     CSS_BACKGROUND,
     CSS_TEXT_ENTRY,
     CSS_TEXT_ENTRY_FOCUS,
@@ -162,7 +164,25 @@ typedef enum {
     CSS_FONT_WEIGHT_BOLD
 } css_font_weight_t;
 
-typedef struct {
+// NOTE: If more than 32 properties, change this into a #define
+typedef enum {
+    CSS_PROP_BORDER_RADIUS      = 1<<0,
+    CSS_PROP_BORDER_COLOR       = 1<<1,
+    CSS_PROP_BORDER_WIDTH       = 1<<2,
+    CSS_PROP_PADDING_X          = 1<<3,
+    CSS_PROP_PADDING_Y          = 1<<4,
+    CSS_PROP_MIN_WIDTH          = 1<<5,
+    CSS_PROP_MIN_HEIGHT         = 1<<6,
+    CSS_PROP_BACKGROUND_COLOR   = 1<<7,
+    CSS_PROP_COLOR              = 1<<8,
+    CSS_PROP_TEXT_ALIGN         = 1<<9,
+    CSS_PROP_FONT_WEIGHT        = 1<<10,
+    CSS_PROP_BACKGROUND_IMAGE   = 1<<11 //Only gradients supported for now
+} css_property_t;
+
+struct css_box_t {
+    css_property_t property_mask;
+    struct css_box_t *selector_active;
     double border_radius;
     vect4_t border_color;
     double border_width;
@@ -178,22 +198,27 @@ typedef struct {
 
     int num_gradient_stops;
     vect4_t *gradient_stops;
-} css_box_t;
+};
+
+typedef enum {
+    CSS_SEL_ACTIVE  = 1<<0
+} css_selector_t;
 
 typedef struct layout_box_t layout_box_t;
 #define DRAW_CALLBACK(name) void name(app_graphics_t *gr, layout_box_t *layout)
 typedef DRAW_CALLBACK(draw_callback_t);
 struct layout_box_t {
     box_t box;
+    css_selector_t selectors;
     bool status_changed;
     hit_status_t status;
     css_text_align_t text_align_override;
-    css_box_t *style;
+    struct css_box_t *style;
     draw_callback_t *draw;
     sized_string_t str;
 };
 
-void update_font_description (css_box_t *box, PangoLayout *pango_layout)
+void update_font_description (struct css_box_t *box, PangoLayout *pango_layout)
 {
     const PangoFontDescription *orig_font_desc = pango_layout_get_font_description (pango_layout);
     PangoFontDescription *new_font_desc = pango_font_description_copy (orig_font_desc);
@@ -205,7 +230,7 @@ void update_font_description (css_box_t *box, PangoLayout *pango_layout)
     pango_layout_set_font_description (pango_layout, new_font_desc);
 }
 
-void sized_string_compute (sized_string_t *res, css_box_t *style, PangoLayout *pango_layout, char *str)
+void sized_string_compute (sized_string_t *res, struct css_box_t *style, PangoLayout *pango_layout, char *str)
 {
     // TODO: Try to refactor code so this fuction does not receive a PangoLayout
     // but creates it.
@@ -226,21 +251,7 @@ void sized_string_compute (sized_string_t *res, css_box_t *style, PangoLayout *p
     res->pos.y = logical.y;
 }
 
-void css_box_compute_content_width_and_position (cairo_t *cr, css_box_t *box, char *label)
-{
-    //cairo_text_extents_t extents;
-    //cairo_text_extents (cr, label, &extents);
-    //if (box->width == 0) {
-    //    box->width = extents.width + 2*(box->padding_x + box->border_width);
-    //}
-    //if (box->height == 0) {
-    //    box->height = MAX (20, extents.height + 2*(box->padding_y)) + 2*box->border_width;
-    //}
-    //box->content_position.x = (box->width - extents.width)/2 + extents.x_bearing;
-    //box->content_position.y = (box->height - extents.height)/2 - extents.y_bearing;
-}
-
-void layout_size_from_css_content_size (css_box_t *css_box,
+void layout_size_from_css_content_size (struct css_box_t *css_box,
                                         vect2_t *css_content_size, vect2_t *layout_size)
 {
     layout_size->x = MAX(css_box->min_width, css_content_size->x)
@@ -249,7 +260,7 @@ void layout_size_from_css_content_size (css_box_t *css_box,
                      + 2*(css_box->padding_y + css_box->border_width);
 }
 
-void css_box_draw (app_graphics_t *gr, css_box_t *box, layout_box_t *layout)
+void css_box_draw (app_graphics_t *gr, struct css_box_t *box, layout_box_t *layout)
 {
     cairo_t *cr = gr->cr;
     cairo_save (cr);
@@ -301,7 +312,7 @@ void css_box_draw (app_graphics_t *gr, css_box_t *box, layout_box_t *layout)
     cairo_set_line_width (cr, box->border_width);
     cairo_stroke (cr);
 
-    if (layout->str.s != '\0') {
+    if (layout->str.s != NULL) {
         PangoLayout *pango_layout = gr->text_layout;
         double text_pos_x = box->border_width, text_pos_y = box->border_width;
         sized_string_compute (&layout->str, box, pango_layout, layout->str.s);
@@ -347,7 +358,7 @@ void css_box_draw (app_graphics_t *gr, css_box_t *box, layout_box_t *layout)
     cairo_restore (cr);
 }
 
-void css_box_add_gradient_stops (css_box_t *box, int num_stops, vect4_t *stops)
+void css_box_add_gradient_stops (struct css_box_t *box, int num_stops, vect4_t *stops)
 {
     assert (_g_gui_num_colors+num_stops < ARRAY_SIZE(_g_gui_colors));
     box->num_gradient_stops = num_stops;
@@ -361,13 +372,234 @@ void css_box_add_gradient_stops (css_box_t *box, int num_stops, vect4_t *stops)
     }
 }
 
-// TODO: Maybe we don't want content to be inside css_box_t, think this
-// through. We are computing information about content every time we draw
-// when calling css_box_compute_content_width_and_position(), we won't
-// optimize prematureley but it may be a good idea to cache this somehow.
-void init_button (css_box_t *box)
+void rgba_to_hsla (vect4_t *rgba, vect4_t *hsla)
 {
-    *box = (css_box_t){0};
+    double max = MAX(MAX(rgba->r,rgba->g),rgba->b);
+    double min = MIN(MIN(rgba->r,rgba->g),rgba->b);
+
+    // NOTE: This is the same for HSV
+    if (max == min) {
+        // NOTE: we define this, in reality H is undefined
+        // in this case.
+        hsla->h = INFINITY;
+    } else if (max == rgba->r) {
+        hsla->h = (60*(rgba->r-rgba->b)/(max-min) + 360);
+        if (hsla->h > 360) {
+            hsla->h -= 360;
+        }
+    } else if (max == rgba->g) {
+        hsla->h = (60*(rgba->b-rgba->r)/(max-min) + 120);
+    } else if (max == rgba->b) {
+        hsla->h = (60*(rgba->r-rgba->g)/(max-min) + 240);
+    } else {
+        invalid_code_path;
+    }
+    hsla->h /= 360; // h\in[0,1]
+
+    hsla->l = (max+min)/2;
+
+    if (max == min) {
+        hsla->s = 0;
+    } else if (hsla->l <= 0.5) {
+        hsla->s = (max-min)/(2*hsla->l);
+    } else {
+        hsla->s = (max-min)/(2-2*hsla->l);
+    }
+
+    hsla->a = rgba->a;
+}
+
+void hsla_to_rgba (vect4_t *hsla, vect4_t *rgba)
+{
+    double h_pr = hsla->h*6;
+    double chroma = (1-fabs(2*hsla->l-1)) * hsla->s;
+    // Alternative version can be:
+    //
+    //double chroma;
+    //if (hsla->l <= 0.5) {
+    //    chroma = (2*hsla->l)*hsla->s;
+    //} else {
+    //    chroma = (2-2*hsla->l)*hsla->s;
+    //}
+
+    double h_pr_mod_2 = ((int)h_pr)%2+(h_pr-(int)h_pr);
+    double x = chroma*(1-fabs(h_pr_mod_2-1));
+    double m = hsla->l - chroma/2;
+
+    *rgba = VECT4(0,0,0,0);
+    if (h_pr == INFINITY) {
+        rgba->r = 0;
+        rgba->g = 0;
+        rgba->b = 0;
+    } else if (h_pr < 1) {
+        rgba->r = chroma;
+        rgba->g = x;
+        rgba->b = 0;
+    } else if (h_pr < 2) {
+        rgba->r = x;
+        rgba->g = chroma;
+        rgba->b = 0;
+    } else if (h_pr < 3) {
+        rgba->r = 0;
+        rgba->g = chroma;
+        rgba->b = x;
+    } else if (h_pr < 4) {
+        rgba->r = 0;
+        rgba->g = x;
+        rgba->b = chroma;
+    } else if (h_pr < 5) {
+        rgba->r = x;
+        rgba->g = 0;
+        rgba->b = chroma;
+    } else if (h_pr < 6) {
+        rgba->r = chroma;
+        rgba->g = 0;
+        rgba->b = x;
+    }
+    rgba->r += m;
+    rgba->g += m;
+    rgba->b += m;
+    rgba->a = hsla->a;
+}
+
+vect4_t shade (vect4_t *in, double f)
+{
+    vect4_t temp;
+    rgba_to_hsla (in, &temp);
+
+    temp.l *= f;
+    temp.l = temp.l>1? 1 : temp.l;
+    temp.s *= f;
+    temp.s = temp.s>1? 1 : temp.s;
+
+    vect4_t ret;
+    hsla_to_rgba (&temp, &ret);
+    return ret;
+}
+
+void hsv_to_rgb (vect3_t *hsv, vect3_t *rgb)
+{
+        double h = hsv->E[0];
+        double s = hsv->E[1];
+        double v = hsv->E[2];
+        if (h>1) {
+            h -= 1;
+        }
+
+        int h_i = (int)(h*6);
+        double frac = h*6 - h_i;
+
+        double m = v * (1 - s);
+        double desc = v * (1 - frac*s);
+        double asc = v * (1 - (1 - frac) * s);
+
+        switch (h_i) {
+            case 0:
+                rgb->r = v;
+                rgb->g = asc;
+                rgb->b = m;
+                break;
+            case 1:
+                rgb->r = desc;
+                rgb->g = v;
+                rgb->b = m;
+                break;
+            case 2:
+                rgb->r = m;
+                rgb->g = v;
+                rgb->b = asc;
+                break;
+            case 3:
+                rgb->r = m;
+                rgb->g = desc;
+                rgb->b = v;
+                break;
+            case 4:
+                rgb->r = asc;
+                rgb->g = m;
+                rgb->b = v;
+                break;
+            case 5:
+                rgb->r = v;
+                rgb->g = m;
+                rgb->b = desc;
+                break;
+        }
+}
+
+void rgba_print (vect4_t rgba)
+{
+    printf ("rgba");
+    vect4_print(&rgba);
+    printf ("\n");
+}
+
+// Automatic color palette:
+//
+// There are several way of doing this, using HSV with fixed SV and random Hue
+// incremented every PHI_INV seems good enough. If it ever stops being good,
+// research about perception based formats like CIELAB (LAB), and color
+// difference functions like CIE76, CIE94, CIEDE2000.
+
+#if 1
+vect3_t color_palette[13] = {
+    {{0.254902, 0.517647, 0.952941}}, //Google Blue
+    {{0.858824, 0.266667, 0.215686}}, //Google Red
+    {{0.956863, 0.705882, 0.000000}}, //Google Yellow
+    {{0.058824, 0.615686, 0.345098}}, //Google Green
+    {{0.666667, 0.274510, 0.733333}}, //Purple
+    {{1.000000, 0.435294, 0.258824}}, //Deep Orange
+    {{0.615686, 0.611765, 0.137255}}, //Lime
+    {{0.937255, 0.380392, 0.568627}}, //Pink
+    {{0.356863, 0.415686, 0.749020}}, //Indigo
+    {{0.000000, 0.670588, 0.752941}}, //Teal
+    {{0.756863, 0.090196, 0.352941}}, //Deep Pink
+    {{0.619608, 0.619608, 0.619608}}, //Gray
+    {{0.000000, 0.470588, 0.415686}}};//Deep Teal
+#else
+
+vect3_t color_palette[9] = {
+    {{0.945098, 0.345098, 0.329412}}, // red
+    {{0.364706, 0.647059, 0.854902}}, // blue
+    {{0.980392, 0.643137, 0.227451}}, // orange
+    {{0.376471, 0.741176, 0.407843}}, // green
+    {{0.945098, 0.486275, 0.690196}}, // pink
+    {{0.698039, 0.568627, 0.184314}}, // brown
+    {{0.698039, 0.462745, 0.698039}}, // purple
+    {{0.870588, 0.811765, 0.247059}}, // yellow
+    {{0.301961, 0.301961, 0.301961}}};// gray
+#endif
+
+#define PHI_INV 0.618033988749895
+#define COLOR_OFFSET 0.4
+
+void get_next_color (vect3_t *color)
+{
+    static double h = COLOR_OFFSET;
+    static int palette_idx = 0;
+
+    // Reset color palette
+    if (color == NULL) {
+        palette_idx = 0;
+        h = COLOR_OFFSET;
+        return;
+    }
+
+    if (palette_idx < ARRAY_SIZE(color_palette)) {
+        *color = color_palette[palette_idx];
+        palette_idx++;
+    } else {
+        h += PHI_INV;
+        hsv_to_rgb (&VECT3(h, 0.99, 0.99), color);
+    }
+}
+
+vect4_t selected_bg_color = RGB(0.239216, 0.607843, 0.854902);
+vect4_t selected_fg_color = RGB(1,1,1);
+
+void init_button (struct css_box_t *box)
+{
+    *box = (struct css_box_t){0};
     box->border_radius = 2.5;
     box->border_width = 1;
     box->min_height = 20;
@@ -383,9 +615,9 @@ void init_button (css_box_t *box)
     css_box_add_gradient_stops (box, ARRAY_SIZE(stops), stops);
 }
 
-void init_pressed_button (css_box_t *box)
+void init_button_active (struct css_box_t *box)
 {
-    *box = (css_box_t){0};
+    *box = (struct css_box_t){0};
     box->border_radius = 2.5;
     box->border_width = 1;
     box->min_height = 20;
@@ -397,9 +629,34 @@ void init_pressed_button (css_box_t *box)
     box->background_color = RGBA(0, 0, 0, 0.05);
 }
 
-void init_background (css_box_t *box)
+void init_suggested_action_button (struct css_box_t *box)
 {
-    *box = (css_box_t){0};
+    *box = (struct css_box_t){0};
+    init_button (box);
+    box->border_color = shade (&selected_bg_color, 0.8);
+    box->color = selected_fg_color;
+
+    vect4_t stops[2] = {shade(&selected_bg_color,1.1),
+                        shade(&selected_bg_color,0.9)};
+    css_box_add_gradient_stops (box, ARRAY_SIZE(stops), stops);
+}
+
+void init_suggested_action_button_active (struct css_box_t *box)
+{
+    *box = (struct css_box_t){0};
+    init_button (box);
+    box->border_color = shade (&selected_bg_color, 0.8);
+    box->color = selected_fg_color;
+
+
+    vect4_t stops[2] = {shade(&selected_bg_color,1.05),
+                        shade(&selected_bg_color,0.95)};
+    css_box_add_gradient_stops (box, ARRAY_SIZE(stops), stops);
+}
+
+void init_background (struct css_box_t *box)
+{
+    *box = (struct css_box_t){0};
     box->border_radius = 2.5;
     box->border_width = 1;
     //box->padding_x = 12;
@@ -408,9 +665,9 @@ void init_background (css_box_t *box)
     box->border_color = RGBA(0, 0, 0, 0.27);
 }
 
-void init_text_entry (css_box_t *box)
+void init_text_entry (struct css_box_t *box)
 {
-    *box = (css_box_t){0};
+    *box = (struct css_box_t){0};
     box->border_radius = 2.5;
     box->border_width = 1;
     box->padding_x = 3;
@@ -424,9 +681,9 @@ void init_text_entry (css_box_t *box)
     box->border_color = RGBA(0, 0, 0, 0.25);
 }
 
-void init_text_entry_focused (css_box_t *box)
+void init_text_entry_focused (struct css_box_t *box)
 {
-    *box = (css_box_t){0};
+    *box = (struct css_box_t){0};
     box->border_radius = 2.5;
     box->border_width = 1;
     box->padding_x = 3;
@@ -440,16 +697,16 @@ void init_text_entry_focused (css_box_t *box)
     box->border_color = RGBA(0.239216, 0.607843, 0.854902, 0.8);
 }
 
-void init_label (css_box_t *box)
+void init_label (struct css_box_t *box)
 {
-    *box = (css_box_t){0};
+    *box = (struct css_box_t){0};
     box->background_color = RGBA(0, 0, 0, 0);
     box->color = RGB(0.2, 0.2, 0.2);
 }
 
-void init_title_label (css_box_t *box)
+void init_title_label (struct css_box_t *box)
 {
-    *box = (css_box_t){0};
+    *box = (struct css_box_t){0};
     box->background_color = RGBA(0, 0, 0, 0);
     box->color = RGBA(0.2, 0.2, 0.2, 0.7);
     box->font_weight = CSS_FONT_WEIGHT_BOLD;

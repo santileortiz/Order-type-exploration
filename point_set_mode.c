@@ -244,53 +244,81 @@ void set_n (struct point_set_mode_t *st, int n, app_graphics_t *graphics)
 //    st->layout_boxes[0].box.max.x = st->layout_boxes[0].box.min.x+max_width+2*x_margin;
 //    st->layout_boxes[0].box.max.y = y_pos;
 //
-bool button (char *label, app_graphics_t *gr, double x, double y, struct point_set_mode_t *st,
-             double *width, double *height, bool *update_panel)
+
+layout_box_t* next_layout_box (struct app_state_t *st)
 {
-    //cairo_t *cr = gr->cr;
-    //layout_box_t *curr_box = &st->layout_boxes[st->num_layout_boxes];
-    //st->num_layout_boxes++;
+    assert (st->num_layout_boxes < ARRAY_SIZE (st->layout_boxes));
+    layout_box_t *layout_box = &st->layout_boxes[st->num_layout_boxes];
+    st->num_layout_boxes++;
+    return layout_box;
+}
 
-    //curr_box->str.s = label;
-    //curr_box->style = &st->css_styles[CSS_BUTTON];
-    //curr_box->status_changed = false;
 
-    //css_box_t *css_style = &st->css_styles[CSS_BUTTON];
-    //css_style->width = *width;
-    //css_style->height = *height;
-    //css_box_compute_content_width_and_position (cr, css_style, label);
-    //*width = css_style->width;
-    //*height = css_style->height;
-
-    //curr_box->box.min.x = x;
-    //curr_box->box.max.x = x + *width;
-    //curr_box->box.min.y = y;
-    //curr_box->box.max.y = y + *height;
-    //curr_box->origin.x = css_style->content_position.x;
-    //curr_box->origin.y = css_style->content_position.y;
-    //bool is_ptr_over = is_point_in_box (st->click_coord[0].x, st->click_coord[0].y,
-    //                         curr_box->box.min.x, curr_box->box.min.y,
-    //                         *width, *height);
-    //if (st->input.mouse_down[0] && is_ptr_over) {
-    //    if (curr_box->status != PRESSED) {
-    //        curr_box->status_changed = true;
-    //        *update_panel = true;
-    //    }
-    //    curr_box->style = CSS_BUTTON_ACTIVE;
-    //    curr_box->status = PRESSED;
-    //}
-
-    //if (st->mouse_clicked[0] && is_ptr_over) {
-    //    if (curr_box->status != INACTIVE) {
-    //        curr_box->status_changed = true;
-    //        *update_panel = true;
-    //    }
-    //    curr_box->style = CSS_BUTTON;
-    //    curr_box->status = INACTIVE;
-    //    return true;
-    //} else {
+bool update_button_state (struct app_state_t *st, layout_box_t *curr_box, bool *update_panel)
+{
+    bool is_ptr_over = is_point_in_box (st->click_coord[0].x, st->click_coord[0].y,
+                             curr_box->box.min.x, curr_box->box.min.y,
+                             BOX_WIDTH(curr_box->box), BOX_HEIGHT(curr_box->box));
+    if (st->input.mouse_down[0] && is_ptr_over) {
+        if (curr_box->status != PRESSED) {
+            curr_box->status_changed = true;
+            *update_panel = true;
+        }
+        curr_box->selectors |= CSS_SEL_ACTIVE;
+        curr_box->status = PRESSED;
         return false;
-    //}
+    } else if (st->mouse_clicked[0] && is_ptr_over) {
+        if (curr_box->status != INACTIVE) {
+            curr_box->status_changed = true;
+            *update_panel = true;
+        }
+        curr_box->selectors &= ~CSS_SEL_ACTIVE;
+        curr_box->status = INACTIVE;
+        return true;
+    } else {
+        return false;
+    }
+}
+
+bool button (char *label, app_graphics_t *gr,
+             double x, double y, double *width, double *height,
+             struct app_state_t *st, bool *update_panel, bool is_focused)
+{
+    layout_box_t *curr_box = next_layout_box (st);
+
+    curr_box->str.s = label;
+    if (is_focused) {
+        //curr_box->style = &st->css_styles[CSS_BUTTON_FOCUSED];
+    } else {
+        curr_box->style = &st->css_styles[CSS_BUTTON];
+    }
+    curr_box->status_changed = false;
+
+    vect2_t layout_size;
+    if (width == NULL || height == NULL) {
+        sized_string_compute (&curr_box->str, curr_box->style, gr->text_layout, label);
+        vect2_t str_size = VECT2(curr_box->str.width, curr_box->str.height);
+
+        layout_size_from_css_content_size (curr_box->style, &str_size, &layout_size);
+    }
+    if (width == NULL) {
+        layout_size.x = layout_size.x;
+        *width = layout_size.x;
+    } else {
+        layout_size.x = *width;
+    }
+    if (height == NULL) {
+        layout_size.y = layout_size.y;
+        *height = layout_size.y;
+    } else {
+        layout_size.y = *height;
+    }
+    curr_box->box.min.x = x;
+    curr_box->box.max.x = x + *width;
+    curr_box->box.min.y = y;
+    curr_box->box.max.y = y + *height;
+
+    return update_button_state (st, curr_box, update_panel);
 }
 
 typedef struct {
@@ -317,7 +345,7 @@ void init_labeled_layout (labeled_entries_layout_t *layout_state, app_graphics_t
 
     layout_state->label_layouts = push_array (&st->temporary_memory,
                                               num_labels, layout_box_t);
-    css_box_t *label_style = &st->css_styles[CSS_LABEL];
+    struct css_box_t *label_style = &st->css_styles[CSS_LABEL];
     for (i=0; i<num_labels; i++) {
         layout_box_t *curr_layout_box = &layout_state->label_layouts[i];
         curr_layout_box->str.s = labels[i];
@@ -346,16 +374,7 @@ void init_labeled_layout (labeled_entries_layout_t *layout_state, app_graphics_t
     layout_state->current_label_layout = 0;
 }
 
-layout_box_t* next_layout_box (struct app_state_t *st)
-{
-    layout_box_t *layout_box = &st->layout_boxes[st->num_layout_boxes];
-    st->num_layout_boxes++;
-    return layout_box;
-}
-
-#define labeled_text_entry(entry_content,layout_state,st)\
-    labeled_text_entry_focus(entry_content,layout_state,st,0)
-void labeled_text_entry_focus (char *entry_content,
+void labeled_text_entry (char *entry_content,
                                labeled_entries_layout_t *layout_state,
                                struct app_state_t *st, bool is_focused)
 {
@@ -380,6 +399,29 @@ void labeled_text_entry_focus (char *entry_content,
     BOX_POS_SIZE (text_entry_layout_box->box, entry_pos, layout_state->entry_size);
     BOX_POS_SIZE (label_layout_box->box, label_pos, layout_state->label_size);
     layout_state->y_pos += layout_state->row_height + layout_state->y_step;
+}
+
+bool labeled_button (char *button_text,
+                               labeled_entries_layout_t *layout_state,
+                               struct app_state_t *st, app_graphics_t *gr,
+                               bool *update_panel, bool is_focused)
+{
+    vect2_t label_pos = VECT2(layout_state->label_align, layout_state->y_pos);
+    vect2_t button_pos = VECT2(layout_state->entry_align, layout_state->y_pos);
+
+    layout_box_t *label_layout_box = next_layout_box(st);
+    *label_layout_box = layout_state->label_layouts[layout_state->current_label_layout];
+    layout_state->current_label_layout++;
+    label_layout_box->style = &st->css_styles[CSS_LABEL];
+    label_layout_box->text_align_override = CSS_TEXT_ALIGN_RIGHT;
+
+    BOX_POS_SIZE (label_layout_box->box, label_pos, layout_state->label_size);
+    layout_state->y_pos += layout_state->row_height + layout_state->y_step;
+    bool retval =  button (button_text, gr, button_pos.x, button_pos.y,
+                           &layout_state->entry_size.x, &layout_state->entry_size.y,
+                           st, update_panel, is_focused);
+    st->layout_boxes[st->num_layout_boxes-1].style = &st->css_styles[CSS_BUTTON_SA];
+    return retval;
 }
 
 void title (char *str, labeled_entries_layout_t *layout_state, struct app_state_t *st, app_graphics_t *graphics)
@@ -574,6 +616,7 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
     }
 
     // Build layout
+    static layout_box_t *thrackle_button;
     if (ps_mode->rebuild_panel) {
         st->num_layout_boxes = 0;
         vect2_t bg_pos = VECT2(10, 10);
@@ -596,8 +639,8 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
                              entry_labels, ARRAY_SIZE(entry_labels), st);
 
         title ("Point Set", &lay, st, graphics);
-        labeled_text_entry_focus (ps_mode->n.str, &lay, st, ps_mode->foc_st==foc_n);
-        labeled_text_entry_focus (ps_mode->ot_id.str, &lay, st, ps_mode->foc_st==foc_ot);
+        labeled_text_entry (ps_mode->n.str, &lay, st, ps_mode->foc_st==foc_n);
+        labeled_text_entry (ps_mode->ot_id.str, &lay, st, ps_mode->foc_st==foc_ot);
         {
             layout_box_t *sep = next_layout_box (st);
             BOX_X_Y_W_H(sep->box, lay.x_pos, lay.y_pos, bg_min_size.x-2*x_margin, 2);
@@ -605,10 +648,11 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
             lay.y_pos += lay.y_step;
         }
         title ("Triangle Sets", &lay, st, graphics);
-        labeled_text_entry_focus (ps_mode->k.str, &lay, st, ps_mode->foc_st==foc_k);
-        labeled_text_entry_focus ("0", &lay, st, ps_mode->foc_st==foc_ts);
-        labeled_text_entry_focus ("-", &lay, st, ps_mode->foc_st==foc_edj);
-        labeled_text_entry_focus ("-", &lay, st, ps_mode->foc_st==foc_th);
+        labeled_text_entry (ps_mode->k.str, &lay, st, ps_mode->foc_st==foc_k);
+        labeled_text_entry ("0", &lay, st, ps_mode->foc_st==foc_ts);
+        labeled_text_entry ("-", &lay, st, ps_mode->foc_st==foc_edj);
+        labeled_button ("Compute", &lay, st, graphics, &input.force_redraw, ps_mode->foc_st==foc_th);
+        thrackle_button = &st->layout_boxes[st->num_layout_boxes-1];
 
         st->layout_boxes[0].box.max.x = st->layout_boxes[0].box.min.x + bg_min_size.x;
         st->layout_boxes[0].box.max.y = lay.y_pos;
@@ -617,6 +661,11 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
             layout_box_t *focused_box = &st->layout_boxes[st->focused_layout_box];
             focused_box->str.s = ps_mode->temp_number.str;
         }
+        ps_mode->redraw_panel = true;
+    }
+
+    if (update_button_state (st, thrackle_button, &input.force_redraw)) {
+        printf ("Should compute thrackles.\n");
     }
 
     bool blit_needed = false;
@@ -655,7 +704,14 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
             if (st->layout_boxes[i].status_changed) {
                 blit_needed = true;
             }
-            css_box_t *style = st->layout_boxes[i].style;
+
+            struct css_box_t *style;
+            if (st->layout_boxes[i].selectors & CSS_SEL_ACTIVE) {
+                style = st->layout_boxes[i].style->selector_active;
+            } else {
+                style = st->layout_boxes[i].style;
+            }
+
             layout_box_t *layout = &st->layout_boxes[i];
             if (layout->style != NULL) {
                 css_box_draw (graphics, style, layout);

@@ -89,9 +89,20 @@ typedef union {
         double b;
         double a;
     };
+
+    struct {
+        double h;
+        double s;
+        double l;
+    };
     double E[4];
 } vect4_t;
 #define VECT4(x,y,z,w) ((vect4_t){{x,y,z,w}})
+
+void vect4_print (vect4_t *v)
+{
+    printf ("(%f, %f, %f, %f)", v->x, v->y, v->z, v->w);
+}
 
 typedef struct {
     uint8_t *data;

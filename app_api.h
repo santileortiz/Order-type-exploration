@@ -44,7 +44,7 @@ struct app_state_t {
     float double_click_time;
     float min_distance_for_drag;
 
-    css_box_t css_styles[CSS_NUM_STYLES];
+    struct css_box_t css_styles[CSS_NUM_STYLES];
     int num_layout_boxes;
     int focused_layout_box;
     layout_box_t layout_boxes[30];
