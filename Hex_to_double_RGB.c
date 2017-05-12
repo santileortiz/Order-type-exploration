@@ -7,39 +7,17 @@ typedef struct {
     unsigned char b;
 } vect3_int_t;
 
-int main (void)
+int main (int argc, char **argv)
 {
-#if 0
-    vect3_int_t color_palette[13] = {
-        {0x41, 0x84, 0xf3},
-        {0xdb, 0x44, 0x37},
-        {0xf4, 0xb4, 0x00},
-        {0x0f, 0x9d, 0x58},
-        {0xaa, 0x46, 0xbb},
-        {0x00, 0xab, 0xc0},
-        {0xff, 0x6f, 0x42},
-        {0x9d, 0x9c, 0x23},
-        {0x5b, 0x6a, 0xbf},
-        {0xef, 0x61, 0x91},
-        {0x00, 0x78, 0x6a},
-        {0xc1, 0x17, 0x5a},
-        {0x9E, 0x9E, 0x9E}};
+    unsigned int test = 0;
+    if (argc == 2) {
+        sscanf (argv[1], "%X", &test);
 
-#else
-    vect3_int_t color_palette [9] = {
-        {0xF1, 0x58, 0x54},  // red
-        {0x5D, 0xA5, 0xDA},  // blue
-        {0xFA, 0xA4, 0x3A},  // orange
-        {0x60, 0xBD, 0x68},  // green
-        {0xF1, 0x7C, 0xB0},  // pink
-        {0xB2, 0x91, 0x2F},  // brown
-        {0xB2, 0x76, 0xB2},  // purple
-        {0xDE, 0xCF, 0x3F},  // yellow
-        {0x4D, 0x4D, 0x4D}}; // gray
-#endif
-
-    int i;
-    for (i=0; i<sizeof(color_palette)/sizeof(color_palette[0]); i++) {
-        printf ("{{%f, %f, %f}},\n", (double)color_palette[i].r/255, (double)color_palette[i].g/255,  (double)color_palette[i].b/255);
+        vect3_int_t col;
+        col.r = (test & 0xFF0000) >> 16;
+        col.g = (test & 0x00FF00) >> 8;
+        col.b = test & 0x0000FF;
+        printf ("{{%d, %d, %d}},\n", col.r, col.g,  col.b);
+        printf ("{{%f, %f, %f}},\n", (double)col.r/255, (double)col.g/255,  (double)col.b/255);
     }
 }
