@@ -44,7 +44,13 @@ bool update_and_render (struct app_state_t *st, app_graphics_t *graphics, app_in
         st->min_distance_for_drag = 10;
 
         init_button (&st->css_styles[CSS_BUTTON]);
-        init_pressed_button (&st->css_styles[CSS_BUTTON_ACTIVE]);
+        init_button_active (&st->css_styles[CSS_BUTTON_ACTIVE]);
+        st->css_styles[CSS_BUTTON].selector_active = &st->css_styles[CSS_BUTTON_ACTIVE];
+
+        init_suggested_action_button (&st->css_styles[CSS_BUTTON_SA]);
+        init_suggested_action_button_active (&st->css_styles[CSS_BUTTON_SA_ACTIVE]);
+        st->css_styles[CSS_BUTTON_SA].selector_active = &st->css_styles[CSS_BUTTON_SA_ACTIVE];
+
         init_background (&st->css_styles[CSS_BACKGROUND]);
         init_text_entry (&st->css_styles[CSS_TEXT_ENTRY]);
         init_text_entry_focused (&st->css_styles[CSS_TEXT_ENTRY_FOCUS]);

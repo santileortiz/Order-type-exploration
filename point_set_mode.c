@@ -604,25 +604,16 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
         ps_mode->redraw_canvas = true;
     }
 
-    if (st->dragging[0]) {
-        ps_mode->points_to_canvas.dx += st->ptr_delta.x;
-        ps_mode->points_to_canvas.dy += st->ptr_delta.y;
-        ps_mode->redraw_canvas = true;
-    }
-
-    if (st->mouse_double_clicked[0]) {
-        focus_order_type (graphics, ps_mode);
-        ps_mode->redraw_canvas = true;
-    }
-
     // Build layout
     static layout_box_t *thrackle_button;
+    static layout_box_t *panel;
     if (ps_mode->rebuild_panel) {
         st->num_layout_boxes = 0;
         vect2_t bg_pos = VECT2(10, 10);
         vect2_t bg_min_size = VECT2(200, 0);
         st->layout_boxes[st->num_layout_boxes].box.min = bg_pos;
         st->layout_boxes[st->num_layout_boxes].style = &st->css_styles[CSS_BACKGROUND];
+        panel = &st->layout_boxes[st->num_layout_boxes];
         st->num_layout_boxes++;
         double x_margin = 12, x_step = 12;
         double y_margin = 12, y_step = 12;
@@ -662,6 +653,21 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
             focused_box->str.s = ps_mode->temp_number.str;
         }
         ps_mode->redraw_panel = true;
+    }
+
+    bool ptr_clicked_in_canvas =
+        !is_point_in_box (st->click_coord[0].x, st->click_coord[0].y,
+                          panel->box.min.x, panel->box.min.y,
+                          BOX_WIDTH(panel->box), BOX_HEIGHT(panel->box));
+    if (st->dragging[0] && ptr_clicked_in_canvas) {
+        ps_mode->points_to_canvas.dx += st->ptr_delta.x;
+        ps_mode->points_to_canvas.dy += st->ptr_delta.y;
+        ps_mode->redraw_canvas = true;
+    }
+
+    if (st->mouse_double_clicked[0]) {
+        focus_order_type (graphics, ps_mode);
+        ps_mode->redraw_canvas = true;
     }
 
     if (update_button_state (st, thrackle_button, &input.force_redraw)) {
