@@ -1173,23 +1173,44 @@ char* push_node (char* buff, int id, backtrack_node_t **children, int num_childr
 // tree (Ex. _all_perms_ array) nedds to be stored, for this we use the local
 // memory pool temp_pool. If this data is useful to the caller, it can instead
 // be stored in _pool_ if a pointer is supplied as argument (_ret_all_perms_).
-#define MAX_NODE_SIZE(n) (sizeof(backtrack_node_t) + (n-1)*sizeof(backtrack_node_t*))
-#define ID_NODE(node_stack,i,n) ((backtrack_node_t*)((char*)node_stack + i*MAX_NODE_SIZE(n)))
-#define PUSH_NODE_PTR(buff,node_ptr) {backtrack_node_t **_node_pos = \
-                                          cont_buff_push (buff, sizeof(backtrack_node_t*)); \
-                                      *_node_pos = node_ptr;}
 
-bool matching_backtrack (int *l, int *curr_seq, int domain_size, bool *S_l,
-                         int *num_invalid, int *invalid_restore_indx, int *invalid_perms,
-                         mem_pool_t *pool, cont_buff_t *nodes, backtrack_node_t *node_stack)
+struct tree_build_st_t {
+    uint32_t max_depth;
+    uint32_t max_children;
+    uint32_t max_node_size;
+    uint32_t num_nodes_stack; // num_nodes_in_stack
+    backtrack_node_t *node_stack;
+    uint32_t num_nodes;
+    cont_buff_t nodes;
+    mem_pool_t temp_pool;
+};
+
+backtrack_node_t* stack_element (struct tree_build_st_t *tree_state, uint32_t i)
 {
-    backtrack_node_t *finished = ID_NODE (node_stack, *l, domain_size);
+    return ((backtrack_node_t*)((char*)tree_state->node_stack + (i)*tree_state->max_node_size));
+}
+
+void push_partial_node (struct tree_build_st_t *tree_state, int val)
+{
+    backtrack_node_t *node = stack_element (tree_state, tree_state->num_nodes_stack);
+    tree_state->num_nodes_stack++;
+
+    *node = (backtrack_node_t){0};
+    node->val = val;
+    node->id = tree_state->num_nodes;
+    tree_state->num_nodes++;
+}
+
+void complete_and_pop_node (struct tree_build_st_t *tree_state, mem_pool_t *pool, uint32_t l)
+{
+    backtrack_node_t *finished = stack_element (tree_state, l);
     uint32_t node_size;
     if (finished->num_children > 1) {
         node_size = sizeof(backtrack_node_t)+(finished->num_children-1)*sizeof(backtrack_node_t*);
     } else {
         node_size = sizeof(backtrack_node_t);
     }
+
     backtrack_node_t *pushed_node = mem_pool_push_size (pool, node_size);
     pushed_node->id = finished->id;
     pushed_node->val = finished->val;
@@ -1198,8 +1219,61 @@ bool matching_backtrack (int *l, int *curr_seq, int domain_size, bool *S_l,
     for (i=0; i<finished->num_children; i++) {
         pushed_node->children[i] = finished->children[i];
     }
-    PUSH_NODE_PTR (nodes, pushed_node);
 
+    backtrack_node_t **node_pos = cont_buff_push (&tree_state->nodes, sizeof(backtrack_node_t*));
+    *node_pos = pushed_node;
+
+    tree_state->num_nodes_stack--;
+
+    if (l > 0) {
+        l--;
+        backtrack_node_t *parent = stack_element (tree_state, l);
+        parent->children[parent->num_children] = pushed_node;
+        parent->num_children++;
+    }
+}
+
+struct tree_build_st_t tree_start (uint32_t max_children, uint32_t max_depth)
+{
+    struct tree_build_st_t ret = {0};
+    if (max_children > 0) {
+        ret.max_children = max_children;
+        ret.max_node_size =
+            (sizeof(backtrack_node_t) +
+             (ret.max_children-1)*sizeof(backtrack_node_t*));
+    } else {
+        // TODO: If we don't know max_children then use a version of
+        // backtrack_node_t that has a cont_buff_t as children. Remember to
+        // compute max_node_size in this case too.
+        invalid_code_path;
+    }
+
+    if (max_depth > 0) {
+        ret.max_depth = max_depth;
+        ret.node_stack = mem_pool_push_size (&ret.temp_pool,(ret.max_depth+1)*ret.max_node_size);
+    } else {
+        // TODO: If we don't know max_depth then node_stack should be a
+        // cont_buff_t of elements of size max_node_size.
+        invalid_code_path;
+    }
+    // Pushing the root node to the stack.
+    push_partial_node (&ret, -1);
+    return ret;
+}
+
+backtrack_node_t* tree_end (struct tree_build_st_t *tree_state)
+{
+    backtrack_node_t* ret = ((backtrack_node_t**)tree_state->nodes.data)[tree_state->num_nodes-1];
+    cont_buff_destroy (&tree_state->nodes);
+    mem_pool_destroy (&tree_state->temp_pool);
+    return ret;
+}
+
+bool matching_backtrack (int *l, int *curr_seq, int domain_size, bool *S_l,
+                         int *num_invalid, int *invalid_restore_indx, int *invalid_perms,
+                         struct tree_build_st_t *tree_state, mem_pool_t *res_pool)
+{
+    complete_and_pop_node (tree_state, res_pool, *l);
     (*l)--;
     if (*l >= 0) {
         int i;
@@ -1211,12 +1285,6 @@ bool matching_backtrack (int *l, int *curr_seq, int domain_size, bool *S_l,
         for (i=0; i<*num_invalid; i++) {
             S_l[invalid_perms[i]] = false;
         }
-
-        backtrack_node_t *parent = ID_NODE (node_stack, *l, domain_size);
-        parent->children[parent->num_children] = pushed_node;
-        parent->num_children++;
-        //printf ("p_id: %d p_ch#: %d ch_id:%d\n", parent->id, parent->num_children, pushed_node->id);
-
         return true;
     } else {
         return false;
@@ -1237,12 +1305,11 @@ backtrack_node_t* matching_decompositions_over_complete_bipartite_graphs
         compute_all_permutations (n, all_perms);
     }
 
-    backtrack_node_t *node_stack = mem_pool_push_size (&temp_pool, (n+1)*MAX_NODE_SIZE(num_perms));
-
-    cont_buff_t nodes = {0};
+    struct tree_build_st_t tree_state = tree_start (num_perms, n+1);
 
     int decomp[n];
     decomp[0] = 0;
+    push_partial_node (&tree_state, 0);
     int l = 1;
 
     int invalid_restore_indx[n];
@@ -1257,15 +1324,6 @@ backtrack_node_t* matching_decompositions_over_complete_bipartite_graphs
         S_l[i] = true;
     }
 
-    *ID_NODE(node_stack,0,num_perms) = (backtrack_node_t){0};
-    ID_NODE(node_stack,0,num_perms)->val = -1;
-    ID_NODE(node_stack,1,num_perms)->id = 0;
-
-    *ID_NODE(node_stack,1,num_perms) = (backtrack_node_t){0};
-    ID_NODE(node_stack,1,num_perms)->val = 0;
-    ID_NODE(node_stack,1,num_perms)->id = 1;
-    *num_nodes = 2;
-
     while (l>0) {
         if (l==n) {
             //int edges [4*n];
@@ -1277,7 +1335,7 @@ backtrack_node_t* matching_decompositions_over_complete_bipartite_graphs
             //array_print (decomp, n);
             if (!matching_backtrack (&l, decomp, num_perms, S_l,
                                      &num_invalid, invalid_restore_indx, invalid_perms,
-                                     pool, &nodes, node_stack)) {
+                                     &tree_state, pool)) {
                 continue;
             }
         } else {
@@ -1308,23 +1366,19 @@ backtrack_node_t* matching_decompositions_over_complete_bipartite_graphs
                 S_l[min_S_l] = false;
                 l++;
 
-                *ID_NODE(node_stack, l, num_perms) = (backtrack_node_t){0};
-                ID_NODE(node_stack, l, num_perms)->id = *num_nodes;
-                ID_NODE(node_stack, l, num_perms)->val = min_S_l;
-                (*num_nodes)++;
+                push_partial_node (&tree_state, min_S_l);
                 break;
             }
 
             if (!matching_backtrack (&l, decomp, num_perms, S_l,
                                      &num_invalid, invalid_restore_indx, invalid_perms,
-                                     pool, &nodes, node_stack)) {
+                                     &tree_state, pool)) {
                 break;
             }
         }
     }
 
-    backtrack_node_t* root = ((backtrack_node_t**)nodes.data)[*num_nodes-1];
-    cont_buff_destroy (&nodes);
+    backtrack_node_t *root = tree_end (&tree_state);
     mem_pool_destroy (&temp_pool);
 
     return root;
