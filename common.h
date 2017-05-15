@@ -471,16 +471,18 @@ void* mem_pool_push_size (mem_pool_t *pool, int size)
 // NOTE: _pool_ can be reused after this.
 void mem_pool_destroy (mem_pool_t *pool)
 {
-    bin_info_t *curr_info = (bin_info_t*)((uint8_t*)pool->base + pool->size);
-    while (curr_info->prev_bin_info != NULL) {
-        void *to_free = curr_info->base;
-        curr_info = curr_info->prev_bin_info;
-        free (to_free);
+    if (pool->base != NULL) {
+        bin_info_t *curr_info = (bin_info_t*)((uint8_t*)pool->base + pool->size);
+        while (curr_info->prev_bin_info != NULL) {
+            void *to_free = curr_info->base;
+            curr_info = curr_info->prev_bin_info;
+            free (to_free);
+        }
+        free (curr_info->base);
+        pool->base = NULL;
     }
-    free (curr_info->base);
     pool->size = 0;
     pool->used = 0;
-    pool->base = NULL;
 }
 
 typedef struct {
