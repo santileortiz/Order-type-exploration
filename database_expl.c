@@ -74,7 +74,6 @@ bool update_and_render (struct app_state_t *st, app_graphics_t *graphics, app_in
             st->click_coord[0] = input.ptr;
             if (st->time_since_last_click[0] > 0 && st->time_since_last_click[0] < st->double_click_time) {
                 // DOUBLE CLICK
-                printf ("Double Click\n");
                 st->mouse_double_clicked[0] = true;
 
                 // We want to ignore this button press as an actual click, we
@@ -92,7 +91,6 @@ bool update_and_render (struct app_state_t *st, app_graphics_t *graphics, app_in
     } else {
         if (prev_input.mouse_down[0]) {
             // CLICK
-            printf ("Click\n");
             st->mouse_clicked[0] = true;
 
             st->mouse_double_clicked[0] = false;
