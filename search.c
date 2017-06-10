@@ -180,8 +180,6 @@ void print_edge_disjoint_sets (int n, int k)
 
 void fast_edge_disjoint_sets (int n, int k)
 {
-    int *all_edj_sets = malloc(840*12*12*11*10*sizeof(int));
-
     triangle_set_t *curr_set = malloc (sizeof(triangle_set_t)+(k-1)*sizeof(triangle_t));
     curr_set->k = k;
 
@@ -191,14 +189,17 @@ void fast_edge_disjoint_sets (int n, int k)
     subset_it_t *triangle_it = subset_it_new (n, 3, NULL);
     subset_it_precompute (triangle_it);
 
-    int num_found;
-    generate_edge_disjoint_triangle_sets (n, k, all_edj_sets, &num_found);
-    printf ("Sets found: %d\n", num_found);
+    mem_pool_t pool = {0};
+    struct sequence_store_t seq = new_sequence_store (NULL, &pool);
+    generate_edge_disjoint_triangle_sets (n, k, &seq);
+    int *all_edj_sets = seq_end (&seq);
+
+    printf ("Sets found: %d\n", seq.num_sequences);
 
     int i;
     while (!db_is_eof()) {
         int found_th = 0;
-        for (i=0; i<num_found*k; i+=k) {
+        for (i=0; i<seq.num_sequences*k; i+=k) {
             int j;
             for (j=0; j<k; j++) {
                 subset_it_seek (triangle_it, all_edj_sets[i+j]);
@@ -217,16 +218,7 @@ void fast_edge_disjoint_sets (int n, int k)
     }
 
     free (triangle_it);
-}
-
-void file_read (int file, void *pos,  size_t size)
-{
-    int bytes_read = read (file, pos, size);
-    if ( bytes_read < size) {
-        printf ("Did not read full file\n"
-                "asked for: %ld\n"
-                "received: %d\n", size, bytes_read);
-    }
+    mem_pool_destroy (&pool);
 }
 
 void get_thrackle_list_filename (char *s, int len, int n, int ot_id, int k)
@@ -234,35 +226,25 @@ void get_thrackle_list_filename (char *s, int len, int n, int ot_id, int k)
     snprintf (s, len, ".cache/n_%d-ot_%d-th_all-k_%d.bin", n, ot_id, k);
 }
 
-int* read_thrackle_list (int *num_found, int file)
-{
-    int *res;
-    search_info_t info;
-    file_read (file, &info, sizeof (search_info_t));
-
-    res = malloc (info.num_found*info.k*sizeof(int));
-    file_read (file, res, info.num_found*info.k*sizeof(int));
-    *num_found = info.num_found;
-    return res;
-}
-
 int* get_all_thrackles (int n, int k, uint32_t ot_id, int *num_found)
 {
     char filename[200];
     get_thrackle_list_filename (filename, ARRAY_SIZE(filename), n, ot_id, k);
 
-    int file = open (filename, O_RDONLY);
-    if (file == -1) {
+    int *res = seq_read_file (filename, NULL, NULL, NULL);
+    if (res == NULL) {
         assert (n<=10);
         open_database (n);
         order_type_t *ot = order_type_new (n, NULL);
         db_seek (ot, ot_id);
 
-        iterate_threackles_backtracking (n, k, ot, filename);
-        file = open (filename, O_RDONLY);
+        struct sequence_store_t seq = new_sequence_store (filename, NULL);
+        iterate_threackles_backtracking (n, k, ot, &seq);
+        seq_end (&seq);
+        res = seq_read_file (filename, NULL, NULL, NULL);
     }
 
-    return read_thrackle_list (num_found, file);
+    return res;
 }
 
 int* get_all_thrackles_convex_position (int n, int k, int *num_found)
@@ -270,8 +252,8 @@ int* get_all_thrackles_convex_position (int n, int k, int *num_found)
     char filename[200];
     get_thrackle_list_filename (filename, ARRAY_SIZE(filename), n, 0, k);
 
-    int file = open (filename, O_RDONLY);
-    if (file == -1) {
+    int *res = seq_read_file (filename, NULL, NULL, NULL);
+    if (res == NULL) {
         order_type_t *ot = order_type_new (n, NULL);
         if (n<=10) {
             open_database (n);
@@ -280,11 +262,13 @@ int* get_all_thrackles_convex_position (int n, int k, int *num_found)
             convex_ot_searchable (ot);
         }
 
-        iterate_threackles_backtracking (n, k, ot, filename);
-        file = open (filename, O_RDONLY);
+        struct sequence_store_t seq = new_sequence_store (filename, NULL);
+        iterate_threackles_backtracking (n, k, ot, &seq);
+        seq_end (&seq);
+        res = seq_read_file (filename, NULL, NULL, NULL);
     }
 
-    return read_thrackle_list (num_found, file);
+    return res;
 }
 
 // TODO: Do something more intelligent when T_n is unknown. Maybe call a
@@ -391,7 +375,7 @@ int main ()
     //print_edge_disjoint_sets (8, 8);
     //generate_edge_disjoint_triangle_sets (10, 13);
     //fast_edge_disjoint_sets (9, 10);
-    matching_decompositions_over_complete_bipartite_graphs (6);
+    //matching_decompositions_over_complete_bipartite_graphs (6);
 
     //int count = count_2_regular_subgraphs_of_k_n_n (5);
     //printf ("Total: %d\n", count);

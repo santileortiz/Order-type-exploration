@@ -253,7 +253,6 @@ layout_box_t* next_layout_box (struct app_state_t *st)
     return layout_box;
 }
 
-
 bool update_button_state (struct app_state_t *st, layout_box_t *curr_box, bool *update_panel)
 {
     bool is_ptr_over = is_point_in_box (st->click_coord[0].x, st->click_coord[0].y,
@@ -605,7 +604,7 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
     }
 
     // Build layout
-    static layout_box_t *thrackle_button;
+    static layout_box_t *thrackle_box, *edg_dsj_box;
     static layout_box_t *panel;
     if (ps_mode->rebuild_panel) {
         st->num_layout_boxes = 0;
@@ -641,9 +640,11 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
         title ("Triangle Sets", &lay, st, graphics);
         labeled_text_entry (ps_mode->k.str, &lay, st, ps_mode->foc_st==foc_k);
         labeled_text_entry ("0", &lay, st, ps_mode->foc_st==foc_ts);
-        labeled_text_entry ("-", &lay, st, ps_mode->foc_st==foc_edj);
+        labeled_button ("Compute", &lay, st, graphics, &input.force_redraw, ps_mode->foc_st==foc_edj);
+        edg_dsj_box = &st->layout_boxes[st->num_layout_boxes-1];
+
         labeled_button ("Compute", &lay, st, graphics, &input.force_redraw, ps_mode->foc_st==foc_th);
-        thrackle_button = &st->layout_boxes[st->num_layout_boxes-1];
+        thrackle_box = &st->layout_boxes[st->num_layout_boxes-1];
 
         st->layout_boxes[0].box.max.x = st->layout_boxes[0].box.min.x + bg_min_size.x;
         st->layout_boxes[0].box.max.y = lay.y_pos;
@@ -670,7 +671,25 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
         ps_mode->redraw_canvas = true;
     }
 
-    if (update_button_state (st, thrackle_button, &input.force_redraw)) {
+    //char filename[60];
+    //edg_dsj_filename (filename, n, k);
+    //if (!file_exists (filename)) {
+    if (!ps_mode->edg_dsj_computed) {
+        if (update_button_state (st, edg_dsj_box, &input.force_redraw)) {
+            printf ("Should compute edge disjoint triengle sets.\n");
+            struct sequence_store_t sequence = new_sequence_store (NULL, &ps_mode->pool);
+            generate_edge_disjoint_triangle_sets (ps_mode->n.i, ps_mode->k.i, &sequence);
+            ps_mode->edg_dsj_sets = seq_end (&sequence);
+
+            //ps_mode->edg_dsj_sets = load_sequence_to_memory (file_name, ps_mode->memory);
+        }
+    } else {
+        //update_entry_state (st, edg_dsj_box, ps_mode->edj_id.str)
+    }
+
+    //th_filename (filename, n, k);
+    //if (!file_exists (filename)) {
+    if (update_button_state (st, thrackle_box, &input.force_redraw)) {
         printf ("Should compute thrackles.\n");
     }
 

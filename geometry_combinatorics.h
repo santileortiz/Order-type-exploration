@@ -748,396 +748,6 @@ void subset_it_free (subset_it_t *it)
     free (it);
 }
 
-// Walker's backtracking algorithm used to generate only
-// edge disjoint triangle sets.
-
-// TODO: This backtracking procedure is not generic, maybe put backtrack
-// specific data in some struct and receive a pointer to a function that
-// updates this data.
-bool backtrack (int *l, int *curr_seq, int domain_size, int *S_l,
-        int *num_invalid, int *invalid_restore_indx, int *invalid_triangles)
-{
-    int lev = *l;
-    lev--;
-    if (lev>=0) {
-        int i;
-        for (i=curr_seq[lev]+1; i<domain_size; i++) {
-            S_l[i] = 1;
-        }
-
-        *num_invalid = invalid_restore_indx[lev];
-        for (i=0; i<*num_invalid; i++) {
-            S_l[invalid_triangles[i]] = 0;
-        }
-        return true;
-    } else {
-        return false;
-    }
-}
-
-void generate_edge_disjoint_triangle_sets (int n, int k, int *result, int *num_found)
-{
-    int l = 1; // Tree level
-    int min_sl;
-    bool S_l_empty;
-
-    subset_it_t *triangle_it = subset_it_new (n, 3, NULL);
-    subset_it_precompute (triangle_it);
-    int total_triangles = triangle_it->size;
-
-    int S_l[total_triangles];
-    int i;
-    for (i=1; i<triangle_it->size; i++) {
-        S_l[i] = 1;
-    }
-    S_l[0] = 0;
-
-    *num_found = 0;
-    int set_id = 0;
-    int triangle_id = 0;
-    int invalid_triangles[total_triangles];
-    int num_invalid = 0;
-
-    int choosen_triangles[k];
-    choosen_triangles[0] = 0;
-    int invalid_restore_indx[k];
-    invalid_restore_indx[0] = 0;
-
-    while (l > 0) {
-        if (l>=k) {
-            //array_print (choosen_triangles, k);
-            int p_k;
-            for (p_k=0; p_k<k; p_k++) {
-                result[set_id+p_k] = choosen_triangles[p_k];
-            }
-            set_id += p_k;
-            (*num_found)++;
-            if (!backtrack (&l, choosen_triangles, total_triangles, S_l,
-                       &num_invalid, invalid_restore_indx, invalid_triangles)) {
-                break;
-            }
-        } else {
-            // Compute S_l
-            subset_it_seek (triangle_it, triangle_id);
-            int triangle[3];
-            triangle[0] = triangle_it->idx[0];
-            triangle[1] = triangle_it->idx[1];
-            triangle[2] = triangle_it->idx[2];
-
-            int i;
-            for (i=0; i<n; i++) {
-                int invalid_triangle[3];
-
-                if (in_array(i, triangle, 3)) {
-                    continue;
-                }
-
-                uint64_t id;
-                int t;
-                for (t=0; t<3; t++) {
-                    invalid_triangle[0] = i;
-                    invalid_triangle[1] = triangle[t];
-                    invalid_triangle[2] = triangle[(t+1)%3];
-                    id = subset_it_id_for_idx (n, invalid_triangle, 3);
-
-                    int j;
-                    for (j=0; j<num_invalid; j++) {
-                        if (invalid_triangles[j] == id) {
-                            break;
-                        }
-                    }
-                    if (j == num_invalid) {
-                        invalid_triangles[num_invalid] = id;
-                        S_l[id] = 0;
-                        num_invalid++;
-                    }
-                }
-            }
-        }
-
-        while (1) {
-            // Try to advance
-            S_l_empty = true;
-            int i;
-            for (i=0; i<total_triangles; i++) {
-                if (S_l[i]) {
-                    min_sl = i;
-                    S_l_empty = false;
-                    break;
-                }
-            }
-
-            if (!S_l_empty) {
-                triangle_id = min_sl;
-                S_l[triangle_id] = 0;
-                invalid_restore_indx[l] = num_invalid;
-                choosen_triangles[l] = triangle_id;
-                l++;
-                break;
-            }
-
-            if (!backtrack (&l, choosen_triangles, total_triangles, S_l,
-                       &num_invalid, invalid_restore_indx, invalid_triangles)) {
-                break;
-            }
-        }
-    }
-}
-
-// Walker's backtracking algorithm used to generate thrackles.
-bool thrackle_backtrack (int *l, int *curr_seq, int domain_size, int *S_l,
-        int *num_invalid, int *invalid_restore_indx, int *invalid_triangles)
-{
-    (*l)--;
-    int lev = *l;
-    if (lev>=0) {
-        int i;
-        for (i=curr_seq[lev]+1; i<domain_size; i++) {
-            S_l[i] = 1;
-        }
-
-        *num_invalid = invalid_restore_indx[lev];
-        for (i=0; i<*num_invalid; i++) {
-            S_l[invalid_triangles[i]] = 0;
-        }
-        return true;
-    } else {
-        return false;
-    }
-}
-
-typedef struct {
-    float time;
-    uint32_t num_found;
-    uint32_t n;
-    uint32_t k;
-} search_info_t;
-
-void file_write (int file, void *pos,  size_t size)
-{
-    if (write (file, pos, size) < size) {
-        printf ("Write interrupted, aborting search\n");
-    }
-}
-
-void iterate_threackles_backtracking (int n, int k, order_type_t *ot, char *filename)
-{
-    assert (n==ot->n);
-    int l = 1; // Tree level
-    int min_sl;
-    bool S_l_empty;
-
-    subset_it_t *triangle_it = subset_it_new (n, 3, NULL);
-    subset_it_precompute (triangle_it);
-    int total_triangles = triangle_it->size;
-
-    int S_l[total_triangles];
-    int i;
-    for (i=1; i<triangle_it->size; i++) {
-        S_l[i] = 1;
-    }
-    S_l[0] = 0;
-
-    int triangle_id = 0;
-    int invalid_triangles[total_triangles];
-    int num_invalid = 0;
-
-    int choosen_triangles[k];
-    choosen_triangles[0] = 0;
-    int invalid_restore_indx[k];
-    invalid_restore_indx[0] = 0;
-
-    remove (filename);
-    int file = open (filename, O_RDWR|O_CREAT, 0666);
-
-    search_info_t info;
-    lseek (file, sizeof (search_info_t), SEEK_SET);
-
-    info.n = n;
-    info.k = k;
-    info.num_found = 0;
-    struct timespec begin;
-    struct timespec end;
-    clock_gettime (CLOCK_MONOTONIC, &begin);
-
-    while (l > 0) {
-        if (l>=k) {
-            file_write (file, choosen_triangles, k*sizeof(int));
-            info.num_found++;
-            if (info.num_found % 1000 == 0) {
-                printf ("Found: %d\n", info.num_found);
-            }
-            if (!thrackle_backtrack (&l, choosen_triangles, total_triangles, S_l,
-                       &num_invalid, invalid_restore_indx, invalid_triangles)) {
-                continue;
-            }
-        } else {
-            // Compute S_l
-            subset_it_seek (triangle_it, triangle_id);
-            int triangle[3];
-            triangle[0] = triangle_it->idx[0];
-            triangle[1] = triangle_it->idx[1];
-            triangle[2] = triangle_it->idx[2];
-
-            int i;
-            for (i=0; i<n; i++) {
-                int invalid_triangle[3];
-
-                if (in_array(i, triangle, 3)) {
-                    continue;
-                }
-
-                uint64_t id;
-                int t;
-                for (t=0; t<3; t++) {
-                    invalid_triangle[0] = i;
-                    invalid_triangle[1] = triangle[t];
-                    invalid_triangle[2] = triangle[(t+1)%3];
-                    id = subset_it_id_for_idx (n, invalid_triangle, 3);
-
-                    int j;
-                    for (j=0; j<num_invalid; j++) {
-                        if (invalid_triangles[j] == id) {
-                            break;
-                        }
-                    }
-                    if (j == num_invalid) {
-                        invalid_triangles[num_invalid] = id;
-                        S_l[id] = 0;
-                        num_invalid++;
-                    }
-                }
-            }
-        }
-
-        while (1) {
-            // Try to advance
-            S_l_empty = true;
-            int i;
-            for (i=0; i<total_triangles; i++) {
-                if (S_l[i]) {
-                    min_sl = i;
-                    S_l_empty = false;
-                    break;
-                }
-            }
-
-            if (!S_l_empty) {
-                triangle_id = min_sl;
-
-                subset_it_seek (triangle_it, triangle_id);
-                triangle_t candidate_tr = TRIANGLE_IT (ot, triangle_it);
-
-                bool is_disjoint = false;
-                int j;
-                for (j=0; j<l; j++) {
-                    int choosen_id = choosen_triangles[j];
-                    subset_it_seek (triangle_it, choosen_id);
-                    triangle_t choosen_tr = TRIANGLE_IT (ot, triangle_it);
-                    if (!have_intersecting_segments (&choosen_tr, &candidate_tr)) {
-                        is_disjoint = true;
-                        break;
-                    }
-                }
-
-                S_l[triangle_id] = 0;
-                if (!is_disjoint) {
-                    invalid_restore_indx[l] = num_invalid;
-                    choosen_triangles[l] = triangle_id;
-                    l++;
-                    break;
-                } else {
-                    continue;
-                }
-            }
-
-            if (!thrackle_backtrack (&l, choosen_triangles, total_triangles, S_l,
-                       &num_invalid, invalid_restore_indx, invalid_triangles)) {
-                break;
-            }
-        }
-    }
-
-    clock_gettime (CLOCK_MONOTONIC, &end);
-    info.time = time_elapsed_in_ms (&end, &begin);
-    lseek (file, 0, SEEK_SET);
-    file_write (file, &info, sizeof(search_info_t));
-    close (file);
-}
-
-bool has_fixed_point (int n, int *perm_a, int *perm_b)
-{
-    int i;
-    for (i=0; i<n; i++) {
-        if (perm_a[i] == perm_b[i]) {
-            return true;
-        }
-    }
-    return false;
-}
-
-#define GET_PERM(i) &all_perms[(i)*n]
-void print_decomp (int n, int* decomp, int* all_perms)
-{
-    int i;
-    for (i=0; i<n; i++) {
-        array_print (GET_PERM(decomp[i]), n);
-    }
-    printf ("\n");
-}
-
-// _res_ has to be of size sizeof(int)*n!
-// NOTE: This function performs fast until n=10, here are some times:
-// n:9 -> 0.332s
-// n:10 -> 2.877s
-// n:11 -> 37.355s
-void compute_all_permutations (int n, int *res)
-{
-    int i;
-    int *curr= res;
-    for (i=1; i<=n; i++) {
-        res[i-1] = i;
-    }
-
-    int found = 1;
-    while (found < factorial(n)) {
-        int k;
-        for (k=0; k<n; k++) {
-            curr[k+n] = curr[k];
-        }
-        curr+=n;
-
-        int j;
-        for (j=n-2; j>=0 && curr[j] >= curr[j+1]; j--) {
-            if (j==0) {
-                return;
-            }
-        }
-
-        int l;
-        for (l=n-1; curr[j]>=curr[l]; l--) {
-            if (l < 0) {
-                return;
-            }
-        }
-        swap (&curr[j], &curr[l]);
-
-        for (k=j+1, l=n-1; k<l;) {
-            swap (&curr[k], &curr[l]);
-            k++;
-            l--;
-        }
-        found++;
-    }
-}
-
-// TODO: Turns out this function is exactly the same as the one for other
-// backtraching algorithms. I won't reuse it yet, because I want to spend more
-// time designing more generic backtracking code that is easy to use (try to
-// avoid function pointers).
-void edges_from_permutation (int *all_perms, int perm, int n, int *e);
-void print_2_regular_cycle_decomposition (int *edges, int n);
-
 struct _backtrack_node_t {
     int id;
     int val;
@@ -1145,34 +755,6 @@ struct _backtrack_node_t {
     struct _backtrack_node_t *children[1];
 };
 typedef struct _backtrack_node_t backtrack_node_t;
-
-char* push_node (char* buff, int id, backtrack_node_t **children, int num_children)
-{
-    backtrack_node_t* node = (backtrack_node_t*)buff;
-    node->id = id;
-    node->num_children = num_children;
-    int i;
-    for (i=0; i<num_children; i++) {
-        node->children[i] = children[i];
-    }
-
-    if (num_children > 1) {
-        return buff+sizeof(backtrack_node_t)+(num_children-1)*sizeof(backtrack_node_t*);
-    } else {
-        return buff+sizeof(backtrack_node_t);
-    }
-}
-
-// This algorithm returns a contiguous array of pointers to all resulting
-// nodes with res[0] being the root of the tree.
-//
-// Memory Allocations:
-// -------------------
-//
-// Everything will be allocated inside _pool_. Some data besides the resulting
-// tree (Ex. _all_perms_ array) nedds to be stored, for this we use the local
-// memory pool temp_pool. If this data is useful to the caller, it can instead
-// be stored in _pool_ if a pointer is supplied as argument (_ret_all_perms_).
 
 struct tree_build_st_t {
     uint32_t max_depth;
@@ -1268,6 +850,598 @@ backtrack_node_t* tree_end (struct tree_build_st_t *tree_state)
     mem_pool_destroy (&tree_state->temp_pool);
     return ret;
 }
+enum sequence_file_type_t {
+    SEQ_FIXED_LEN           = 1L<<1,
+    SEQ_TIMING              = 1L<<2,
+};
+
+
+// TODO: merge this with the build_tree_t API
+struct sequence_store_t {
+    enum sequence_file_type_t type;
+    int file;
+    char *filename;
+    uint32_t custom_file_header_size;
+    mem_pool_t *pool;
+    struct timespec begin;
+    struct timespec end;
+    float time;
+    uint32_t sequence_size;
+    uint32_t num_sequences;
+    uint32_t max_sequences;
+    int_dyn_arr_t dyn_arr; // TODO: use cont_buff_t for non int sequences
+    int *seq;
+};
+
+void seq_timing_begin (struct sequence_store_t *stor)
+{
+    clock_gettime (CLOCK_MONOTONIC, &stor->begin);
+    stor->type |= SEQ_TIMING;
+}
+
+void seq_timing_end (struct sequence_store_t *stor)
+{
+    assert ((stor->type & SEQ_TIMING) && "Call seq_timing_begin() before.");
+    clock_gettime (CLOCK_MONOTONIC, &stor->end);
+}
+
+struct file_header_t {
+    enum sequence_file_type_t type;
+    uint32_t custom_header_size;
+    uint32_t sequence_size;
+    uint32_t num_sequences;
+    float time;
+};
+
+typedef struct {
+    uint32_t n;
+} th_file_info_t;
+
+void seq_allocate_file_header (struct sequence_store_t *stor, uint32_t size)
+{
+    stor->custom_file_header_size = size;
+    lseek (stor->file, sizeof(struct file_header_t)+size, SEEK_SET);
+}
+
+void file_write (int file, void *pos,  size_t size)
+{
+    if (write (file, pos, size) < size) {
+        printf ("Write interrupted\n");
+    }
+}
+
+void file_read (int file, void *pos,  size_t size)
+{
+    int bytes_read = read (file, pos, size);
+    if ( bytes_read < size) {
+        printf ("Did not read full file\n"
+                "asked for: %ld\n"
+                "received: %d\n", size, bytes_read);
+    }
+}
+
+int *seq_read_file (char *filename, mem_pool_t *pool, struct file_header_t *header, void *custom_header)
+{
+    int *res;
+    int file = open (filename, O_RDONLY);
+    if (file == -1) {
+        return NULL;
+    } else {
+        struct file_header_t local_header;
+        struct file_header_t *l_header = (header != NULL) ? header : &local_header;
+        file_read (file, l_header, sizeof (struct file_header_t));
+        uint32_t size = l_header->sequence_size*l_header->num_sequences*sizeof(int);
+        if (pool != NULL) {
+            res = mem_pool_push_size (pool, size);
+        } else {
+            res = malloc (size);
+        }
+
+        if (l_header->custom_header_size > 0) {
+            if (custom_header != NULL) {
+                file_read (file, custom_header, l_header->custom_header_size);
+            } else {
+                lseek (file, sizeof(struct file_header_t)+l_header->custom_header_size, SEEK_SET);
+            }
+        }
+        file_read (file, res, size);
+    }
+    return res;
+}
+
+#define seq_write_file_header(stor,header) seq_add_file_header(stor,header,0)
+void seq_add_file_header (struct sequence_store_t *stor, void *header, uint32_t size)
+{
+    if (size == 0) {
+        assert (stor->custom_file_header_size != 0
+                && "Custom header size was not set, call seq_add_file_header() before pushing something.");
+    } else {
+        stor->custom_file_header_size = size;
+    }
+    lseek (stor->file, sizeof(struct file_header_t), SEEK_SET);
+    file_write (stor->file, header, stor->custom_file_header_size);
+}
+
+struct sequence_store_t new_sequence_store (char *filename, mem_pool_t *pool)
+{
+    struct sequence_store_t res = {0};
+    if (filename != NULL) {
+        remove (filename);
+        res.filename = filename;
+        res.file = open (filename, O_RDWR|O_CREAT, 0666);
+        lseek (res.file, sizeof (struct file_header_t), SEEK_SET);
+    } else {
+        res.file  = -1;
+    }
+
+    if (pool != NULL) {
+        res.pool = pool;
+    }
+    return res;
+}
+
+void seq_set_length (struct sequence_store_t *stor, uint32_t sequence_size, uint32_t max_sequences)
+{
+    if (sequence_size > 0) {
+        stor->type |= SEQ_FIXED_LEN;
+        stor->sequence_size = sequence_size;
+        if (max_sequences > 0) {
+            stor->max_sequences = max_sequences;
+            stor->seq = mem_pool_push_size (stor->pool, sizeof(int)*sequence_size*max_sequences);
+        }
+    }
+}
+
+#define seq_push_sequence(store,seq) seq_push_sequence_size(store,seq,0)
+void seq_push_sequence_size (struct sequence_store_t *stor, int *seq, uint32_t size)
+{
+    if (stor->pool == NULL && stor->filename == NULL) {
+        // NOTE: There is no set destination, print to stdout.
+        size = (size == 0) ? stor->sequence_size : size;
+        array_print (seq, size);
+        return;
+    }
+
+    if (size == 0) {
+        // NOTE: Fixed length sequence.
+        assert (stor->sequence_size != 0
+                && "Sequence size not specified but store has no fixed size.");
+        if (stor->pool != NULL) {
+            // NOTE: RAM memory as output is used.
+            if (stor->seq == NULL) {
+                // NOTE: Number of sequences is unknown, store->seq not allocated.
+                assert (stor->max_sequences == 0);
+                int i;
+                for (i=0; i<stor->sequence_size; i++) {
+                    int_dyn_arr_append (&stor->dyn_arr, seq[i]);
+                }
+            } else {
+                if (stor->num_sequences < stor->max_sequences) {
+                    int i;
+                    for (i=0; i<stor->sequence_size; i++) {
+                        stor->seq[stor->num_sequences*stor->sequence_size+i] = seq[i];
+                    }
+                } else {
+                    static bool print_once = false;
+                    if (!print_once) {
+                        printf("Adding more sequences than max_sequences.");
+                        print_once = true;
+                    }
+                }
+            }
+        }
+
+        if (stor->filename != NULL) {
+            // NOTE: File as output.
+            file_write (stor->file, seq, stor->sequence_size*sizeof(int));
+        }
+        stor->num_sequences++;
+    } else {
+        //TODO: Implement tree behavior here.
+    }
+}
+
+int* seq_end (struct sequence_store_t *stor)
+{
+    if (stor->seq == NULL && stor->sequence_size != 0 && stor->max_sequences == 0) {
+        // NOTE: Fixed size sequence but unknown limit on number of sequences.
+        uint32_t bytes = sizeof(int)*stor->dyn_arr.len;
+        stor->seq = mem_pool_push_size (stor->pool, bytes);
+        memcpy (stor->seq, stor->dyn_arr.data, bytes);
+        int_dyn_arr_destroy (&stor->dyn_arr);
+    }
+
+    if (stor->file) {
+        struct file_header_t header = {0};
+        header.type = stor->type;
+        header.custom_header_size = stor->custom_file_header_size;
+        if (stor->type & SEQ_TIMING) {
+            header.time = time_elapsed_in_ms (&stor->end, &stor->begin);
+        }
+        if (stor->type & SEQ_FIXED_LEN) {
+            header.sequence_size = stor->sequence_size;
+        }
+        lseek (stor->file, 0, SEEK_SET);
+        file_write (stor->file, &header, sizeof (struct file_header_t));
+        close (stor->file);
+    }
+
+    return stor->seq;
+}
+
+// Walker's backtracking algorithm used to generate only
+// edge disjoint triangle sets.
+
+// TODO: This backtracking procedure is not generic, maybe put backtrack
+// specific data in some struct and receive a pointer to a function that
+// updates this data.
+bool backtrack (int *l, int *curr_seq, int domain_size, int *S_l,
+        int *num_invalid, int *invalid_restore_indx, int *invalid_triangles)
+{
+    int lev = *l;
+    lev--;
+    if (lev>=0) {
+        int i;
+        for (i=curr_seq[lev]+1; i<domain_size; i++) {
+            S_l[i] = 1;
+        }
+
+        *num_invalid = invalid_restore_indx[lev];
+        for (i=0; i<*num_invalid; i++) {
+            S_l[invalid_triangles[i]] = 0;
+        }
+        return true;
+    } else {
+        return false;
+    }
+}
+
+void generate_edge_disjoint_triangle_sets (int n, int k, struct sequence_store_t *seq)
+{
+    int l = 1; // Tree level
+    int min_sl;
+    bool S_l_empty;
+
+    subset_it_t *triangle_it = subset_it_new (n, 3, NULL);
+    subset_it_precompute (triangle_it);
+    int total_triangles = triangle_it->size;
+
+    int S_l[total_triangles];
+    int i;
+    for (i=1; i<triangle_it->size; i++) {
+        S_l[i] = 1;
+    }
+    S_l[0] = 0;
+
+    int triangle_id = 0;
+    int invalid_triangles[total_triangles];
+    int num_invalid = 0;
+
+    int choosen_triangles[k];
+    choosen_triangles[0] = 0;
+    int invalid_restore_indx[k];
+    invalid_restore_indx[0] = 0;
+
+    seq_set_length (seq, k, 0);
+    seq_timing_begin (seq);
+
+    while (l > 0) {
+        if (l>=k) {
+            //array_print (choosen_triangles, k);
+            seq_push_sequence (seq, choosen_triangles);
+            if (!backtrack (&l, choosen_triangles, total_triangles, S_l,
+                       &num_invalid, invalid_restore_indx, invalid_triangles)) {
+                break;
+            }
+        } else {
+            // Compute S_l
+            subset_it_seek (triangle_it, triangle_id);
+            int triangle[3];
+            triangle[0] = triangle_it->idx[0];
+            triangle[1] = triangle_it->idx[1];
+            triangle[2] = triangle_it->idx[2];
+
+            int i;
+            for (i=0; i<n; i++) {
+                int invalid_triangle[3];
+
+                if (in_array(i, triangle, 3)) {
+                    continue;
+                }
+
+                uint64_t id;
+                int t;
+                for (t=0; t<3; t++) {
+                    invalid_triangle[0] = i;
+                    invalid_triangle[1] = triangle[t];
+                    invalid_triangle[2] = triangle[(t+1)%3];
+                    id = subset_it_id_for_idx (n, invalid_triangle, 3);
+
+                    int j;
+                    for (j=0; j<num_invalid; j++) {
+                        if (invalid_triangles[j] == id) {
+                            break;
+                        }
+                    }
+                    if (j == num_invalid) {
+                        invalid_triangles[num_invalid] = id;
+                        S_l[id] = 0;
+                        num_invalid++;
+                    }
+                }
+            }
+        }
+
+        while (1) {
+            // Try to advance
+            S_l_empty = true;
+            int i;
+            for (i=0; i<total_triangles; i++) {
+                if (S_l[i]) {
+                    min_sl = i;
+                    S_l_empty = false;
+                    break;
+                }
+            }
+
+            if (!S_l_empty) {
+                triangle_id = min_sl;
+                S_l[triangle_id] = 0;
+                invalid_restore_indx[l] = num_invalid;
+                choosen_triangles[l] = triangle_id;
+                l++;
+                break;
+            }
+
+            if (!backtrack (&l, choosen_triangles, total_triangles, S_l,
+                       &num_invalid, invalid_restore_indx, invalid_triangles)) {
+                break;
+            }
+        }
+    }
+    seq_timing_end (seq);
+}
+
+// Walker's backtracking algorithm used to generate thrackles.
+bool thrackle_backtrack (int *l, int *curr_seq, int domain_size, int *S_l,
+        int *num_invalid, int *invalid_restore_indx, int *invalid_triangles)
+{
+    (*l)--;
+    int lev = *l;
+    if (lev>=0) {
+        int i;
+        for (i=curr_seq[lev]+1; i<domain_size; i++) {
+            S_l[i] = 1;
+        }
+
+        *num_invalid = invalid_restore_indx[lev];
+        for (i=0; i<*num_invalid; i++) {
+            S_l[invalid_triangles[i]] = 0;
+        }
+        return true;
+    } else {
+        return false;
+    }
+}
+
+void iterate_threackles_backtracking (int n, int k, order_type_t *ot, struct sequence_store_t *seq)
+{
+    assert (n==ot->n);
+    int l = 1; // Tree level
+    int min_sl;
+    bool S_l_empty;
+
+    subset_it_t *triangle_it = subset_it_new (n, 3, NULL);
+    subset_it_precompute (triangle_it);
+    int total_triangles = triangle_it->size;
+
+    int S_l[total_triangles];
+    int i;
+    for (i=1; i<triangle_it->size; i++) {
+        S_l[i] = 1;
+    }
+    S_l[0] = 0;
+
+    int triangle_id = 0;
+    int invalid_triangles[total_triangles];
+    int num_invalid = 0;
+
+    int choosen_triangles[k];
+    choosen_triangles[0] = 0;
+    int invalid_restore_indx[k];
+    invalid_restore_indx[0] = 0;
+
+    th_file_info_t info;
+    info.n = n;
+
+    seq_allocate_file_header (seq, sizeof(th_file_info_t));
+    seq_set_length (seq, k, 0);
+    seq_timing_begin (seq);
+
+    while (l > 0) {
+        if (l>=k) {
+            seq_push_sequence (seq, choosen_triangles);
+            if (seq->num_sequences % 1000 == 0) {
+                printf ("Found: %d\n", seq->num_sequences);
+            }
+            if (!thrackle_backtrack (&l, choosen_triangles, total_triangles, S_l,
+                       &num_invalid, invalid_restore_indx, invalid_triangles)) {
+                continue;
+            }
+        } else {
+            // Compute S_l
+            subset_it_seek (triangle_it, triangle_id);
+            int triangle[3];
+            triangle[0] = triangle_it->idx[0];
+            triangle[1] = triangle_it->idx[1];
+            triangle[2] = triangle_it->idx[2];
+
+            int i;
+            for (i=0; i<n; i++) {
+                int invalid_triangle[3];
+
+                if (in_array(i, triangle, 3)) {
+                    continue;
+                }
+
+                uint64_t id;
+                int t;
+                for (t=0; t<3; t++) {
+                    invalid_triangle[0] = i;
+                    invalid_triangle[1] = triangle[t];
+                    invalid_triangle[2] = triangle[(t+1)%3];
+                    id = subset_it_id_for_idx (n, invalid_triangle, 3);
+
+                    int j;
+                    for (j=0; j<num_invalid; j++) {
+                        if (invalid_triangles[j] == id) {
+                            break;
+                        }
+                    }
+                    if (j == num_invalid) {
+                        invalid_triangles[num_invalid] = id;
+                        S_l[id] = 0;
+                        num_invalid++;
+                    }
+                }
+            }
+        }
+
+        while (1) {
+            // Try to advance
+            S_l_empty = true;
+            int i;
+            for (i=0; i<total_triangles; i++) {
+                if (S_l[i]) {
+                    min_sl = i;
+                    S_l_empty = false;
+                    break;
+                }
+            }
+
+            if (!S_l_empty) {
+                triangle_id = min_sl;
+
+                subset_it_seek (triangle_it, triangle_id);
+                triangle_t candidate_tr = TRIANGLE_IT (ot, triangle_it);
+
+                bool is_disjoint = false;
+                int j;
+                for (j=0; j<l; j++) {
+                    int choosen_id = choosen_triangles[j];
+                    subset_it_seek (triangle_it, choosen_id);
+                    triangle_t choosen_tr = TRIANGLE_IT (ot, triangle_it);
+                    if (!have_intersecting_segments (&choosen_tr, &candidate_tr)) {
+                        is_disjoint = true;
+                        break;
+                    }
+                }
+
+                S_l[triangle_id] = 0;
+                if (!is_disjoint) {
+                    invalid_restore_indx[l] = num_invalid;
+                    choosen_triangles[l] = triangle_id;
+                    l++;
+                    break;
+                } else {
+                    continue;
+                }
+            }
+
+            if (!thrackle_backtrack (&l, choosen_triangles, total_triangles, S_l,
+                       &num_invalid, invalid_restore_indx, invalid_triangles)) {
+                break;
+            }
+        }
+    }
+
+    seq_timing_end (seq);
+    seq_write_file_header (seq, &info);
+}
+
+bool has_fixed_point (int n, int *perm_a, int *perm_b)
+{
+    int i;
+    for (i=0; i<n; i++) {
+        if (perm_a[i] == perm_b[i]) {
+            return true;
+        }
+    }
+    return false;
+}
+
+#define GET_PERM(i) &all_perms[(i)*n]
+void print_decomp (int n, int* decomp, int* all_perms)
+{
+    int i;
+    for (i=0; i<n; i++) {
+        array_print (GET_PERM(decomp[i]), n);
+    }
+    printf ("\n");
+}
+
+// _res_ has to be of size sizeof(int)*n!
+// NOTE: This function performs fast until n=10, here are some times:
+// n:9 -> 0.332s
+// n:10 -> 2.877s
+// n:11 -> 37.355s
+void compute_all_permutations (int n, int *res)
+{
+    int i;
+    int *curr= res;
+    for (i=1; i<=n; i++) {
+        res[i-1] = i;
+    }
+
+    int found = 1;
+    while (found < factorial(n)) {
+        int k;
+        for (k=0; k<n; k++) {
+            curr[k+n] = curr[k];
+        }
+        curr+=n;
+
+        int j;
+        for (j=n-2; j>=0 && curr[j] >= curr[j+1]; j--) {
+            if (j==0) {
+                return;
+            }
+        }
+
+        int l;
+        for (l=n-1; curr[j]>=curr[l]; l--) {
+            if (l < 0) {
+                return;
+            }
+        }
+        swap (&curr[j], &curr[l]);
+
+        for (k=j+1, l=n-1; k<l;) {
+            swap (&curr[k], &curr[l]);
+            k++;
+            l--;
+        }
+        found++;
+    }
+}
+
+// TODO: Turns out this function is exactly the same as the one for other
+// backtraching algorithms. I won't reuse it yet, because I want to spend more
+// time designing more generic backtracking code that is easy to use (try to
+// avoid function pointers).
+void edges_from_permutation (int *all_perms, int perm, int n, int *e);
+void print_2_regular_cycle_decomposition (int *edges, int n);
+
+// This algorithm returns a contiguous array of pointers to all resulting
+// nodes with res[0] being the root of the tree.
+//
+// Memory Allocations:
+// -------------------
+//
+// Everything will be allocated inside _pool_. Some data besides the resulting
+// tree (Ex. _all_perms_ array) nedds to be stored, for this we use the local
+// memory pool temp_pool. If this data is useful to the caller, it can instead
+// be stored in _pool_ if a pointer is supplied as argument (_ret_all_perms_).
 
 bool matching_backtrack (int *l, int *curr_seq, int domain_size, bool *S_l,
                          int *num_invalid, int *invalid_restore_indx, int *invalid_perms,

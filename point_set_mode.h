@@ -42,6 +42,8 @@ struct point_set_mode_t {
     bool redraw_panel;  // Renders available layout boxes to screen
     bool redraw_canvas;
     bool editing_entry;
+    bool edg_dsj_computed;
+    int *edg_dsj_sets;
     uint64_string_t temp_number;
 
     int db;
@@ -64,6 +66,7 @@ struct point_set_mode_t {
     vect2_t visible_pts[50];
 
     memory_stack_t memory;
+    mem_pool_t pool;
 };
 
 struct app_state_t;

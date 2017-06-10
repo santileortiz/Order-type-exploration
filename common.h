@@ -282,6 +282,7 @@ void FUNCNAME (TYPE *arr, int n)                            \
     }                                                       \
 }
 
+// TODO: Make this zero initialized in all cases
 typedef struct {
     uint32_t size;
     uint32_t len;
@@ -296,6 +297,12 @@ void int_dyn_arr_init (int_dyn_arr_t *arr, uint32_t size)
     }
     arr->len = 0;
     arr->size = size;
+}
+
+void int_dyn_arr_destroy (int_dyn_arr_t *arr)
+{
+    free (arr->data);
+    *arr = (int_dyn_arr_t){0};
 }
 
 void int_dyn_arr_grow (int_dyn_arr_t *arr, uint32_t new_size)
@@ -313,6 +320,10 @@ void int_dyn_arr_grow (int_dyn_arr_t *arr, uint32_t new_size)
 
 void int_dyn_arr_append (int_dyn_arr_t *arr, int element)
 {
+    if (arr->size == 0) {
+        int_dyn_arr_init (arr, 100);
+    }
+
     if (arr->len == arr->size) {
         int_dyn_arr_grow (arr, 2*arr->size);
     }
