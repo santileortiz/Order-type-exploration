@@ -1453,10 +1453,12 @@ void seq_push_element (struct sequence_store_t *stor,
                        int val, uint32_t level)
 {
     while (stor->last_l > level - 1) {
+        //printf ("NEW: (%d) Pop\n", stor->last_l);
         complete_and_pop_node (stor, stor->last_l);
         stor->last_l--;
     }
     stor->last_l++;
+    //printf ("NEW: (%d) Push %d\n", level, val);
     push_partial_node (stor, val);
 }
 
@@ -1478,22 +1480,23 @@ void print_2_regular_cycle_decomposition (int *edges, int n);
 // backtraching algorithms. I won't reuse it yet, because I want to spend more
 // time designing more generic backtracking code that is easy to use (try to
 // avoid function pointers).
-bool matching_backtrack (int *l, int *curr_seq, int domain_size, bool *S_l,
-                         int *num_invalid, int *invalid_restore_indx, int *invalid_perms)
+#define S_l_idx(S_l,ptr) (uint32_t)(ptr-S_l)
+struct linked_bool {
+    bool v;
+    struct linked_bool *next;
+};
+
+#define lb_print(ptr) {lb_print(ptr,ptr)}
+void lb_print_start (struct linked_bool *lb, struct linked_bool *start)
 {
-    (*l)--;
-    if (*l >= 0) {
-        int i;
-        for (i=curr_seq[*l]+1; i<domain_size; i++) {
-            S_l[i] = true;
+    printf ("[");
+    while (lb != NULL) {
+        if (lb->next != NULL) {
+            printf ("%d, ", S_l_idx(start, lb));
+        } else {
+            printf ("%d]\n", S_l_idx(start, lb));
         }
-        *num_invalid = invalid_restore_indx[*l];
-        for (i=0; i<*num_invalid; i++) {
-            S_l[invalid_perms[i]] = false;
-        }
-        return true;
-    } else {
-        return false;
+        lb = lb->next;
     }
 }
 
@@ -1521,11 +1524,23 @@ void matching_decompositions_over_K_n_n (int n, int *all_perms,
     int invalid_perms[num_perms];
     int num_invalid = 0;
 
-    bool S_l[num_perms];
-    S_l[0] = false;
-    int i;
-    for (i=1; i<num_perms; i++) {
-        S_l[i] = true;
+    struct linked_bool *S_l = mem_pool_push_size (&temp_pool, num_perms*sizeof(struct linked_bool));
+    struct linked_bool *first_S_l[n];
+    struct linked_bool *bak_first_S_l[n];
+    {
+        int i, j=1;
+        for (i=0; i<num_perms-1; i++) {
+            S_l[i].v = true;
+            if ((i+1)%(num_perms/n) == 0) {
+                S_l[i].next = NULL;
+                first_S_l[j++] = &S_l[i+1];
+            } else {
+                S_l[i].next = &S_l[i+1];
+            }
+        }
+        S_l[num_perms-1].v = true;
+        S_l[num_perms-1].next = NULL;
+        first_S_l[0] = S_l + 1;
     }
 
     while (l>0) {
@@ -1537,44 +1552,90 @@ void matching_decompositions_over_K_n_n (int n, int *all_perms,
 
             //print_decomp (n, decomp, all_perms);
             //array_print (decomp, n);
-            if (!matching_backtrack (&l, decomp, num_perms, S_l,
-                                     &num_invalid, invalid_restore_indx, invalid_perms)) {
-                continue;
-            }
+            goto backtrack;
         } else {
             // Compute S_l
-            for (i=0; i<ARRAY_SIZE(S_l); i++) {
-                if (S_l[i] && has_fixed_point (n, GET_PERM(decomp[l-1]), GET_PERM(i))) {
-                    S_l[i] = false;
-                    invalid_perms[num_invalid] = i;
-                    num_invalid++;
+            uint32_t h;
+            for (h=l; h<n; h++) {
+                struct linked_bool *prev_S_l = NULL;
+                struct linked_bool *iter_S_l = first_S_l[h];
+                while (iter_S_l != NULL) {
+                    uint32_t i = S_l_idx (S_l, iter_S_l);
+                    if (has_fixed_point (n, GET_PERM(decomp[l-1]), GET_PERM(i))) {
+                        S_l[i].v = false;
+                        invalid_perms[num_invalid] = i;
+                        num_invalid++;
+
+                        if (prev_S_l == NULL) {
+                            first_S_l[h] = iter_S_l->next;
+                        } else {
+                            prev_S_l->next = iter_S_l->next;
+                        }
+                    } else {
+                        // NOTE: If we removed an element, then prev_S_l stays
+                        // the same.
+                        prev_S_l = iter_S_l;
+                    }
+                    iter_S_l = iter_S_l->next;
                 }
             }
+            bak_first_S_l[l] = first_S_l[l];
         }
 
         while (1) {
-            bool S_l_empty = true;
-            int min_S_l = 0;
-            for (i=0; i<num_perms; i++) {
-                if (S_l[i]) {
-                    min_S_l = i;
-                    S_l_empty = false;
-                    break;
-                }
-            }
-
-            if (!S_l_empty) {
+            if (first_S_l[l] != NULL) {
+                int min_S_l = S_l_idx (S_l, first_S_l[l]);
                 invalid_restore_indx[l] = num_invalid;
                 decomp[l] = min_S_l;
-                S_l[min_S_l] = false;
+                first_S_l[l] = first_S_l[l]->next;
                 l++;
 
                 seq_push_element (seq, min_S_l, l);
                 break;
             }
 
-            if (!matching_backtrack (&l, decomp, num_perms, S_l,
-                                     &num_invalid, invalid_restore_indx, invalid_perms)) {
+
+backtrack:
+            if (l < n) {
+                first_S_l[l] = bak_first_S_l[l];
+            }
+
+            (l)--;
+            if (l >= 0) {
+                uint32_t prev_invalid = num_invalid;
+                num_invalid = invalid_restore_indx[l];
+                uint32_t curr_restore = num_invalid;
+
+                uint32_t h;
+                for (h=l+1; h<n; h++) {
+                    struct linked_bool *S_l_prev = NULL;
+                    struct linked_bool *S_l_iter = first_S_l[h];
+                    uint32_t max_for_h = (h+1)*num_perms/n;
+                    while (S_l_iter != NULL &&
+                           curr_restore < prev_invalid && invalid_perms [curr_restore] < max_for_h) {
+                        while (S_l_iter != NULL &&
+                               S_l_idx (S_l, S_l_iter) < invalid_perms [curr_restore]) {
+                            S_l_prev = S_l_iter;
+                            S_l_iter = S_l_iter->next;
+                        }
+
+                        while (S_l_idx (S_l, S_l_iter) > invalid_perms [curr_restore] &&
+                               curr_restore<prev_invalid && invalid_perms[curr_restore]<max_for_h) {
+                            if (S_l_prev != NULL) {
+                                S_l_prev->next = &S_l[invalid_perms [curr_restore]];
+                                S_l_prev->next->next = S_l_iter;
+                                S_l_prev = S_l_prev->next;
+                            } else {
+                                first_S_l[h] = &S_l[invalid_perms [curr_restore]];
+                                S_l_prev = first_S_l[h];
+                                S_l_prev->next = S_l_iter;
+                            }
+                            curr_restore++;
+                        }
+                    }
+                }
+
+            } else {
                 break;
             }
         }
