@@ -411,9 +411,10 @@ bool tree_mode (struct app_state_t *st, app_graphics_t *gr)
         compute_all_permutations (n, tree_mode->all_perms);
 
         mem_pool_t bt_res_pool = {0};
-        backtrack_node_t *bt_root = matching_decompositions_over_complete_bipartite_graphs (n, &bt_res_pool,
-                                                                &tree_mode->num_nodes,
-                                                                tree_mode->all_perms);
+        struct sequence_store_t seq = new_tree (NULL, &bt_res_pool);
+        matching_decompositions_over_K_n_n (n, tree_mode->all_perms, &seq);
+        backtrack_node_t *bt_root = seq_tree_end (&seq);
+
         view_root = create_view_tree (&tree_mode->pool, bt_root);
         view_tree_ignore (view_root, n, 0);
         //view_tree_print (view_root);

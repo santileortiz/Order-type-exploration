@@ -767,96 +767,11 @@ struct tree_build_st_t {
     mem_pool_t temp_pool;
 };
 
-backtrack_node_t* stack_element (struct tree_build_st_t *tree_state, uint32_t i)
-{
-    return ((backtrack_node_t*)((char*)tree_state->node_stack + (i)*tree_state->max_node_size));
-}
-
-void push_partial_node (struct tree_build_st_t *tree_state, int val)
-{
-    backtrack_node_t *node = stack_element (tree_state, tree_state->num_nodes_stack);
-    tree_state->num_nodes_stack++;
-
-    *node = (backtrack_node_t){0};
-    node->val = val;
-    node->id = tree_state->num_nodes;
-    tree_state->num_nodes++;
-}
-
-void complete_and_pop_node (struct tree_build_st_t *tree_state, mem_pool_t *pool, uint32_t l)
-{
-    backtrack_node_t *finished = stack_element (tree_state, l);
-    uint32_t node_size;
-    if (finished->num_children > 1) {
-        node_size = sizeof(backtrack_node_t)+(finished->num_children-1)*sizeof(backtrack_node_t*);
-    } else {
-        node_size = sizeof(backtrack_node_t);
-    }
-
-    backtrack_node_t *pushed_node = mem_pool_push_size (pool, node_size);
-    pushed_node->id = finished->id;
-    pushed_node->val = finished->val;
-    pushed_node->num_children = finished->num_children;
-    int i;
-    for (i=0; i<finished->num_children; i++) {
-        pushed_node->children[i] = finished->children[i];
-    }
-
-    backtrack_node_t **node_pos = cont_buff_push (&tree_state->nodes, sizeof(backtrack_node_t*));
-    *node_pos = pushed_node;
-
-    tree_state->num_nodes_stack--;
-
-    if (l > 0) {
-        l--;
-        backtrack_node_t *parent = stack_element (tree_state, l);
-        parent->children[parent->num_children] = pushed_node;
-        parent->num_children++;
-    }
-}
-
-struct tree_build_st_t tree_start (uint32_t max_children, uint32_t max_depth)
-{
-    struct tree_build_st_t ret = {0};
-    if (max_children > 0) {
-        ret.max_children = max_children;
-        ret.max_node_size =
-            (sizeof(backtrack_node_t) +
-             (ret.max_children-1)*sizeof(backtrack_node_t*));
-    } else {
-        // TODO: If we don't know max_children then use a version of
-        // backtrack_node_t that has a cont_buff_t as children. Remember to
-        // compute max_node_size in this case too.
-        invalid_code_path;
-    }
-
-    if (max_depth > 0) {
-        ret.max_depth = max_depth;
-        ret.node_stack = mem_pool_push_size (&ret.temp_pool,(ret.max_depth+1)*ret.max_node_size);
-    } else {
-        // TODO: If we don't know max_depth then node_stack should be a
-        // cont_buff_t of elements of size max_node_size.
-        invalid_code_path;
-    }
-    // Pushing the root node to the stack.
-    push_partial_node (&ret, -1);
-    return ret;
-}
-
-backtrack_node_t* tree_end (struct tree_build_st_t *tree_state)
-{
-    backtrack_node_t* ret = ((backtrack_node_t**)tree_state->nodes.data)[tree_state->num_nodes-1];
-    cont_buff_destroy (&tree_state->nodes);
-    mem_pool_destroy (&tree_state->temp_pool);
-    return ret;
-}
 enum sequence_file_type_t {
     SEQ_FIXED_LEN           = 1L<<1,
     SEQ_TIMING              = 1L<<2,
 };
 
-
-// TODO: merge this with the build_tree_t API
 struct sequence_store_t {
     enum sequence_file_type_t type;
     int file;
@@ -871,8 +786,117 @@ struct sequence_store_t {
     uint32_t max_sequences;
     int_dyn_arr_t dyn_arr; // TODO: use cont_buff_t for non int sequences
     int *seq;
+
+    // Tree data
+    uint32_t max_depth;
+    uint32_t max_children;
+    uint32_t max_node_size;
+    uint32_t num_nodes_stack; // num_nodes_in_stack
+    backtrack_node_t *node_stack;
+    uint32_t num_nodes;
+    cont_buff_t nodes;
+    mem_pool_t temp_pool;
+
+    int last_l;
 };
 
+backtrack_node_t* stack_element (struct sequence_store_t *stor, uint32_t i)
+{
+    return ((backtrack_node_t*)((char*)stor->node_stack + (i)*stor->max_node_size));
+}
+
+void push_partial_node (struct sequence_store_t *stor, int val)
+{
+    backtrack_node_t *node = stack_element (stor, stor->num_nodes_stack);
+    stor->num_nodes_stack++;
+
+    *node = (backtrack_node_t){0};
+    node->val = val;
+    node->id = stor->num_nodes;
+    stor->num_nodes++;
+}
+
+void complete_and_pop_node (struct sequence_store_t *stor, uint32_t l)
+{
+    backtrack_node_t *finished = stack_element (stor, l);
+    uint32_t node_size;
+    if (finished->num_children > 1) {
+        node_size = sizeof(backtrack_node_t)+(finished->num_children-1)*sizeof(backtrack_node_t*);
+    } else {
+        node_size = sizeof(backtrack_node_t);
+    }
+
+    backtrack_node_t *pushed_node = mem_pool_push_size (stor->pool, node_size);
+    pushed_node->id = finished->id;
+    pushed_node->val = finished->val;
+    pushed_node->num_children = finished->num_children;
+    int i;
+    for (i=0; i<finished->num_children; i++) {
+        pushed_node->children[i] = finished->children[i];
+    }
+
+    backtrack_node_t **node_pos = cont_buff_push (&stor->nodes, sizeof(backtrack_node_t*));
+    *node_pos = pushed_node;
+
+    stor->num_nodes_stack--;
+
+    if (l > 0) {
+        l--;
+        backtrack_node_t *parent = stack_element (stor, l);
+        parent->children[parent->num_children] = pushed_node;
+        parent->num_children++;
+    }
+}
+
+struct sequence_store_t new_tree (char *filename, mem_pool_t *pool)
+{
+    struct sequence_store_t ret = {0};
+    ret.pool = pool;
+    ret.filename = filename;
+    if (filename != NULL) {
+        // TODO: Create file
+    }
+    return ret;
+}
+
+void seq_tree_extents (struct sequence_store_t *stor,
+                       uint32_t max_children, uint32_t max_depth)
+{
+    if (max_children > 0) {
+        stor->max_children = max_children;
+        stor->max_node_size =
+            (sizeof(backtrack_node_t) +
+             (stor->max_children-1)*sizeof(backtrack_node_t*));
+    } else {
+        // TODO: If we don't know max_children then use a version of
+        // backtrack_node_t that has a cont_buff_t as children. Remember to
+        // compute max_node_size in this case too.
+        invalid_code_path;
+    }
+
+    if (max_depth > 0) {
+        stor->max_depth = max_depth;
+        stor->node_stack = mem_pool_push_size (&stor->temp_pool,(stor->max_depth+1)*stor->max_node_size);
+    } else {
+        // TODO: If we don't know max_depth then node_stack should be a
+        // cont_buff_t of elements of size max_node_size.
+        invalid_code_path;
+    }
+    // Pushing the root node to the stack.
+    push_partial_node (stor, -1);
+}
+
+backtrack_node_t* seq_tree_end (struct sequence_store_t *stor)
+{
+    while (stor->last_l > -1) {
+        complete_and_pop_node (stor, stor->last_l);
+        stor->last_l--;
+    }
+    backtrack_node_t* ret = ((backtrack_node_t**)stor->nodes.data)[stor->num_nodes-1];
+    cont_buff_destroy (&stor->nodes);
+    mem_pool_destroy (&stor->temp_pool);
+    return ret;
+}
 void seq_timing_begin (struct sequence_store_t *stor)
 {
     clock_gettime (CLOCK_MONOTONIC, &stor->begin);
@@ -1425,10 +1449,17 @@ void compute_all_permutations (int n, int *res)
     }
 }
 
-// TODO: Turns out this function is exactly the same as the one for other
-// backtraching algorithms. I won't reuse it yet, because I want to spend more
-// time designing more generic backtracking code that is easy to use (try to
-// avoid function pointers).
+void seq_push_element (struct sequence_store_t *stor,
+                       int val, uint32_t level)
+{
+    while (stor->last_l > level - 1) {
+        complete_and_pop_node (stor, stor->last_l);
+        stor->last_l--;
+    }
+    stor->last_l++;
+    push_partial_node (stor, val);
+}
+
 void edges_from_permutation (int *all_perms, int perm, int n, int *e);
 void print_2_regular_cycle_decomposition (int *edges, int n);
 
@@ -1443,18 +1474,19 @@ void print_2_regular_cycle_decomposition (int *edges, int n);
 // memory pool temp_pool. If this data is useful to the caller, it can instead
 // be stored in _pool_ if a pointer is supplied as argument (_ret_all_perms_).
 
+// TODO: Turns out this function is exactly the same as the one for other
+// backtraching algorithms. I won't reuse it yet, because I want to spend more
+// time designing more generic backtracking code that is easy to use (try to
+// avoid function pointers).
 bool matching_backtrack (int *l, int *curr_seq, int domain_size, bool *S_l,
-                         int *num_invalid, int *invalid_restore_indx, int *invalid_perms,
-                         struct tree_build_st_t *tree_state, mem_pool_t *res_pool)
+                         int *num_invalid, int *invalid_restore_indx, int *invalid_perms)
 {
-    complete_and_pop_node (tree_state, res_pool, *l);
     (*l)--;
     if (*l >= 0) {
         int i;
         for (i=curr_seq[*l]+1; i<domain_size; i++) {
             S_l[i] = true;
         }
-
         *num_invalid = invalid_restore_indx[*l];
         for (i=0; i<*num_invalid; i++) {
             S_l[invalid_perms[i]] = false;
@@ -1465,12 +1497,10 @@ bool matching_backtrack (int *l, int *curr_seq, int domain_size, bool *S_l,
     }
 }
 
-backtrack_node_t* matching_decompositions_over_complete_bipartite_graphs
-                                            (int n,
-                                             mem_pool_t *pool, uint64_t *num_nodes,
-                                             int *all_perms)
+void matching_decompositions_over_K_n_n (int n, int *all_perms,
+                                         struct sequence_store_t *seq)
 {
-    assert (num_nodes != NULL);
+    assert (seq != NULL);
     int num_perms = factorial (n);
 
     mem_pool_t temp_pool = {0};
@@ -1479,11 +1509,11 @@ backtrack_node_t* matching_decompositions_over_complete_bipartite_graphs
         compute_all_permutations (n, all_perms);
     }
 
-    struct tree_build_st_t tree_state = tree_start (num_perms, n+1);
+    seq_tree_extents (seq, num_perms, n+1);
 
     int decomp[n];
     decomp[0] = 0;
-    push_partial_node (&tree_state, 0);
+    seq_push_element (seq, 0, 1);
     int l = 1;
 
     int invalid_restore_indx[n];
@@ -1508,8 +1538,7 @@ backtrack_node_t* matching_decompositions_over_complete_bipartite_graphs
             //print_decomp (n, decomp, all_perms);
             //array_print (decomp, n);
             if (!matching_backtrack (&l, decomp, num_perms, S_l,
-                                     &num_invalid, invalid_restore_indx, invalid_perms,
-                                     &tree_state, pool)) {
+                                     &num_invalid, invalid_restore_indx, invalid_perms)) {
                 continue;
             }
         } else {
@@ -1540,22 +1569,18 @@ backtrack_node_t* matching_decompositions_over_complete_bipartite_graphs
                 S_l[min_S_l] = false;
                 l++;
 
-                push_partial_node (&tree_state, min_S_l);
+                seq_push_element (seq, min_S_l, l);
                 break;
             }
 
             if (!matching_backtrack (&l, decomp, num_perms, S_l,
-                                     &num_invalid, invalid_restore_indx, invalid_perms,
-                                     &tree_state, pool)) {
+                                     &num_invalid, invalid_restore_indx, invalid_perms)) {
                 break;
             }
         }
     }
 
-    backtrack_node_t *root = tree_end (&tree_state);
     mem_pool_destroy (&temp_pool);
-
-    return root;
 }
 
 // TODO: Currently we receive an array of all permutations of which _perm_ is an

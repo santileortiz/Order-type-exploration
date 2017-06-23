@@ -376,6 +376,10 @@ int main ()
     //generate_edge_disjoint_triangle_sets (10, 13);
     //fast_edge_disjoint_sets (9, 10);
     //matching_decompositions_over_complete_bipartite_graphs (6);
+    mem_pool_t pool = {0};
+    struct sequence_store_t seq = new_tree (NULL, &pool);
+    matching_decompositions_over_K_n_n (6, NULL, &seq);
+    seq_tree_end (&seq);
 
     //int count = count_2_regular_subgraphs_of_k_n_n (5);
     //printf ("Total: %d\n", count);
