@@ -1226,6 +1226,25 @@ void generate_edge_disjoint_triangle_sets (int n, int k, struct sequence_store_t
     seq_timing_end (seq);
 }
 
+#define S_l_idx(S_l,ptr) (uint32_t)(ptr-S_l)
+struct linked_bool {
+    struct linked_bool *next;
+};
+
+#define lb_print(ptr) {lb_print(ptr,ptr)}
+void lb_print_start (struct linked_bool *lb, struct linked_bool *start)
+{
+    printf ("[");
+    while (lb != NULL) {
+        if (lb->next != NULL) {
+            printf ("%d, ", S_l_idx(start, lb));
+        } else {
+            printf ("%d]\n", S_l_idx(start, lb));
+        }
+        lb = lb->next;
+    }
+}
+
 // Walker's backtracking algorithm used to generate thrackles.
 bool thrackle_backtrack (int *l, int *curr_seq, int domain_size, int *S_l,
         int *num_invalid, int *invalid_restore_indx, int *invalid_triangles)
@@ -1453,12 +1472,12 @@ void seq_push_element (struct sequence_store_t *stor,
                        int val, uint32_t level)
 {
     while (stor->last_l > level - 1) {
-        //printf ("NEW: (%d) Pop\n", stor->last_l);
+        //printf ("(%d) Pop\n", stor->last_l);
         complete_and_pop_node (stor, stor->last_l);
         stor->last_l--;
     }
     stor->last_l++;
-    //printf ("NEW: (%d) Push %d\n", level, val);
+    //printf ("(%d) Push %d\n", level, val);
     push_partial_node (stor, val);
 }
 
@@ -1475,30 +1494,6 @@ void print_2_regular_cycle_decomposition (int *edges, int n);
 // tree (Ex. _all_perms_ array) nedds to be stored, for this we use the local
 // memory pool temp_pool. If this data is useful to the caller, it can instead
 // be stored in _pool_ if a pointer is supplied as argument (_ret_all_perms_).
-
-// TODO: Turns out this function is exactly the same as the one for other
-// backtraching algorithms. I won't reuse it yet, because I want to spend more
-// time designing more generic backtracking code that is easy to use (try to
-// avoid function pointers).
-#define S_l_idx(S_l,ptr) (uint32_t)(ptr-S_l)
-struct linked_bool {
-    bool v;
-    struct linked_bool *next;
-};
-
-#define lb_print(ptr) {lb_print(ptr,ptr)}
-void lb_print_start (struct linked_bool *lb, struct linked_bool *start)
-{
-    printf ("[");
-    while (lb != NULL) {
-        if (lb->next != NULL) {
-            printf ("%d, ", S_l_idx(start, lb));
-        } else {
-            printf ("%d]\n", S_l_idx(start, lb));
-        }
-        lb = lb->next;
-    }
-}
 
 void matching_decompositions_over_K_n_n (int n, int *all_perms,
                                          struct sequence_store_t *seq)
@@ -1530,7 +1525,6 @@ void matching_decompositions_over_K_n_n (int n, int *all_perms,
     {
         int i, j=1;
         for (i=0; i<num_perms-1; i++) {
-            S_l[i].v = true;
             if ((i+1)%(num_perms/n) == 0) {
                 S_l[i].next = NULL;
                 first_S_l[j++] = &S_l[i+1];
@@ -1538,7 +1532,6 @@ void matching_decompositions_over_K_n_n (int n, int *all_perms,
                 S_l[i].next = &S_l[i+1];
             }
         }
-        S_l[num_perms-1].v = true;
         S_l[num_perms-1].next = NULL;
         first_S_l[0] = S_l + 1;
     }
@@ -1562,7 +1555,6 @@ void matching_decompositions_over_K_n_n (int n, int *all_perms,
                 while (iter_S_l != NULL) {
                     uint32_t i = S_l_idx (S_l, iter_S_l);
                     if (has_fixed_point (n, GET_PERM(decomp[l-1]), GET_PERM(i))) {
-                        S_l[i].v = false;
                         invalid_perms[num_invalid] = i;
                         num_invalid++;
 
