@@ -1067,7 +1067,8 @@ void seq_push_sequence_size (struct sequence_store_t *stor, int *seq, uint32_t s
 
 int* seq_end (struct sequence_store_t *stor)
 {
-    if (stor->seq == NULL && stor->sequence_size != 0 && stor->max_sequences == 0) {
+    if (stor->pool != NULL &&
+        stor->seq == NULL && stor->sequence_size != 0 && stor->max_sequences == 0) {
         // NOTE: Fixed size sequence but unknown limit on number of sequences.
         uint32_t bytes = sizeof(int)*stor->dyn_arr.len;
         stor->seq = mem_pool_push_size (stor->pool, bytes);
