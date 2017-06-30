@@ -33,18 +33,22 @@ void get_thrackle_for_each_ot (int n, int k)
 
     subset_it_precompute (triangle_it);
     //int total_triangles = binomial (n, 3);
-    get_single_thrackle (n, k, ot, curr_set);
+    bool found = get_single_thrackle (n, k, ot, curr_set);
 
     while (!db_is_eof ()) {
         printf ("%ld: ", id);
-        array_print (curr_set, k);
+        if (found) {
+            array_print (curr_set, k);
+        } else {
+            printf ("None\n");
+        }
 
         //printf ("%ld: %lu\n", id, subset_it_id_for_idx (total_triangles, curr_set, k));
 
         db_next (ot);
         triangle_set_from_ids (ot, n, curr_set, k, triangle_set);
         if (!is_thrackle(triangle_set)) {
-            get_single_thrackle (n, k, ot, curr_set);
+            found = get_single_thrackle (n, k, ot, curr_set);
         }
         id++;
     }
