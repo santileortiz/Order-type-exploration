@@ -1453,7 +1453,7 @@ bool has_common_edge (int *a, int *b)
     return false;
 }
 
-void get_single_thrackle (int n, int k, order_type_t *ot, int *res)
+bool get_single_thrackle (int n, int k, order_type_t *ot, int *res)
 {
     assert (n==ot->n);
     int l = 1; // Tree level
@@ -1481,7 +1481,7 @@ void get_single_thrackle (int n, int k, order_type_t *ot, int *res)
 
     while (l > 0) {
         if (l>=k) {
-            return;
+            return true;
         } else {
             // Compute S_l
             subset_it_seek (triangle_it, triangle_id);
@@ -1490,16 +1490,25 @@ void get_single_thrackle (int n, int k, order_type_t *ot, int *res)
             triangle[1] = triangle_it->idx[1];
             triangle[2] = triangle_it->idx[2];
 
+            triangle_t choosen_tr = TRIANGLE_IT (ot, triangle_it);
+
             int i;
             for (i=0; i<total_triangles; i++) {
                 if (S_l[i]) {
                     subset_it_seek (triangle_it, i);
-                    int candidate_tr[3];
-                    candidate_tr[0] = triangle_it->idx[0];
-                    candidate_tr[1] = triangle_it->idx[1];
-                    candidate_tr[2] = triangle_it->idx[2];
+                    int candidate_tr_ids[3];
+                    candidate_tr_ids[0] = triangle_it->idx[0];
+                    candidate_tr_ids[1] = triangle_it->idx[1];
+                    candidate_tr_ids[2] = triangle_it->idx[2];
 
-                    if (has_common_edge (triangle, candidate_tr)) {
+                    if (has_common_edge (triangle, candidate_tr_ids)) {
+                        invalid_triangles[num_invalid++] = i;
+                        S_l[i] = false;
+                        continue;
+                    }
+
+                    triangle_t candidate_tr = TRIANGLE_IT (ot, triangle_it);
+                    if (!have_intersecting_segments (&choosen_tr, &candidate_tr)) {
                         invalid_triangles[num_invalid++] = i;
                         S_l[i] = false;
                     }
@@ -1521,31 +1530,11 @@ void get_single_thrackle (int n, int k, order_type_t *ot, int *res)
 
             if (!S_l_empty) {
                 triangle_id = min_sl;
-
-                subset_it_seek (triangle_it, triangle_id);
-                triangle_t candidate_tr = TRIANGLE_IT (ot, triangle_it);
-
-                bool is_disjoint = false;
-                int j;
-                for (j=0; j<l; j++) {
-                    int choosen_id = res[j];
-                    subset_it_seek (triangle_it, choosen_id);
-                    triangle_t choosen_tr = TRIANGLE_IT (ot, triangle_it);
-                    if (!have_intersecting_segments (&choosen_tr, &candidate_tr)) {
-                        is_disjoint = true;
-                        break;
-                    }
-                }
-
                 S_l[triangle_id] = 0;
-                if (!is_disjoint) {
-                    invalid_restore_indx[l] = num_invalid;
-                    res[l] = triangle_id;
-                    l++;
-                    break;
-                } else {
-                    continue;
-                }
+                invalid_restore_indx[l] = num_invalid;
+                res[l] = triangle_id;
+                l++;
+                break;
             }
 
             if (!thrackle_backtrack (&l, res, total_triangles, S_l,
@@ -1554,6 +1543,7 @@ void get_single_thrackle (int n, int k, order_type_t *ot, int *res)
             }
         }
     }
+    return false;
 }
 
 //void fast_iterate_threackles_backtracking (int n, int k, order_type_t *ot, struct sequence_store_t *seq)
