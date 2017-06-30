@@ -1436,6 +1436,23 @@ void triangles_with_common_edges (int n, int *triangle, int *res_triangles)
     }
 }
 
+bool has_common_edge (int *a, int *b)
+{
+    int i, j, res=0;
+    for (i=0; i<3; i++) {
+        for (j=0; j<3; j++) {
+            if (a[i] == b[j]) {
+                res++;
+                if (res == 2) {
+                    return true;
+                }
+            }
+        }
+    }
+
+    return false;
+}
+
 void get_single_thrackle (int n, int k, order_type_t *ot, int *res)
 {
     assert (n==ot->n);
@@ -1473,22 +1490,19 @@ void get_single_thrackle (int n, int k, order_type_t *ot, int *res)
             triangle[1] = triangle_it->idx[1];
             triangle[2] = triangle_it->idx[2];
 
-            int common_edge_triangles[3*(n-3)];
-            triangles_with_common_edges (n, triangle, common_edge_triangles);
-
             int i;
-            for (i=0; i<3*(n-3); i++) {
-                int id = common_edge_triangles[i];
-                int j;
-                for (j=0; j<num_invalid; j++) {
-                    if (invalid_triangles[j] == id) {
-                        break;
+            for (i=0; i<total_triangles; i++) {
+                if (S_l[i]) {
+                    subset_it_seek (triangle_it, i);
+                    int candidate_tr[3];
+                    candidate_tr[0] = triangle_it->idx[0];
+                    candidate_tr[1] = triangle_it->idx[1];
+                    candidate_tr[2] = triangle_it->idx[2];
+
+                    if (has_common_edge (triangle, candidate_tr)) {
+                        invalid_triangles[num_invalid++] = i;
+                        S_l[i] = false;
                     }
-                }
-                if (j == num_invalid) {
-                    invalid_triangles[num_invalid] = id;
-                    S_l[id] = 0;
-                    num_invalid++;
                 }
             }
         }
