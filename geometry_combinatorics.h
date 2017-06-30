@@ -748,6 +748,18 @@ void subset_it_free (subset_it_t *it)
     free (it);
 }
 
+void triangle_set_from_ids (order_type_t *ot, int n, int *triangles, int k, triangle_set_t *set)
+{
+    int triangle[3];
+    int i;
+    for (i=0; i<k; i++) {
+        subset_it_idx_for_id (triangles[i], ot->n, triangle, 3);
+        set->e[i].v[0] = ot->pts[triangle[0]];
+        set->e[i].v[1] = ot->pts[triangle[1]];
+        set->e[i].v[2] = ot->pts[triangle[2]];
+    }
+}
+
 struct _backtrack_node_t {
     int id;
     int val;
@@ -1305,9 +1317,9 @@ void iterate_threackles_backtracking (int n, int k, order_type_t *ot, struct seq
     while (l > 0) {
         if (l>=k) {
             seq_push_sequence (seq, choosen_triangles);
-            if (seq->num_sequences % 1000 == 0) {
-                printf ("Found: %d\n", seq->num_sequences);
-            }
+            //if (seq->num_sequences % 1000 == 0) {
+            //    printf ("Found: %d\n", seq->num_sequences);
+            //}
             if (!thrackle_backtrack (&l, choosen_triangles, total_triangles, S_l,
                        &num_invalid, invalid_restore_indx, invalid_triangles)) {
                 continue;
@@ -1402,6 +1414,270 @@ void iterate_threackles_backtracking (int n, int k, order_type_t *ot, struct seq
     seq_timing_end (seq);
     seq_write_file_header (seq, &info);
 }
+
+// NOTE: res_triangles must be of size 3(n-3).
+void triangles_with_common_edges (int n, int *triangle, int *res_triangles)
+{
+    int i, t_id = 0;
+    for (i=0; i<n; i++) {
+        int invalid_triangle[3];
+
+        if (in_array(i, triangle, 3)) {
+            continue;
+        }
+
+        int t;
+        for (t=0; t<3; t++) {
+            invalid_triangle[0] = i;
+            invalid_triangle[1] = triangle[t];
+            invalid_triangle[2] = triangle[(t+1)%3];
+            res_triangles[t_id++] = subset_it_id_for_idx (n, invalid_triangle, 3);
+        }
+    }
+}
+
+void get_single_thrackle (int n, int k, order_type_t *ot, int *res)
+{
+    assert (n==ot->n);
+    int l = 1; // Tree level
+    int min_sl;
+    bool S_l_empty;
+
+    subset_it_t *triangle_it = subset_it_new (n, 3, NULL);
+    subset_it_precompute (triangle_it);
+    int total_triangles = triangle_it->size;
+
+    int S_l[total_triangles];
+    int i;
+    for (i=1; i<triangle_it->size; i++) {
+        S_l[i] = 1;
+    }
+    S_l[0] = 0;
+
+    int triangle_id = 0;
+    int invalid_triangles[total_triangles];
+    int num_invalid = 0;
+
+    res[0] = 0;
+    int invalid_restore_indx[k];
+    invalid_restore_indx[0] = 0;
+
+    while (l > 0) {
+        if (l>=k) {
+            return;
+        } else {
+            // Compute S_l
+            subset_it_seek (triangle_it, triangle_id);
+            int triangle[3];
+            triangle[0] = triangle_it->idx[0];
+            triangle[1] = triangle_it->idx[1];
+            triangle[2] = triangle_it->idx[2];
+
+            int common_edge_triangles[3*(n-3)];
+            triangles_with_common_edges (n, triangle, common_edge_triangles);
+
+            int i;
+            for (i=0; i<3*(n-3); i++) {
+                int id = common_edge_triangles[i];
+                int j;
+                for (j=0; j<num_invalid; j++) {
+                    if (invalid_triangles[j] == id) {
+                        break;
+                    }
+                }
+                if (j == num_invalid) {
+                    invalid_triangles[num_invalid] = id;
+                    S_l[id] = 0;
+                    num_invalid++;
+                }
+            }
+        }
+
+        while (1) {
+            // Try to advance
+            S_l_empty = true;
+            int i;
+            for (i=0; i<total_triangles; i++) {
+                if (S_l[i]) {
+                    min_sl = i;
+                    S_l_empty = false;
+                    break;
+                }
+            }
+
+            if (!S_l_empty) {
+                triangle_id = min_sl;
+
+                subset_it_seek (triangle_it, triangle_id);
+                triangle_t candidate_tr = TRIANGLE_IT (ot, triangle_it);
+
+                bool is_disjoint = false;
+                int j;
+                for (j=0; j<l; j++) {
+                    int choosen_id = res[j];
+                    subset_it_seek (triangle_it, choosen_id);
+                    triangle_t choosen_tr = TRIANGLE_IT (ot, triangle_it);
+                    if (!have_intersecting_segments (&choosen_tr, &candidate_tr)) {
+                        is_disjoint = true;
+                        break;
+                    }
+                }
+
+                S_l[triangle_id] = 0;
+                if (!is_disjoint) {
+                    invalid_restore_indx[l] = num_invalid;
+                    res[l] = triangle_id;
+                    l++;
+                    break;
+                } else {
+                    continue;
+                }
+            }
+
+            if (!thrackle_backtrack (&l, res, total_triangles, S_l,
+                       &num_invalid, invalid_restore_indx, invalid_triangles)) {
+                break;
+            }
+        }
+    }
+}
+
+//void fast_iterate_threackles_backtracking (int n, int k, order_type_t *ot, struct sequence_store_t *seq)
+//{
+//    assert (n==ot->n);
+//    int l = 1; // Tree level
+//
+//    subset_it_t *triangle_it = subset_it_new (n, 3, NULL);
+//    subset_it_precompute (triangle_it);
+//    int total_triangles = triangle_it->size;
+//
+//    struct linked_bool S_l[total_triangles];
+//    int i;
+//    for (i=0; i<ARRAY_SIZE(S_l)-1; i++) {
+//        S_l[i]->next = &S_l[i+1];
+//    }
+//    S_l[ARRAY_SIZE(S_l)-1] = NULL;
+//
+//    struct linked_bool *first_S_l = &S_l[1];
+//    struct linked_bool *bak_S_l[k];
+//
+//    int triangle_id = 0;
+//    int invalid_triangles[total_triangles];
+//    int num_invalid = 0;
+//
+//    int choosen_triangles[k];
+//    choosen_triangles[0] = 0;
+//    int invalid_restore_indx[k];
+//    invalid_restore_indx[0] = 0;
+//
+//    th_file_info_t info;
+//    info.n = n;
+//
+//    seq_allocate_file_header (seq, sizeof(th_file_info_t));
+//    seq_set_length (seq, k, 0);
+//    seq_timing_begin (seq);
+//
+//    while (l > 0) {
+//        if (l>=k) {
+//            seq_push_sequence (seq, choosen_triangles);
+//            if (seq->num_sequences % 1000 == 0) {
+//                printf ("Found: %d\n", seq->num_sequences);
+//            }
+//            if (!thrackle_backtrack (&l, choosen_triangles, total_triangles, S_l,
+//                       &num_invalid, invalid_restore_indx, invalid_triangles)) {
+//                continue;
+//            }
+//        } else {
+//            // Compute S_l
+//            subset_it_seek (triangle_it, triangle_id);
+//            int triangle[3];
+//            triangle[0] = triangle_it->idx[0];
+//            triangle[1] = triangle_it->idx[1];
+//            triangle[2] = triangle_it->idx[2];
+//
+//            int i;
+//            for (i=0; i<n; i++) {
+//                int invalid_triangle[3];
+//
+//                if (in_array(i, triangle, 3)) {
+//                    continue;
+//                }
+//
+//                uint64_t id;
+//                int t;
+//                for (t=0; t<3; t++) {
+//                    invalid_triangle[0] = i;
+//                    invalid_triangle[1] = triangle[t];
+//                    invalid_triangle[2] = triangle[(t+1)%3];
+//                    id = subset_it_id_for_idx (n, invalid_triangle, 3);
+//
+//                    int j;
+//                    for (j=0; j<num_invalid; j++) {
+//                        if (invalid_triangles[j] == id) {
+//                            break;
+//                        }
+//                    }
+//                    if (j == num_invalid) {
+//                        invalid_triangles[num_invalid] = id;
+//                        S_l[id] = 0;
+//                        num_invalid++;
+//                    }
+//                }
+//            }
+//        }
+//
+//        while (1) {
+//            // Try to advance
+//            S_l_empty = true;
+//            int i;
+//            for (i=0; i<total_triangles; i++) {
+//                if (S_l[i]) {
+//                    min_sl = i;
+//                    S_l_empty = false;
+//                    break;
+//                }
+//            }
+//
+//            if (!S_l_empty) {
+//                triangle_id = min_sl;
+//
+//                subset_it_seek (triangle_it, triangle_id);
+//                triangle_t candidate_tr = TRIANGLE_IT (ot, triangle_it);
+//
+//                bool is_disjoint = false;
+//                int j;
+//                for (j=0; j<l; j++) {
+//                    int choosen_id = choosen_triangles[j];
+//                    subset_it_seek (triangle_it, choosen_id);
+//                    triangle_t choosen_tr = TRIANGLE_IT (ot, triangle_it);
+//                    if (!have_intersecting_segments (&choosen_tr, &candidate_tr)) {
+//                        is_disjoint = true;
+//                        break;
+//                    }
+//                }
+//
+//                S_l[triangle_id] = 0;
+//                if (!is_disjoint) {
+//                    invalid_restore_indx[l] = num_invalid;
+//                    choosen_triangles[l] = triangle_id;
+//                    l++;
+//                    break;
+//                } else {
+//                    continue;
+//                }
+//            }
+//
+//            if (!thrackle_backtrack (&l, choosen_triangles, total_triangles, S_l,
+//                       &num_invalid, invalid_restore_indx, invalid_triangles)) {
+//                break;
+//            }
+//        }
+//    }
+//
+//    seq_timing_end (seq);
+//    seq_write_file_header (seq, &info);
+//}
+
 
 bool has_fixed_point (int n, int *perm_a, int *perm_b)
 {

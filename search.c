@@ -17,56 +17,38 @@
 
 #define N 9
 
-void get_thrackle_for_each_ot (int k)
+void get_thrackle_for_each_ot (int n, int k)
 {
     uint64_t id = 0;
-    order_type_t *ot = order_type_new (N, NULL);
-    triangle_set_t *curr_set = malloc (sizeof(triangle_set_t)+(k-1)*sizeof(triangle_t));
-    curr_set->k = k;
+    order_type_t *ot = order_type_new (n, NULL);
+    int *curr_set = malloc (sizeof(int)*k);
 
+    triangle_set_t *triangle_set = malloc (sizeof(triangle_set_t)+(k-1)*sizeof(triangle_t));
+    triangle_set->k = k;
+
+    open_database (n);
     db_seek (ot, id);
 
-    subset_it_t *triangle_it = subset_it_new (N, 3, NULL);
-    subset_it_t *triangle_set_it = subset_it_new (triangle_it->size, k, NULL);
+    subset_it_t *triangle_it = subset_it_new (n, 3, NULL);
 
     subset_it_precompute (triangle_it);
-    subset_it_precompute (triangle_set_it);
-
-    subset_it_seek (triangle_set_it, 20620000000);
+    //int total_triangles = binomial (n, 3);
+    get_single_thrackle (n, k, ot, curr_set);
 
     while (!db_is_eof ()) {
+        printf ("%ld: ", id);
+        array_print (curr_set, k);
+
+        //printf ("%ld: %lu\n", id, subset_it_id_for_idx (total_triangles, curr_set, k));
+
         db_next (ot);
-        while (1) {
-            int i;
-            //subset_it_print (triangle_set_it);
-            for (i=0; i<k; i++) {
-                subset_it_seek (triangle_it, triangle_set_it->idx[i]);
-                curr_set->e[i].v[0] = ot->pts[triangle_it->idx[0]];
-                curr_set->e[i].v[1] = ot->pts[triangle_it->idx[1]];
-                curr_set->e[i].v[2] = ot->pts[triangle_it->idx[2]];
-            }
-
-            if (is_thrackle(curr_set)) {
-            //if (is_edge_disjoint_set(curr_set)) {
-                break;
-            } else {
-                if (!subset_it_next (triangle_set_it)) {
-                    subset_it_seek (triangle_set_it, 0);
-                }
-            }
-
-            if (triangle_set_it->id % 1000000000 == 0) {
-                printf ("Currently on Triangle set: %"PRIu64"\n ot:%"PRIu64"\n", triangle_set_it->id, id);
-            }
+        triangle_set_from_ids (ot, n, curr_set, k, triangle_set);
+        if (!is_thrackle(triangle_set)) {
+            get_single_thrackle (n, k, ot, curr_set);
         }
-        printf ("%ld: %ld\n", id, triangle_set_it->id);
-        //if (id==2) {
-        //    return;
-        //}
         id++;
     }
     free (triangle_it);
-    free (triangle_set_it);
 }
 
 void count_thrackles (int k)
@@ -226,21 +208,40 @@ void get_thrackle_list_filename (char *s, int len, int n, int ot_id, int k)
     snprintf (s, len, ".cache/n_%d-ot_%d-th_all-k_%d.bin", n, ot_id, k);
 }
 
-int* get_all_thrackles (int n, int k, uint32_t ot_id, int *num_found)
+void get_all_thrackles (int n, int k, uint32_t ot_id, int *num_found,
+                        char* filename)
+{
+    assert (n<=10);
+    open_database (n);
+    order_type_t *ot = order_type_new (n, NULL);
+    db_seek (ot, ot_id);
+
+    struct sequence_store_t seq = new_sequence_store (filename, NULL);
+    iterate_threackles_backtracking (n, k, ot, &seq);
+    seq_end (&seq);
+}
+
+void get_all_thrackles_fast (int n, int k, uint32_t ot_id, int *num_found,
+                        char* filename)
+{
+    assert (n<=10);
+    open_database (n);
+    order_type_t *ot = order_type_new (n, NULL);
+    db_seek (ot, ot_id);
+
+    struct sequence_store_t seq = new_sequence_store (filename, NULL);
+    //fast_iterate_threackles_backtracking (n, k, ot, &seq);
+    seq_end (&seq);
+}
+
+int* get_all_thrackles_cached (int n, int k, uint32_t ot_id, int *num_found)
 {
     char filename[200];
     get_thrackle_list_filename (filename, ARRAY_SIZE(filename), n, ot_id, k);
 
     int *res = seq_read_file (filename, NULL, NULL, NULL);
     if (res == NULL) {
-        assert (n<=10);
-        open_database (n);
-        order_type_t *ot = order_type_new (n, NULL);
-        db_seek (ot, ot_id);
-
-        struct sequence_store_t seq = new_sequence_store (filename, NULL);
-        iterate_threackles_backtracking (n, k, ot, &seq);
-        seq_end (&seq);
+        get_all_thrackles (n, k, ot_id, num_found, filename);
         res = seq_read_file (filename, NULL, NULL, NULL);
     }
 
@@ -271,19 +272,11 @@ int* get_all_thrackles_convex_position (int n, int k, int *num_found)
     return res;
 }
 
-// TODO: Do something more intelligent when T_n is unknown. Maybe call a
-// monitored version of get_all_thrackles() to estimate how long it will take.
-int* get_all_thrackles_safe (int n, int k, uint32_t ot_id, int *num_found)
-{
-    assert (n <= 10); // T_n is unknown for n>10
-    return get_all_thrackles (n, k, ot_id, num_found);
-}
-
 void print_triangle_sizes_for_thrackles_in_convex_position (int n)
 {
     int k = thrackle_size (n);
     int num_found;
-    int *thrackles = get_all_thrackles_safe (n, k, 0, &num_found);
+    int *thrackles = get_all_thrackles_cached (n, k, 0, &num_found);
     int i;
     for (i=0; i<num_found*k; i+=k) {
         int *thrackle = &thrackles[i];
@@ -360,26 +353,38 @@ void print_triangle_sizes_for_thrackles_in_convex_position (int n)
 
 int main ()
 {
-    if (!open_database (N)){
-        printf ("Could not open database\n");
-        return -1;
-    }
+    //if (!open_database (N)){
+    //    printf ("Could not open database\n");
+    //    return -1;
+    //}
 
-    if (mkdir (".cache", 0775) == 0) {
-        printf ("Creating .cache dir\n");
-    }
+    //if (mkdir (".cache", 0775) == 0) {
+    //    printf ("Creating .cache dir\n");
+    //}
 
-    //get_thrackle_for_each_ot (12);
+    get_thrackle_for_each_ot (8, 8);
     //count_thrackles (8);
     //print_differing_triples (N, 0, 1);
     //print_edge_disjoint_sets (8, 8);
     //generate_edge_disjoint_triangle_sets (10, 13);
     //fast_edge_disjoint_sets (9, 10);
-    //matching_decompositions_over_complete_bipartite_graphs (6);
-    mem_pool_t pool = {0};
-    struct sequence_store_t seq = new_tree (NULL, &pool);
-    matching_decompositions_over_K_n_n (6, NULL, &seq);
-    seq_tree_end (&seq);
+
+    //mem_pool_t pool = {0};
+    //struct sequence_store_t seq = new_tree (NULL, &pool);
+    //matching_decompositions_over_K_n_n (6, NULL, &seq);
+    //seq_tree_end (&seq);
+
+    //int n = 7, k=7;
+    //order_type_t *ot = order_type_new (n, NULL);
+    //convex_ot_searchable (ot);
+    //int res[k];
+    //get_single_thrackle (n, k, ot, res);
+    //array_print (res, k);
+
+    //get_thrackle_for_each_ot_fast (8, 8);
+
+    //int num_found;
+    //get_all_thrackles_fast (7, 7, 0, &num_found, NULL);
 
     //int count = count_2_regular_subgraphs_of_k_n_n (5);
     //printf ("Total: %d\n", count);
