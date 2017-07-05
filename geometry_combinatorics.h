@@ -1457,13 +1457,13 @@ bool get_single_thrackle (int n, int k, order_type_t *ot, int *res)
 {
     assert (n==ot->n);
     int l = 1; // Tree level
-    int min_sl;
-    bool S_l_empty;
 
     subset_it_t *triangle_it = subset_it_new (n, 3, NULL);
     subset_it_precompute (triangle_it);
     int total_triangles = triangle_it->size;
 
+    int t = 0;
+    bool S_l_empty = true;
     int S_l[total_triangles];
     int i;
     for (i=1; i<triangle_it->size; i++) {
@@ -1471,7 +1471,6 @@ bool get_single_thrackle (int n, int k, order_type_t *ot, int *res)
     }
     S_l[0] = 0;
 
-    int triangle_id = 0;
     int invalid_triangles[total_triangles];
     int num_invalid = 0;
 
@@ -1484,7 +1483,7 @@ bool get_single_thrackle (int n, int k, order_type_t *ot, int *res)
             return true;
         } else {
             // Compute S_l
-            subset_it_seek (triangle_it, triangle_id);
+            subset_it_seek (triangle_it, t);
             int triangle[3];
             triangle[0] = triangle_it->idx[0];
             triangle[1] = triangle_it->idx[1];
@@ -1493,6 +1492,7 @@ bool get_single_thrackle (int n, int k, order_type_t *ot, int *res)
             triangle_t choosen_tr = TRIANGLE_IT (ot, triangle_it);
 
             int i;
+            S_l_empty = true;
             for (i=0; i<total_triangles; i++) {
                 if (S_l[i]) {
                     subset_it_seek (triangle_it, i);
@@ -1512,33 +1512,43 @@ bool get_single_thrackle (int n, int k, order_type_t *ot, int *res)
                         invalid_triangles[num_invalid++] = i;
                         S_l[i] = false;
                     }
+
+                    if (S_l[i] && S_l_empty) {
+                        t = i;
+                        S_l_empty = false;
+                    }
                 }
             }
         }
 
         while (1) {
             // Try to advance
-            S_l_empty = true;
-            int i;
-            for (i=0; i<total_triangles; i++) {
-                if (S_l[i]) {
-                    min_sl = i;
-                    S_l_empty = false;
-                    break;
-                }
-            }
-
             if (!S_l_empty) {
-                triangle_id = min_sl;
-                S_l[triangle_id] = 0;
                 invalid_restore_indx[l] = num_invalid;
-                res[l] = triangle_id;
+                res[l] = t;
                 l++;
                 break;
             }
 
-            if (!thrackle_backtrack (&l, res, total_triangles, S_l,
-                       &num_invalid, invalid_restore_indx, invalid_triangles)) {
+            // Backtrack
+            l--;
+            if (l>=0) {
+                t = res[l];
+                int i;
+                for (i=invalid_restore_indx[l]; i<num_invalid; i++) {
+                    S_l[invalid_triangles[i]] = true;
+                }
+                num_invalid = invalid_restore_indx[l];
+
+                S_l_empty = true;
+                for (i=t+1; i<total_triangles; i++) {
+                    if (S_l[i]) {
+                        t = i;
+                        S_l_empty = false;
+                        break;
+                    }
+                }
+            } else {
                 break;
             }
         }

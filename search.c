@@ -378,7 +378,7 @@ int main ()
     //matching_decompositions_over_K_n_n (6, NULL, &seq);
     //seq_tree_end (&seq);
 
-    //int n = 7, k=7;
+    //int n = 8, k = 8;
     //order_type_t *ot = order_type_new (n, NULL);
     //convex_ot_searchable (ot);
     //int res[k];
