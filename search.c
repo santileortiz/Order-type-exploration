@@ -23,7 +23,7 @@ void get_thrackle_for_each_ot (int n, int k)
     order_type_t *ot = order_type_new (n, NULL);
     int *curr_set = malloc (sizeof(int)*k);
 
-    triangle_set_t *triangle_set = malloc (sizeof(triangle_set_t)+(k-1)*sizeof(triangle_t));
+    triangle_set_t *triangle_set = malloc (triangle_set_size (k));
     triangle_set->k = k;
 
     open_database (n);
@@ -59,7 +59,7 @@ void count_thrackles (int k)
 {
     uint64_t id = 0;
     order_type_t *ot = order_type_new (N, NULL);
-    triangle_set_t *curr_set = malloc (sizeof(triangle_set_t)+(k-1)*sizeof(triangle_t));
+    triangle_set_t *curr_set = malloc (triangle_set_size (k));
     curr_set->k = k;
 
     db_seek (ot, id);
@@ -130,7 +130,7 @@ void print_edge_disjoint_sets (int n, int k)
 {
     int count = 0;
     order_type_t *ot = order_type_new (n, NULL);
-    triangle_set_t *curr_set = malloc (sizeof(triangle_set_t)+(k-1)*sizeof(triangle_t));
+    triangle_set_t *curr_set = malloc (triangle_set_size (k));
     curr_set->k = k;
 
     subset_it_t *triangle_it = subset_it_new (n, 3, NULL);
@@ -166,7 +166,7 @@ void print_edge_disjoint_sets (int n, int k)
 
 void fast_edge_disjoint_sets (int n, int k)
 {
-    triangle_set_t *curr_set = malloc (sizeof(triangle_set_t)+(k-1)*sizeof(triangle_t));
+    triangle_set_t *curr_set = malloc (triangle_set_size (k));
     curr_set->k = k;
 
     order_type_t *ot = order_type_new (n, NULL);
@@ -378,12 +378,33 @@ int main ()
     //matching_decompositions_over_K_n_n (6, NULL, &seq);
     //seq_tree_end (&seq);
 
-    //int n = 8, k = 8;
-    //order_type_t *ot = order_type_new (n, NULL);
-    //convex_ot_searchable (ot);
-    //int res[k];
-    //get_single_thrackle (n, k, ot, res);
-    //array_print (res, k);
+    ///int n = 8, k = 8;
+    ///order_type_t *ot = order_type_new (n, NULL);
+    /////convex_ot_searchable (ot);
+    ///open_database (n);
+    ///db_seek (ot, 114);
+    ///int res[k];
+    ///bool found = get_single_thrackle (n, k, ot, res);
+    ///array_print (res, k);
+    ///if (!found) {
+    ///    printf ("None\n");
+    ///}
+
+    ///subset_it_idx_for_id (445842445, binomial (n, 3), res, k);
+    ///array_print (res, k);
+
+    ///triangle_set_t *triangle_set = malloc (triangle_set_size (k));
+    ///triangle_set_from_ids (ot, n, res, k, triangle_set);
+    ///if (is_thrackle(triangle_set)) {
+    ///    printf ("Is thrackle\n");
+    ///}
+
+    ///int i;
+    ///for (i=0; i<ARRAY_SIZE (res); i++) {
+    ///    int tr[3];
+    ///    subset_it_idx_for_id (res[i], n, tr, 3);
+    ///    array_print (tr, 3);
+    ///}
 
     //get_thrackle_for_each_ot_fast (8, 8);
 
