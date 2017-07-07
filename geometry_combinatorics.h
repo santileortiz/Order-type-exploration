@@ -1499,7 +1499,8 @@ bool get_single_thrackle (int n, int k, order_type_t *ot, int *res)
 
             int i;
             S_l_empty = true;
-            for (i=0; i<total_triangles; i++) {
+            // NOTE: i=t+1 enforces res[] to be an ordered sequence.
+            for (i=t+1; i<total_triangles; i++) {
                 if (S_l[i]) {
                     subset_it_seek (triangle_it, i);
                     int candidate_tr_ids[3];
@@ -1520,12 +1521,12 @@ bool get_single_thrackle (int n, int k, order_type_t *ot, int *res)
                         if (!have_intersecting_segments (&choosen_tr, &candidate_tr)) {
                             invalid_triangles[num_invalid++] = i;
                             S_l[i] = false;
+                            continue;
                         }
                     }
 
                     // NOTE: S_l_empty is used as a flag to do this only once.
-                    if (S_l_empty && S_l[i]
-                        && i>t) { // NOTE: restrict the search to increasing sequences.
+                    if (S_l_empty /*&& S_l[i]*/) { // NOTE: implicit because continue; statements before.
                         t = i;
                         S_l_empty = false;
                     }

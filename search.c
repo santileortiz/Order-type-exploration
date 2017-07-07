@@ -366,7 +366,7 @@ int main ()
     //    printf ("Creating .cache dir\n");
     //}
 
-    get_thrackle_for_each_ot (8, 8);
+    //get_thrackle_for_each_ot (8, 8);
     //count_thrackles (8);
     //print_differing_triples (N, 0, 1);
     //print_edge_disjoint_sets (8, 8);
@@ -378,33 +378,15 @@ int main ()
     //matching_decompositions_over_K_n_n (6, NULL, &seq);
     //seq_tree_end (&seq);
 
-    ///int n = 8, k = 8;
-    ///order_type_t *ot = order_type_new (n, NULL);
-    /////convex_ot_searchable (ot);
-    ///open_database (n);
-    ///db_seek (ot, 114);
-    ///int res[k];
-    ///bool found = get_single_thrackle (n, k, ot, res);
-    ///array_print (res, k);
-    ///if (!found) {
-    ///    printf ("None\n");
-    ///}
-
-    ///subset_it_idx_for_id (445842445, binomial (n, 3), res, k);
-    ///array_print (res, k);
-
-    ///triangle_set_t *triangle_set = malloc (triangle_set_size (k));
-    ///triangle_set_from_ids (ot, n, res, k, triangle_set);
-    ///if (is_thrackle(triangle_set)) {
-    ///    printf ("Is thrackle\n");
-    ///}
-
-    ///int i;
-    ///for (i=0; i<ARRAY_SIZE (res); i++) {
-    ///    int tr[3];
-    ///    subset_it_idx_for_id (res[i], n, tr, 3);
-    ///    array_print (tr, 3);
-    ///}
+    int n = 9, k = 12;
+    order_type_t *ot = order_type_new (n, NULL);
+    convex_ot_searchable (ot);
+    int res[k];
+    bool found = get_single_thrackle (n, k, ot, res);
+    array_print (res, k);
+    if (!found) {
+        printf ("None\n");
+    }
 
     //get_thrackle_for_each_ot_fast (8, 8);
 
