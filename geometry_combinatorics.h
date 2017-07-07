@@ -1438,10 +1438,10 @@ void triangles_with_common_edges (int n, int *triangle, int *res_triangles)
 }
 
 // Receives arrays a and b of size 3
-// Resturn values:
+// Return values:
 // 0 : arrays have no common elements
-// 1 : array have one element in common
-// 2 : array have 2 or more elements in common
+// 1 : arrays have one element in common
+// 2 : arrays have 2 or more elements in common
 int count_common_vertices_int (int *a, int *b)
 {
     int i, j, res=0;
