@@ -752,6 +752,7 @@ void triangle_set_from_ids (order_type_t *ot, int n, int *triangles, int k, tria
 {
     int triangle[3];
     int i;
+    set->k = k;
     for (i=0; i<k; i++) {
         subset_it_idx_for_id (triangles[i], ot->n, triangle, 3);
         set->e[i].v[0] = ot->pts[triangle[0]];
@@ -1436,7 +1437,12 @@ void triangles_with_common_edges (int n, int *triangle, int *res_triangles)
     }
 }
 
-bool has_common_edge (int *a, int *b)
+// Receives arrays a and b of size 3
+// Resturn values:
+// 0 : arrays have no common elements
+// 1 : array have one element in common
+// 2 : array have 2 or more elements in common
+int count_common_vertices_int (int *a, int *b)
 {
     int i, j, res=0;
     for (i=0; i<3; i++) {
@@ -1444,13 +1450,13 @@ bool has_common_edge (int *a, int *b)
             if (a[i] == b[j]) {
                 res++;
                 if (res == 2) {
-                    return true;
+                    return res;
                 }
             }
         }
     }
 
-    return false;
+    return res;
 }
 
 bool get_single_thrackle (int n, int k, order_type_t *ot, int *res)
@@ -1501,19 +1507,25 @@ bool get_single_thrackle (int n, int k, order_type_t *ot, int *res)
                     candidate_tr_ids[1] = triangle_it->idx[1];
                     candidate_tr_ids[2] = triangle_it->idx[2];
 
-                    if (has_common_edge (triangle, candidate_tr_ids)) {
+                    int test = count_common_vertices_int (triangle, candidate_tr_ids);
+                    if (test == 2) {
+                        // NOTE: Triangles share an edge or are the same.
                         invalid_triangles[num_invalid++] = i;
                         S_l[i] = false;
                         continue;
+                    } else if (test == 0) {
+                        // NOTE: Triangles have no comon vertices, check if
+                        // edges intersect.
+                        triangle_t candidate_tr = TRIANGLE_IT (ot, triangle_it);
+                        if (!have_intersecting_segments (&choosen_tr, &candidate_tr)) {
+                            invalid_triangles[num_invalid++] = i;
+                            S_l[i] = false;
+                        }
                     }
 
-                    triangle_t candidate_tr = TRIANGLE_IT (ot, triangle_it);
-                    if (!have_intersecting_segments (&choosen_tr, &candidate_tr)) {
-                        invalid_triangles[num_invalid++] = i;
-                        S_l[i] = false;
-                    }
-
-                    if (S_l[i] && S_l_empty) {
+                    // NOTE: S_l_empty is used as a flag to do this only once.
+                    if (S_l_empty && S_l[i]
+                        && i>t) { // NOTE: restrict the search to increasing sequences.
                         t = i;
                         S_l_empty = false;
                     }
