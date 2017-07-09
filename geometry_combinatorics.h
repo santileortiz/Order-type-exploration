@@ -1240,7 +1240,7 @@ void generate_edge_disjoint_triangle_sets (int n, int k, struct sequence_store_t
     seq_timing_end (seq);
 }
 
-#define S_l_idx(S_l,ptr) (uint32_t)(ptr-S_l)
+#define lb_idx(arr,ptr) (uint32_t)(ptr-arr)
 struct linked_bool {
     struct linked_bool *next;
 };
@@ -1251,9 +1251,9 @@ void lb_print_start (struct linked_bool *lb, struct linked_bool *start)
     printf ("[");
     while (lb != NULL) {
         if (lb->next != NULL) {
-            printf ("%d, ", S_l_idx(start, lb));
+            printf ("%d, ", lb_idx(start, lb));
         } else {
-            printf ("%d]\n", S_l_idx(start, lb));
+            printf ("%d]\n", lb_idx(start, lb));
         }
         lb = lb->next;
     }
@@ -1468,14 +1468,13 @@ bool get_single_thrackle (int n, int k, order_type_t *ot, int *res)
     subset_it_precompute (triangle_it);
     int total_triangles = triangle_it->size;
 
-    int t = 0;
-    bool S_l_empty = true;
-    int S_l[total_triangles];
+    struct linked_bool S[total_triangles];
     int i;
-    for (i=1; i<triangle_it->size; i++) {
-        S_l[i] = 1;
+    for (i=0; i<total_triangles-1; i++) {
+        S[i].next = &S[i+1];
     }
-    S_l[0] = 0;
+    S[i].next = NULL;
+    struct linked_bool *t = &S[0];
 
     int invalid_triangles[total_triangles];
     int num_invalid = 0;
@@ -1488,8 +1487,8 @@ bool get_single_thrackle (int n, int k, order_type_t *ot, int *res)
         if (l>=k) {
             return true;
         } else {
-            // Compute S_l
-            subset_it_seek (triangle_it, t);
+            // Compute S
+            subset_it_seek (triangle_it, lb_idx (S, t));
             int triangle[3];
             triangle[0] = triangle_it->idx[0];
             triangle[1] = triangle_it->idx[1];
@@ -1497,11 +1496,12 @@ bool get_single_thrackle (int n, int k, order_type_t *ot, int *res)
 
             triangle_t choosen_tr = TRIANGLE_IT (ot, triangle_it);
 
-            int i;
-            S_l_empty = true;
-            // NOTE: i=t+1 enforces res[] to be an ordered sequence.
-            for (i=t+1; i<total_triangles; i++) {
-                if (S_l[i]) {
+            if (t != NULL) {
+                // NOTE: S_curr=t->next enforces res[] to be an ordered sequence.
+                struct linked_bool *S_prev = t;
+                struct linked_bool *S_curr = t->next;
+                while (S_curr != NULL) {
+                    int i = lb_idx (S, S_curr);
                     subset_it_seek (triangle_it, i);
                     int candidate_tr_ids[3];
                     candidate_tr_ids[0] = triangle_it->idx[0];
@@ -1512,7 +1512,9 @@ bool get_single_thrackle (int n, int k, order_type_t *ot, int *res)
                     if (test == 2) {
                         // NOTE: Triangles share an edge or are the same.
                         invalid_triangles[num_invalid++] = i;
-                        S_l[i] = false;
+                        S_prev->next = S_curr->next;
+
+                        S_curr = S_prev->next;
                         continue;
                     } else if (test == 0) {
                         // NOTE: Triangles have no comon vertices, check if
@@ -1520,25 +1522,24 @@ bool get_single_thrackle (int n, int k, order_type_t *ot, int *res)
                         triangle_t candidate_tr = TRIANGLE_IT (ot, triangle_it);
                         if (!have_intersecting_segments (&choosen_tr, &candidate_tr)) {
                             invalid_triangles[num_invalid++] = i;
-                            S_l[i] = false;
+                            S_prev->next = S_curr->next;
+
+                            S_curr = S_prev->next;
                             continue;
                         }
                     }
-
-                    // NOTE: S_l_empty is used as a flag to do this only once.
-                    if (S_l_empty /*&& S_l[i]*/) { // NOTE: implicit because continue; statements before.
-                        t = i;
-                        S_l_empty = false;
-                    }
+                    S_prev = S_curr;
+                    S_curr = S_curr->next;
                 }
+                t = t->next;
             }
         }
 
         while (1) {
             // Try to advance
-            if (!S_l_empty) {
+            if (t != NULL) {
                 invalid_restore_indx[l] = num_invalid;
-                res[l] = t;
+                res[l] = lb_idx(S, t);
                 l++;
                 break;
             }
@@ -1546,21 +1547,32 @@ bool get_single_thrackle (int n, int k, order_type_t *ot, int *res)
             // Backtrack
             l--;
             if (l>=0) {
-                t = res[l];
-                int i;
-                for (i=invalid_restore_indx[l]; i<num_invalid; i++) {
-                    S_l[invalid_triangles[i]] = true;
-                }
-                num_invalid = invalid_restore_indx[l];
+                t = &S[res[l]];
+                struct linked_bool *S_prev = NULL;
+                struct linked_bool *S_curr = t;
+                int curr_invalid = invalid_restore_indx[l];
+                while (S_curr != NULL && curr_invalid<num_invalid) {
+                    while (lb_idx (S, S_curr)<invalid_triangles[curr_invalid]) {
+                        S_prev = S_curr;
+                        S_curr = S_curr->next;
+                    }
 
-                S_l_empty = true;
-                for (i=t+1; i<total_triangles; i++) {
-                    if (S_l[i]) {
-                        t = i;
-                        S_l_empty = false;
-                        break;
+                    while ((S_curr==NULL && curr_invalid<num_invalid) ||
+                           (curr_invalid<num_invalid &&
+                            lb_idx (S, S_curr)>invalid_triangles[curr_invalid])) {
+                        // NOTE: Should not happen because
+                        // invalid_triangles[i]>lb_idx(t,S) for i>curr_invalid
+                        // so previous loop must execute at least once.
+                        assert (S_prev != NULL);
+                        S_prev->next = &S[invalid_triangles[curr_invalid]];
+                        S_prev->next->next = S_curr;
+
+                        S_prev = S_prev->next;
+                        curr_invalid++;
                     }
                 }
+                num_invalid = invalid_restore_indx[l];
+                t = t->next;
             } else {
                 break;
             }
@@ -1857,7 +1869,7 @@ void matching_decompositions_over_K_n_n (int n, int *all_perms,
                 struct linked_bool *prev_S_l = NULL;
                 struct linked_bool *iter_S_l = first_S_l[h];
                 while (iter_S_l != NULL) {
-                    uint32_t i = S_l_idx (S_l, iter_S_l);
+                    uint32_t i = lb_idx (S_l, iter_S_l);
                     if (has_fixed_point (n, GET_PERM(decomp[l-1]), GET_PERM(i))) {
                         invalid_perms[num_invalid] = i;
                         num_invalid++;
@@ -1880,7 +1892,7 @@ void matching_decompositions_over_K_n_n (int n, int *all_perms,
 
         while (1) {
             if (first_S_l[l] != NULL) {
-                int min_S_l = S_l_idx (S_l, first_S_l[l]);
+                int min_S_l = lb_idx (S_l, first_S_l[l]);
                 invalid_restore_indx[l] = num_invalid;
                 decomp[l] = min_S_l;
                 first_S_l[l] = first_S_l[l]->next;
@@ -1910,12 +1922,15 @@ backtrack:
                     while (S_l_iter != NULL &&
                            curr_restore < prev_invalid && invalid_perms [curr_restore] < max_for_h) {
                         while (S_l_iter != NULL &&
-                               S_l_idx (S_l, S_l_iter) < invalid_perms [curr_restore]) {
+                               lb_idx (S_l, S_l_iter) < invalid_perms [curr_restore]) {
                             S_l_prev = S_l_iter;
                             S_l_iter = S_l_iter->next;
                         }
 
-                        while (S_l_idx (S_l, S_l_iter) > invalid_perms [curr_restore] &&
+                        // FIXME: Check S_l_iter != NULL allways, if this is not
+                        // true then we need to check this actually does the
+                        // right thing every time.
+                        while (lb_idx (S_l, S_l_iter) > invalid_perms [curr_restore] &&
                                curr_restore<prev_invalid && invalid_perms[curr_restore]<max_for_h) {
                             if (S_l_prev != NULL) {
                                 S_l_prev->next = &S_l[invalid_perms [curr_restore]];

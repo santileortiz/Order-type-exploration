@@ -366,7 +366,7 @@ int main ()
     //    printf ("Creating .cache dir\n");
     //}
 
-    //get_thrackle_for_each_ot (8, 8);
+    get_thrackle_for_each_ot (8, 8);
     //count_thrackles (8);
     //print_differing_triples (N, 0, 1);
     //print_edge_disjoint_sets (8, 8);
@@ -378,15 +378,15 @@ int main ()
     //matching_decompositions_over_K_n_n (6, NULL, &seq);
     //seq_tree_end (&seq);
 
-    int n = 9, k = 12;
-    order_type_t *ot = order_type_new (n, NULL);
-    convex_ot_searchable (ot);
-    int res[k];
-    bool found = get_single_thrackle (n, k, ot, res);
-    array_print (res, k);
-    if (!found) {
-        printf ("None\n");
-    }
+    //int n = 9, k = 12;
+    //order_type_t *ot = order_type_new (n, NULL);
+    //convex_ot_searchable (ot);
+    //int res[k];
+    //bool found = get_single_thrackle (n, k, ot, res);
+    //array_print (res, k);
+    //if (!found) {
+    //    printf ("None\n");
+    //}
 
     //get_thrackle_for_each_ot_fast (8, 8);
 
