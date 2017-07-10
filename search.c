@@ -33,7 +33,7 @@ void get_thrackle_for_each_ot (int n, int k)
 
     subset_it_precompute (triangle_it);
     //int total_triangles = binomial (n, 3);
-    bool found = get_single_thrackle (n, k, ot, curr_set);
+    bool found = single_thrackle (n, k, ot, curr_set);
 
     while (!db_is_eof ()) {
         printf ("%ld: ", id);
@@ -48,7 +48,7 @@ void get_thrackle_for_each_ot (int n, int k)
         db_next (ot);
         triangle_set_from_ids (ot, n, curr_set, k, triangle_set);
         if (!is_thrackle(triangle_set)) {
-            found = get_single_thrackle (n, k, ot, curr_set);
+            found = single_thrackle (n, k, ot, curr_set);
         }
         id++;
     }
@@ -212,8 +212,7 @@ void get_thrackle_list_filename (char *s, int len, int n, int ot_id, int k)
     snprintf (s, len, ".cache/n_%d-ot_%d-th_all-k_%d.bin", n, ot_id, k);
 }
 
-void get_all_thrackles (int n, int k, uint32_t ot_id, int *num_found,
-                        char* filename)
+void get_all_thrackles (int n, int k, uint32_t ot_id, char* filename)
 {
     assert (n<=10);
     open_database (n);
@@ -221,31 +220,18 @@ void get_all_thrackles (int n, int k, uint32_t ot_id, int *num_found,
     db_seek (ot, ot_id);
 
     struct sequence_store_t seq = new_sequence_store (filename, NULL);
-    iterate_threackles_backtracking (n, k, ot, &seq);
+    all_thrackles (n, k, ot, &seq);
     seq_end (&seq);
 }
 
-void get_all_thrackles_fast (int n, int k, uint32_t ot_id, int *num_found,
-                        char* filename)
-{
-    assert (n<=10);
-    open_database (n);
-    order_type_t *ot = order_type_new (n, NULL);
-    db_seek (ot, ot_id);
-
-    struct sequence_store_t seq = new_sequence_store (filename, NULL);
-    //fast_iterate_threackles_backtracking (n, k, ot, &seq);
-    seq_end (&seq);
-}
-
-int* get_all_thrackles_cached (int n, int k, uint32_t ot_id, int *num_found)
+int* get_all_thrackles_cached (int n, int k, uint32_t ot_id)
 {
     char filename[200];
     get_thrackle_list_filename (filename, ARRAY_SIZE(filename), n, ot_id, k);
 
     int *res = seq_read_file (filename, NULL, NULL, NULL);
     if (res == NULL) {
-        get_all_thrackles (n, k, ot_id, num_found, filename);
+        get_all_thrackles (n, k, ot_id, filename);
         res = seq_read_file (filename, NULL, NULL, NULL);
     }
 
@@ -257,7 +243,8 @@ int* get_all_thrackles_convex_position (int n, int k, int *num_found)
     char filename[200];
     get_thrackle_list_filename (filename, ARRAY_SIZE(filename), n, 0, k);
 
-    int *res = seq_read_file (filename, NULL, NULL, NULL);
+    struct file_header_t info;
+    int *res = seq_read_file (filename, NULL, &info, NULL);
     if (res == NULL) {
         order_type_t *ot = order_type_new (n, NULL);
         if (n<=10) {
@@ -268,10 +255,11 @@ int* get_all_thrackles_convex_position (int n, int k, int *num_found)
         }
 
         struct sequence_store_t seq = new_sequence_store (filename, NULL);
-        iterate_threackles_backtracking (n, k, ot, &seq);
+        all_thrackles (n, k, ot, &seq);
         seq_end (&seq);
-        res = seq_read_file (filename, NULL, NULL, NULL);
+        res = seq_read_file (filename, NULL, &info, NULL);
     }
+    *num_found = info.num_sequences;
 
     return res;
 }
@@ -280,7 +268,7 @@ void print_triangle_sizes_for_thrackles_in_convex_position (int n)
 {
     int k = thrackle_size (n);
     int num_found;
-    int *thrackles = get_all_thrackles_cached (n, k, 0, &num_found);
+    int *thrackles = get_all_thrackles_convex_position (n, k, &num_found);
     int i;
     for (i=0; i<num_found*k; i+=k) {
         int *thrackle = &thrackles[i];
@@ -366,7 +354,7 @@ int main ()
     //    printf ("Creating .cache dir\n");
     //}
 
-    get_thrackle_for_each_ot (8, 8);
+    //get_thrackle_for_each_ot (8, 8);
     //count_thrackles (8);
     //print_differing_triples (N, 0, 1);
     //print_edge_disjoint_sets (8, 8);
@@ -382,16 +370,13 @@ int main ()
     //order_type_t *ot = order_type_new (n, NULL);
     //convex_ot_searchable (ot);
     //int res[k];
-    //bool found = get_single_thrackle (n, k, ot, res);
+    //bool found = single_thrackle (n, k, ot, res);
     //array_print (res, k);
     //if (!found) {
     //    printf ("None\n");
     //}
 
-    //get_thrackle_for_each_ot_fast (8, 8);
-
-    //int num_found;
-    //get_all_thrackles_fast (7, 7, 0, &num_found, NULL);
+    get_all_thrackles (10, 12, 0, NULL);
 
     //int count = count_2_regular_subgraphs_of_k_n_n (5);
     //printf ("Total: %d\n", count);
