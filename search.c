@@ -260,7 +260,6 @@ int* get_all_thrackles_convex_position (int n, int k, int *num_found)
         res = seq_read_file (filename, NULL, &info, NULL);
     }
     *num_found = info.num_sequences;
-
     return res;
 }
 
@@ -376,7 +375,8 @@ int main ()
     //    printf ("None\n");
     //}
 
-    get_all_thrackles (10, 12, 0, NULL);
+    //get_all_thrackles (10, 12, 0, NULL);
+    print_triangle_sizes_for_thrackles_in_convex_position (10);
 
     //int count = count_2_regular_subgraphs_of_k_n_n (5);
     //printf ("Total: %d\n", count);

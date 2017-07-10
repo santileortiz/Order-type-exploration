@@ -1094,11 +1094,12 @@ int* seq_end (struct sequence_store_t *stor)
         header.type = stor->type;
         header.custom_header_size = stor->custom_file_header_size;
         if (stor->type & SEQ_TIMING) {
-            header.time = time_elapsed_in_ms (&stor->end, &stor->begin);
+            header.time = time_elapsed_in_ms (&stor->begin, &stor->end);
         }
         if (stor->type & SEQ_FIXED_LEN) {
             header.sequence_size = stor->sequence_size;
         }
+        header.num_sequences = stor->num_sequences;
         lseek (stor->file, 0, SEEK_SET);
         file_write (stor->file, &header, sizeof (struct file_header_t));
         close (stor->file);
