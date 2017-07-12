@@ -810,6 +810,10 @@ struct sequence_store_t {
     cont_buff_t nodes;
     mem_pool_t temp_pool;
 
+    // Information on the resulting tree
+    uint32_t final_height;
+    uint32_t *nodes_per_len;
+
     int last_l;
 };
 
@@ -890,6 +894,8 @@ void seq_tree_extents (struct sequence_store_t *stor,
     if (max_depth > 0) {
         stor->max_depth = max_depth;
         stor->node_stack = mem_pool_push_size (&stor->temp_pool,(stor->max_depth+1)*stor->max_node_size);
+        stor->nodes_per_len =
+            mem_pool_push_size (&stor->temp_pool,(stor->max_depth+1)*sizeof(*stor->nodes_per_len));
     } else {
         // TODO: If we don't know max_depth then node_stack should be a
         // cont_buff_t of elements of size max_node_size.
@@ -910,6 +916,7 @@ backtrack_node_t* seq_tree_end (struct sequence_store_t *stor)
     mem_pool_destroy (&stor->temp_pool);
     return ret;
 }
+
 void seq_timing_begin (struct sequence_store_t *stor)
 {
     clock_gettime (CLOCK_MONOTONIC, &stor->begin);
@@ -920,6 +927,7 @@ void seq_timing_end (struct sequence_store_t *stor)
 {
     assert ((stor->type & SEQ_TIMING) && "Call seq_timing_begin() before.");
     clock_gettime (CLOCK_MONOTONIC, &stor->end);
+    stor->time = time_elapsed_in_ms (&stor->begin, &stor->end);
 }
 
 struct file_header_t {
@@ -1078,6 +1086,26 @@ void seq_push_sequence_size (struct sequence_store_t *stor, int *seq, uint32_t s
     }
 }
 
+void seq_push_element (struct sequence_store_t *stor,
+                       int val, uint32_t level)
+{
+    //TODO: Maybe this slow down computations a lot, if that's the case,
+    //then add an option to ommit computing this.
+    stor->nodes_per_len[level-1]++;
+    if (level > stor->final_height) {
+        stor->final_height = level;
+    }
+
+    while (stor->last_l > level - 1) {
+        //printf ("(%d) Pop\n", stor->last_l);
+        complete_and_pop_node (stor, stor->last_l);
+        stor->last_l--;
+    }
+    stor->last_l++;
+    //printf ("(%d) Push %d\n", level, val);
+    push_partial_node (stor, val);
+}
+
 int* seq_end (struct sequence_store_t *stor)
 {
     if (stor->pool != NULL &&
@@ -1094,7 +1122,7 @@ int* seq_end (struct sequence_store_t *stor)
         header.type = stor->type;
         header.custom_header_size = stor->custom_file_header_size;
         if (stor->type & SEQ_TIMING) {
-            header.time = time_elapsed_in_ms (&stor->begin, &stor->end);
+            header.time = stor->time;
         }
         if (stor->type & SEQ_FIXED_LEN) {
             header.sequence_size = stor->sequence_size;
@@ -1557,6 +1585,139 @@ backtrack:
     seq_write_file_header (seq, &info);
 }
 
+// TODO: Is this function really necessary? Finish implementing sequence_store_t
+// so seq_push_sequence() builds a tree too, then test if there is actually a
+// signifficant difference between this and all_thrackles().
+void thrackle_search_tree (int n, order_type_t *ot, struct sequence_store_t *seq)
+{
+    assert (n==ot->n);
+    int l = 1; // Tree level
+
+    subset_it_t *triangle_it = subset_it_new (n, 3, NULL);
+    subset_it_precompute (triangle_it);
+    int total_triangles = triangle_it->size;
+
+    struct linked_bool S[total_triangles];
+    int i;
+    for (i=0; i<total_triangles-1; i++) {
+        S[i].next = &S[i+1];
+    }
+    S[i].next = NULL;
+    struct linked_bool *t = &S[0];
+
+    int invalid_triangles[total_triangles];
+    int num_invalid = 0;
+
+    int k;
+    if (n <= 10) {
+        k = thrackle_size (n);
+    } else {
+        k = thrackle_size_upper_bound (n);
+    }
+
+    seq_tree_extents (seq, total_triangles, k);
+    seq_push_element (seq, 0, 1);
+
+    int res[k];
+    res[0] = 0;
+    int invalid_restore_indx[k];
+    invalid_restore_indx[0] = 0;
+
+    seq_timing_begin (seq);
+    while (l > 0) {
+        // Compute S
+        if (t != NULL) {
+            subset_it_seek (triangle_it, lb_idx (S, t));
+            int triangle[3];
+            triangle[0] = triangle_it->idx[0];
+            triangle[1] = triangle_it->idx[1];
+            triangle[2] = triangle_it->idx[2];
+
+            triangle_t choosen_tr = TRIANGLE_IT (ot, triangle_it);
+
+            // NOTE: S_curr=t->next enforces res[] to be an ordered sequence.
+            struct linked_bool *S_prev = t;
+            struct linked_bool *S_curr = t->next;
+            while (S_curr != NULL) {
+                int i = lb_idx (S, S_curr);
+                subset_it_seek (triangle_it, i);
+                int candidate_tr_ids[3];
+                candidate_tr_ids[0] = triangle_it->idx[0];
+                candidate_tr_ids[1] = triangle_it->idx[1];
+                candidate_tr_ids[2] = triangle_it->idx[2];
+
+                int test = count_common_vertices_int (triangle, candidate_tr_ids);
+                if (test == 2) {
+                    // NOTE: Triangles share an edge or are the same.
+                    invalid_triangles[num_invalid++] = i;
+                    S_prev->next = S_curr->next;
+
+                    S_curr = S_prev->next;
+                    continue;
+                } else if (test == 0) {
+                    // NOTE: Triangles have no comon vertices, check if
+                    // edges intersect.
+                    triangle_t candidate_tr = TRIANGLE_IT (ot, triangle_it);
+                    if (!have_intersecting_segments (&choosen_tr, &candidate_tr)) {
+                        invalid_triangles[num_invalid++] = i;
+                        S_prev->next = S_curr->next;
+
+                        S_curr = S_prev->next;
+                        continue;
+                    }
+                }
+                S_prev = S_curr;
+                S_curr = S_curr->next;
+            }
+            t = t->next;
+        }
+
+        while (1) {
+            // Try to advance
+            if (t != NULL) {
+                invalid_restore_indx[l] = num_invalid;
+                res[l] = lb_idx(S, t);
+                l++;
+                seq_push_element (seq, res[l-1], l);
+                break;
+            }
+
+            l--;
+            if (l>=0) {
+                t = &S[res[l]];
+                struct linked_bool *S_prev = NULL;
+                struct linked_bool *S_curr = t;
+                int curr_invalid = invalid_restore_indx[l];
+                while (S_curr != NULL && curr_invalid<num_invalid) {
+                    while (lb_idx (S, S_curr)<invalid_triangles[curr_invalid]) {
+                        S_prev = S_curr;
+                        S_curr = S_curr->next;
+                    }
+
+                    while ((S_curr==NULL && curr_invalid<num_invalid) ||
+                           (curr_invalid<num_invalid &&
+                            lb_idx (S, S_curr)>invalid_triangles[curr_invalid])) {
+                        // NOTE: Should not happen because
+                        // invalid_triangles[i]>lb_idx(t,S) for i>curr_invalid
+                        // so previous loop must execute at least once.
+                        assert (S_prev != NULL);
+                        S_prev->next = &S[invalid_triangles[curr_invalid]];
+                        S_prev->next->next = S_curr;
+
+                        S_prev = S_prev->next;
+                        curr_invalid++;
+                    }
+                }
+                num_invalid = invalid_restore_indx[l];
+                t = t->next;
+            } else {
+                break;
+            }
+        }
+    }
+    seq_timing_end (seq);
+}
+
 bool has_fixed_point (int n, int *perm_a, int *perm_b)
 {
     int i;
@@ -1621,19 +1782,6 @@ void compute_all_permutations (int n, int *res)
         }
         found++;
     }
-}
-
-void seq_push_element (struct sequence_store_t *stor,
-                       int val, uint32_t level)
-{
-    while (stor->last_l > level - 1) {
-        //printf ("(%d) Pop\n", stor->last_l);
-        complete_and_pop_node (stor, stor->last_l);
-        stor->last_l--;
-    }
-    stor->last_l++;
-    //printf ("(%d) Push %d\n", level, val);
-    push_partial_node (stor, val);
 }
 
 void edges_from_permutation (int *all_perms, int perm, int n, int *e);

@@ -15,8 +15,6 @@
 #define OT_DB_IMPLEMENTATION
 #include "ot_db.h"
 
-#define N 9
-
 void get_thrackle_for_each_ot (int n, int k)
 {
     uint64_t id = 0;
@@ -55,16 +53,20 @@ void get_thrackle_for_each_ot (int n, int k)
     free (triangle_it);
 }
 
-void count_thrackles (int k)
+// This version does an exhaustive search over all binomial(binomial(n,3),k)
+// possible sets. Only useful for checking the correctness of other
+// implementations.
+void count_thrackles (int n, int k)
 {
     uint64_t id = 0;
-    order_type_t *ot = order_type_new (N, NULL);
+    open_database (n);
+    order_type_t *ot = order_type_new (n, NULL);
     triangle_set_t *curr_set = malloc (triangle_set_size (k));
     curr_set->k = k;
 
     db_seek (ot, id);
 
-    subset_it_t *triangle_it = subset_it_new (N, 3, NULL);
+    subset_it_t *triangle_it = subset_it_new (n, 3, NULL);
     subset_it_t *triangle_set_it = subset_it_new (triangle_it->size, k, NULL);
 
     subset_it_precompute (triangle_it);
@@ -109,18 +111,19 @@ void count_thrackles (int k)
 
 void print_differing_triples (int n, uint64_t ot_id_1, uint64_t ot_id_2)
 {
-    order_type_t *ot_1 = order_type_new (N, NULL);
+    open_database (n);
+    order_type_t *ot_1 = order_type_new (n, NULL);
     db_seek (ot_1, ot_id_1);
     ot_triples_t *ot_triples_1 = ot_triples_new (ot_1, NULL);
 
-    order_type_t *ot_2 = order_type_new (N, NULL);
+    order_type_t *ot_2 = order_type_new (n, NULL);
     db_seek (ot_2, ot_id_2);
     ot_triples_t *ot_triples_2 = ot_triples_new (ot_2, NULL);
 
     int32_t trip_id = 0;
     while (trip_id < ot_triples_1->size) {
         if (ot_triples_1->triples[trip_id] != ot_triples_2->triples[trip_id]) {
-            print_triple (N, trip_id);
+            print_triple (n, trip_id);
         }
         trip_id++;
     }
@@ -238,6 +241,31 @@ int* get_all_thrackles_cached (int n, int k, uint32_t ot_id)
     return res;
 }
 
+void print_info (int n, uint64_t ot_id)
+{
+    order_type_t *ot = order_type_new (n, NULL);
+    if (ot_id == 0 && n>10) {
+        convex_ot_searchable (ot);
+    } else {
+        assert (n<=10);
+        open_database (n);
+        db_seek (ot, ot_id);
+    }
+
+    mem_pool_t temp_pool = {0};
+    struct sequence_store_t seq = new_sequence_store (NULL, &temp_pool);
+    thrackle_search_tree (n, ot, &seq);
+
+    printf ("Levels: %d + root\n", seq.final_height);
+    printf ("Nodes: %d + root\n", seq.num_nodes-1);
+    printf ("Nodes per level: ");
+    print_uint_array (seq.nodes_per_len, seq.final_height);
+    printf ("Time: %f ms\n", seq.time);
+
+    seq_tree_end (&seq);
+    mem_pool_destroy (&temp_pool);
+}
+
 int* get_all_thrackles_convex_position (int n, int k, int *num_found)
 {
     char filename[200];
@@ -344,18 +372,9 @@ void print_triangle_sizes_for_thrackles_in_convex_position (int n)
 
 int main ()
 {
-    //if (!open_database (N)){
-    //    printf ("Could not open database\n");
-    //    return -1;
-    //}
-
-    //if (mkdir (".cache", 0775) == 0) {
-    //    printf ("Creating .cache dir\n");
-    //}
-
-    //get_thrackle_for_each_ot (8, 8);
+    //get_thrackle_for_each_ot (8, 9);
     //count_thrackles (8);
-    //print_differing_triples (N, 0, 1);
+    //print_differing_triples (n, 0, 1);
     //print_edge_disjoint_sets (8, 8);
     //generate_edge_disjoint_triangle_sets (10, 13);
     //fast_edge_disjoint_sets (9, 10);
@@ -365,18 +384,20 @@ int main ()
     //matching_decompositions_over_K_n_n (6, NULL, &seq);
     //seq_tree_end (&seq);
 
-    //int n = 9, k = 12;
+    //int n = 8, k = 9;
     //order_type_t *ot = order_type_new (n, NULL);
     //convex_ot_searchable (ot);
     //int res[k];
     //bool found = single_thrackle (n, k, ot, res);
-    //array_print (res, k);
     //if (!found) {
     //    printf ("None\n");
+    //} else {
+    //    array_print (res, k);
     //}
 
     //get_all_thrackles (10, 12, 0, NULL);
-    print_triangle_sizes_for_thrackles_in_convex_position (10);
+    //print_triangle_sizes_for_thrackles_in_convex_position (10);
+    print_info (9, 0);
 
     //int count = count_2_regular_subgraphs_of_k_n_n (5);
     //printf ("Total: %d\n", count);

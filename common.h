@@ -174,6 +174,16 @@ void array_print (int *arr, int n)
     printf ("%d\n", arr[i]);
 }
 
+void print_uint_array (uint32_t *arr, int n)
+{
+    printf ("[");
+    int i;
+    for (i=0; i<n-1; i++) {
+        printf ("%"PRIu32", ", arr[i]);
+    }
+    printf ("%"PRIu32"]\n", arr[i]);
+}
+
 void swap (int*a, int*b)
 {
     *a = *a^*b;
@@ -444,6 +454,9 @@ struct _bin_info_t {
 
 typedef struct _bin_info_t bin_info_t;
 
+// NOTE: All allocations are zero initialized!
+// TODO: For performance reasons we may want a version that leaves everything
+// uninitialized.
 #define mem_pool_push_struct(pool, type) mem_pool_push_size(pool, sizeof(type))
 #define mem_pool_push_array(pool, n, type) mem_pool_push_size(pool, (n)*sizeof(type))
 void* mem_pool_push_size (mem_pool_t *pool, int size)
@@ -452,7 +465,7 @@ void* mem_pool_push_size (mem_pool_t *pool, int size)
         int new_bin_size = MAX (MAX (MEM_POOL_MIN_BIN_SIZE, pool->min_bin_size), size);
         void *new_bin;
         bin_info_t *new_info;
-        if ((new_bin = malloc (new_bin_size + sizeof(bin_info_t)))) {
+        if ((new_bin = calloc (new_bin_size + sizeof(bin_info_t), 1))) {
             new_info = (bin_info_t*)((uint8_t*)new_bin + new_bin_size);
         } else {
             printf ("Malloc failed.\n");
