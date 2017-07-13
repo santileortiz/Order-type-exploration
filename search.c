@@ -269,7 +269,12 @@ void print_info (int n, uint64_t ot_id)
 void average_search_nodes (int n)
 {
     mem_pool_t temp_pool = {0};
-    order_type_t *ot = order_type_new (n, NULL);
+    // TODO: move order_type_new() to use a mem_pool_t instead of a
+    // memory_stack_t.
+    order_type_t *ot = mem_pool_push_size (&temp_pool, order_type_size(n));
+    ot->n = n;
+    ot->id = -1;
+
     assert (n<=10);
     open_database (n);
     uint32_t ot_id = 0;
@@ -278,12 +283,14 @@ void average_search_nodes (int n)
     float nodes = 0;
 
     while (!db_is_eof()) {
+        pool_temp_marker_t mrk = mem_pool_begin_temporary_memory (&temp_pool);
         struct sequence_store_t seq = new_sequence_store (NULL, &temp_pool);
         thrackle_search_tree (n, ot, &seq);
         nodes += seq.num_nodes;
-        printf ("%"PRIu32": %"PRIu32"\n", ot->id, seq.num_nodes);
+        //printf ("%"PRIu32": %"PRIu32"\n", ot->id, seq.num_nodes);
         seq_tree_end (&seq);
         db_next(ot);
+        mem_pool_end_temporary_memory (mrk);
     }
     printf ("Average nodes: %f\n", nodes/((float)__g_db_data.num_order_types));
     mem_pool_destroy (&temp_pool);
@@ -421,7 +428,7 @@ int main ()
     //get_all_thrackles (10, 12, 0, NULL);
     //print_triangle_sizes_for_thrackles_in_convex_position (10);
     //print_info (8, 0);
-    average_search_nodes (7);
+    average_search_nodes (8);
 
     //int count = count_2_regular_subgraphs_of_k_n_n (5);
     //printf ("Total: %d\n", count);
