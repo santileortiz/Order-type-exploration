@@ -266,6 +266,29 @@ void print_info (int n, uint64_t ot_id)
     mem_pool_destroy (&temp_pool);
 }
 
+void average_search_nodes (int n)
+{
+    mem_pool_t temp_pool = {0};
+    order_type_t *ot = order_type_new (n, NULL);
+    assert (n<=10);
+    open_database (n);
+    uint32_t ot_id = 0;
+    db_seek (ot, ot_id);
+
+    float nodes = 0;
+
+    while (!db_is_eof()) {
+        struct sequence_store_t seq = new_sequence_store (NULL, &temp_pool);
+        thrackle_search_tree (n, ot, &seq);
+        nodes += seq.num_nodes;
+        //printf ("%"PRIu32": %"PRIu32"\n", ot->id, seq.num_nodes);
+        seq_tree_end (&seq);
+        db_next(ot);
+    }
+    printf ("Average nodes: %f\n", nodes/((float)__g_db_data.num_order_types));
+    mem_pool_destroy (&temp_pool);
+}
+
 int* get_all_thrackles_convex_position (int n, int k, int *num_found)
 {
     char filename[200];
@@ -397,7 +420,8 @@ int main ()
 
     //get_all_thrackles (10, 12, 0, NULL);
     //print_triangle_sizes_for_thrackles_in_convex_position (10);
-    print_info (9, 0);
+    //print_info (8, 0);
+    average_search_nodes (8);
 
     //int count = count_2_regular_subgraphs_of_k_n_n (5);
     //printf ("Total: %d\n", count);
