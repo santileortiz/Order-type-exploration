@@ -281,7 +281,7 @@ void average_search_nodes (int n)
         struct sequence_store_t seq = new_sequence_store (NULL, &temp_pool);
         thrackle_search_tree (n, ot, &seq);
         nodes += seq.num_nodes;
-        //printf ("%"PRIu32": %"PRIu32"\n", ot->id, seq.num_nodes);
+        printf ("%"PRIu32": %"PRIu32"\n", ot->id, seq.num_nodes);
         seq_tree_end (&seq);
         db_next(ot);
     }
@@ -421,7 +421,7 @@ int main ()
     //get_all_thrackles (10, 12, 0, NULL);
     //print_triangle_sizes_for_thrackles_in_convex_position (10);
     //print_info (8, 0);
-    average_search_nodes (8);
+    average_search_nodes (7);
 
     //int count = count_2_regular_subgraphs_of_k_n_n (5);
     //printf ("Total: %d\n", count);

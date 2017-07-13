@@ -634,24 +634,22 @@ void subset_it_seek (subset_it_t *it, uint64_t id)
     }
 }
 
-int subset_it_next_explicit (subset_it_t *it, int *idx)
+bool subset_it_next_explicit (int n, int k, int *idx)
 {
-    int j=it->k;
-    it->id++;
+    int j=k;
     while (0<j) {
         j--;
-        if (idx[j] < it->n-(it->k-j)) {
+        if (idx[j] < n-(k-j)) {
             idx[j]++;
             // reset indexes counting from changed one
-            while (j<it->k-1) {
+            while (j<k-1) {
                 idx[j+1] = idx[j]+1;
                 j++;
             }
-            return 1;
+            return true;
         }
     }
-    assert (it->id == it->size);
-    return 0;
+    return false;
 }
 
 int subset_it_next (subset_it_t *it) 
@@ -669,7 +667,8 @@ int subset_it_next (subset_it_t *it)
             return 0;
         }
     } else {
-        return subset_it_next_explicit (it, it->idx);
+        it->id++;
+        return subset_it_next_explicit (it->n, it->k, it->idx);
     }
 }
 
@@ -689,7 +688,18 @@ void subset_it_prev (subset_it_t *it)
     }
 }
 
-// NOTE: This function resets the iterator to id=0.
+// NOTE: res[] has to be of size binomial(n,k)*k
+#define subset_it_computed_size(n,k) (binomial(n,k)*k*sizeof(int))
+void subset_it_compute_all (int n, int k, int *res)
+{
+    int temp[k];
+    subset_it_idx_for_id (0, n, temp, k);
+    do{
+        memcpy (res, temp, k*sizeof(int));
+        res += k;
+    } while (subset_it_next_explicit (n, k, temp));
+}
+
 int subset_it_precompute (subset_it_t *it)
 {
     if (it->precomp) {
@@ -697,7 +707,6 @@ int subset_it_precompute (subset_it_t *it)
     }
 
     int *precomp;
-
     if (it->storage) {
         precomp = push_array (it->storage, it->size*it->k, int);
     } else {
@@ -705,21 +714,11 @@ int subset_it_precompute (subset_it_t *it)
     }
 
     if (precomp) {
-        subset_it_seek (it, 0);
-        int *ptr = precomp;
-        do {
-            int k;
-            for (k=0; k<it->k; k++) {
-                *ptr = it->idx[k];
-                ptr++;
-            }
-        } while (subset_it_next (it));
-
+        subset_it_compute_all (it->n, it->k, precomp);
         if (!it->storage) {
             free (it->idx);
         }
-        it->id = 0;
-        it->idx = precomp;
+        it->idx = &precomp[it->id*it->k];
         it->precomp = precomp;
         return 1;
     } else {
@@ -1593,10 +1592,7 @@ void thrackle_search_tree (int n, order_type_t *ot, struct sequence_store_t *seq
     assert (n==ot->n);
     int l = 1; // Tree level
 
-    subset_it_t *triangle_it = subset_it_new (n, 3, NULL);
-    subset_it_precompute (triangle_it);
-    int total_triangles = triangle_it->size;
-
+    int total_triangles = binomial (n,3);
     struct linked_bool S[total_triangles];
     int i;
     for (i=0; i<total_triangles-1; i++) {
@@ -1615,6 +1611,10 @@ void thrackle_search_tree (int n, order_type_t *ot, struct sequence_store_t *seq
         k = thrackle_size_upper_bound (n);
     }
 
+    mem_pool_t temp_pool = {0};
+    int *all_triangles = mem_pool_push_size (&temp_pool, subset_it_computed_size(n,k));
+    subset_it_compute_all (n, 3, all_triangles);
+
     seq_tree_extents (seq, total_triangles, k);
     seq_push_element (seq, 0, 1);
 
@@ -1627,25 +1627,15 @@ void thrackle_search_tree (int n, order_type_t *ot, struct sequence_store_t *seq
     while (l > 0) {
         // Compute S
         if (t != NULL) {
-            subset_it_seek (triangle_it, lb_idx (S, t));
-            int triangle[3];
-            triangle[0] = triangle_it->idx[0];
-            triangle[1] = triangle_it->idx[1];
-            triangle[2] = triangle_it->idx[2];
-
-            triangle_t choosen_tr = TRIANGLE_IT (ot, triangle_it);
+            int *triangle = all_triangles + 3*lb_idx(S, t);
+            triangle_t choosen_tr = TRIANGLE_IDXS (ot, triangle);
 
             // NOTE: S_curr=t->next enforces res[] to be an ordered sequence.
             struct linked_bool *S_prev = t;
             struct linked_bool *S_curr = t->next;
             while (S_curr != NULL) {
                 int i = lb_idx (S, S_curr);
-                subset_it_seek (triangle_it, i);
-                int candidate_tr_ids[3];
-                candidate_tr_ids[0] = triangle_it->idx[0];
-                candidate_tr_ids[1] = triangle_it->idx[1];
-                candidate_tr_ids[2] = triangle_it->idx[2];
-
+                int *candidate_tr_ids = all_triangles + i*3;
                 int test = count_common_vertices_int (triangle, candidate_tr_ids);
                 if (test == 2) {
                     // NOTE: Triangles share an edge or are the same.
@@ -1657,7 +1647,7 @@ void thrackle_search_tree (int n, order_type_t *ot, struct sequence_store_t *seq
                 } else if (test == 0) {
                     // NOTE: Triangles have no comon vertices, check if
                     // edges intersect.
-                    triangle_t candidate_tr = TRIANGLE_IT (ot, triangle_it);
+                    triangle_t candidate_tr = TRIANGLE_IDXS (ot, candidate_tr_ids);
                     if (!have_intersecting_segments (&choosen_tr, &candidate_tr)) {
                         invalid_triangles[num_invalid++] = i;
                         S_prev->next = S_curr->next;
@@ -1716,6 +1706,7 @@ void thrackle_search_tree (int n, order_type_t *ot, struct sequence_store_t *seq
         }
     }
     seq_timing_end (seq);
+    mem_pool_destroy (&temp_pool);
 }
 
 bool has_fixed_point (int n, int *perm_a, int *perm_b)
@@ -2061,7 +2052,7 @@ uint32_t count_2_regular_subgraphs_of_k_n_n (int n, int_dyn_arr_t *edges_out)
         bool is_regular = true;
         int edges[4*n]; // 2vertices * 2partite * n
         edges_from_edge_subset (e_subs_2_n, n, edges);
-        subset_it_next_explicit (&edge_subset_it, e_subs_2_n);
+        subset_it_next_explicit (edge_subset_it.n, edge_subset_it.k, e_subs_2_n);
 
         int *e;
         for (e=edges; e < edges+ARRAY_SIZE(edges); e++) {
