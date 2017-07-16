@@ -1,6 +1,7 @@
 #if !defined(COMMON_H)
 #include <inttypes.h>
 #include <assert.h>
+#include <stdlib.h>
 typedef enum {false, true} bool;
 
 #define ARRAY_SIZE(arr) (sizeof(arr)/sizeof((arr)[0]))
@@ -186,9 +187,9 @@ void print_uint_array (uint32_t *arr, int n)
 
 void swap (int*a, int*b)
 {
-    *a = *a^*b;
-    *b = *a^*b;
-    *a = *a^*b;
+    int temp = *a;
+    *a = *b;
+    *b = temp;
 }
 
 // Merge sort implementation
@@ -290,6 +291,31 @@ void FUNCNAME (TYPE *arr, int n)                            \
             arr[i] = res[i];                                \
         }                                                   \
     }                                                       \
+}
+
+// Function that returns an integer in [min,max] with a uniform distribution.
+// NOTE: Remember to call srand() ONCE before using this.
+#define rand_int_max(max) rand_int_range(0,max)
+uint32_t rand_int_range (uint32_t min, uint32_t max)
+{
+    assert (max < RAND_MAX);
+    assert (min < max);
+    uint32_t res;
+    uint32_t valid_range = RAND_MAX-(RAND_MAX%(max-min+1));
+    do {
+        res = rand ();
+    } while (res >= valid_range);
+    return min + res/(valid_range/(max-min+1));
+}
+
+// NOTE: Remember to call srand() ONCE before using this.
+void fisher_yates_shuffle (int *arr, int n)
+{
+    int i;
+    for (i=n-1; i>0; i--) {
+        int j = rand_int_max (i);
+        swap (arr+i, arr+j);
+    }
 }
 
 // TODO: Make this zero initialized in all cases

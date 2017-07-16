@@ -1587,7 +1587,9 @@ backtrack:
 // TODO: Is this function really necessary? Finish implementing sequence_store_t
 // so seq_push_sequence() builds a tree too, then test if there is actually a
 // signifficant difference between this and all_thrackles().
-void thrackle_search_tree (int n, order_type_t *ot, struct sequence_store_t *seq)
+#define thrackle_search_tree(n,ot,seq) thrackle_search_tree_full(n,ot,seq,NULL)
+void thrackle_search_tree_full (int n, order_type_t *ot, struct sequence_store_t *seq,
+                                int *triangle_order)
 {
     assert (n==ot->n);
     int l = 1; // Tree level
@@ -1612,8 +1614,20 @@ void thrackle_search_tree (int n, order_type_t *ot, struct sequence_store_t *seq
     }
 
     mem_pool_t temp_pool = {0};
-    int *all_triangles = mem_pool_push_size (&temp_pool, subset_it_computed_size(n,k));
-    subset_it_compute_all (n, 3, all_triangles);
+    int *all_triangles, *lex_triangles;
+    lex_triangles = mem_pool_push_size (&temp_pool, subset_it_computed_size(n,3));
+    subset_it_compute_all (n, 3, lex_triangles);
+    if (triangle_order == NULL) {
+        all_triangles = lex_triangles;
+    } else {
+        all_triangles = mem_pool_push_size (&temp_pool, subset_it_computed_size(n,3));
+        int *ptr = all_triangles;
+        while (ptr < all_triangles+total_triangles*3) {
+            memcpy (ptr, lex_triangles+triangle_order[0]*3, 3*sizeof(int));
+            triangle_order++;
+            ptr += 3;
+        }
+    }
 
     seq_tree_extents (seq, total_triangles, k);
     seq_push_element (seq, 0, 1);

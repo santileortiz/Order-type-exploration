@@ -241,7 +241,8 @@ int* get_all_thrackles_cached (int n, int k, uint32_t ot_id)
     return res;
 }
 
-void print_info (int n, uint64_t ot_id)
+#define print_info(n,ot_id) print_info_order (n,ot_id,NULL)
+void print_info_order (int n, uint64_t ot_id, int *triangle_order)
 {
     order_type_t *ot = order_type_new (n, NULL);
     if (ot_id == 0 && n>10) {
@@ -254,7 +255,7 @@ void print_info (int n, uint64_t ot_id)
 
     mem_pool_t temp_pool = {0};
     struct sequence_store_t seq = new_sequence_store (NULL, &temp_pool);
-    thrackle_search_tree (n, ot, &seq);
+    thrackle_search_tree_full (n, ot, &seq, triangle_order);
 
     printf ("Levels: %d + root\n", seq.final_height);
     printf ("Nodes: %d + root\n", seq.num_nodes-1);
@@ -266,7 +267,25 @@ void print_info (int n, uint64_t ot_id)
     mem_pool_destroy (&temp_pool);
 }
 
-void average_search_nodes (int n)
+void init_random_array (int *arr, int size)
+{
+    int i;
+    for (i=0; i<size; i++) {
+        arr[i] = i;
+    }
+    srand (time(NULL));
+    fisher_yates_shuffle (arr, size);
+}
+
+void print_info_random_order (int n, uint64_t ot_id)
+{
+    int rand_arr[binomial(n,3)];
+    init_random_array (rand_arr, ARRAY_SIZE(rand_arr));
+    print_info_order (n, ot_id, rand_arr);
+}
+
+#define average_search_nodes_lexicographic(n) average_search_nodes(n, NULL)
+void average_search_nodes (int n, int *triangle_order)
 {
     mem_pool_t temp_pool = {0};
     // TODO: move order_type_new() to use a mem_pool_t instead of a
@@ -285,7 +304,7 @@ void average_search_nodes (int n)
     while (!db_is_eof()) {
         pool_temp_marker_t mrk = mem_pool_begin_temporary_memory (&temp_pool);
         struct sequence_store_t seq = new_sequence_store (NULL, &temp_pool);
-        thrackle_search_tree (n, ot, &seq);
+        thrackle_search_tree_full (n, ot, &seq, triangle_order);
         nodes += seq.num_nodes;
         //printf ("%"PRIu32": %"PRIu32"\n", ot->id, seq.num_nodes);
         seq_tree_end (&seq);
@@ -294,6 +313,13 @@ void average_search_nodes (int n)
     }
     printf ("Average nodes: %f\n", nodes/((float)__g_db_data.num_order_types));
     mem_pool_destroy (&temp_pool);
+}
+
+void average_search_nodes_random (int n)
+{
+    int rand_arr[binomial(n,3)];
+    init_random_array (rand_arr, ARRAY_SIZE(rand_arr));
+    average_search_nodes (n, rand_arr);
 }
 
 int* get_all_thrackles_convex_position (int n, int k, int *num_found)
@@ -428,7 +454,8 @@ int main ()
     //get_all_thrackles (10, 12, 0, NULL);
     //print_triangle_sizes_for_thrackles_in_convex_position (10);
     //print_info (8, 0);
-    average_search_nodes (8);
+    //average_search_nodes_lexicographic (8);
+    print_info_random_order (10, 0);
 
     //int count = count_2_regular_subgraphs_of_k_n_n (5);
     //printf ("Total: %d\n", count);
