@@ -31,7 +31,8 @@ void get_thrackle_for_each_ot (int n, int k)
 
     subset_it_precompute (triangle_it);
     //int total_triangles = binomial (n, 3);
-    bool found = single_thrackle (n, k, ot, curr_set);
+    bool found = false;
+    //bool found = single_thrackle (n, k, ot, curr_set);
 
     while (!db_is_eof ()) {
         printf ("%ld: ", id);
@@ -46,7 +47,7 @@ void get_thrackle_for_each_ot (int n, int k)
         db_next (ot);
         triangle_set_from_ids (ot, n, curr_set, k, triangle_set);
         if (!is_thrackle(triangle_set)) {
-            found = single_thrackle (n, k, ot, curr_set);
+            //found = single_thrackle (n, k, ot, curr_set);
         }
         id++;
     }
@@ -241,18 +242,23 @@ int* get_all_thrackles_cached (int n, int k, uint32_t ot_id)
     return res;
 }
 
-#define print_info(n,ot_id) print_info_order (n,ot_id,NULL)
-void print_info_order (int n, uint64_t ot_id, int *triangle_order)
+order_type_t* order_type_from_id (int n, uint64_t ot_id)
 {
-    order_type_t *ot = order_type_new (n, NULL);
+    order_type_t *res = order_type_new (n, NULL);
     if (ot_id == 0 && n>10) {
-        convex_ot_searchable (ot);
+        convex_ot_searchable (res);
     } else {
         assert (n<=10);
         open_database (n);
-        db_seek (ot, ot_id);
+        db_seek (res, ot_id);
     }
+    return res;
+}
 
+#define print_info(n,ot_id) print_info_order (n,ot_id,NULL)
+void print_info_order (int n, uint64_t ot_id, int *triangle_order)
+{
+    order_type_t *ot = order_type_from_id (n, ot_id);
     mem_pool_t temp_pool = {0};
     struct sequence_store_t seq = new_sequence_store (NULL, &temp_pool);
     thrackle_search_tree_full (n, ot, &seq, triangle_order);
@@ -458,7 +464,16 @@ int main ()
     //print_triangle_sizes_for_thrackles_in_convex_position (10);
     //print_info (8, 0);
     //average_search_nodes_lexicographic (8);
-    print_info_random_order (6, 0);
+    //print_info_random_order (6, 0);
+    
+    int n=8, k=8, nodes=0;
+    int res [k];
+    order_type_t *ot = order_type_from_id (n, 0);
+    if (single_thrackle_slow (n, k, ot, res, &nodes)) {
+    //if (single_thrackle (n, k, ot, res, &nodes)) {
+        array_print (res, k);
+        printf ("nodes: %d\n", nodes);
+    }
 
     //int count = count_2_regular_subgraphs_of_k_n_n (5);
     //printf ("Total: %d\n", count);

@@ -1396,7 +1396,148 @@ int count_common_vertices_int (int *a, int *b)
     return res;
 }
 
-bool single_thrackle (int n, int k, order_type_t *ot, int *res)
+// This is for demonstration purposes only, shows what happens when we don't
+// enforce the condition of sequences being in ascending order.
+bool single_thrackle_slow (int n, int k, order_type_t *ot, int *res, int *count)
+{
+    assert (n==ot->n);
+    int l = 1; // Tree level
+
+    subset_it_t *triangle_it = subset_it_new (n, 3, NULL);
+    subset_it_precompute (triangle_it);
+    int total_triangles = triangle_it->size;
+
+    struct linked_bool S[total_triangles];
+    int i;
+    for (i=0; i<total_triangles-1; i++) {
+        S[i].next = &S[i+1];
+    }
+    S[i].next = NULL;
+    struct linked_bool *t = &S[0];
+    struct linked_bool *S_start = &S[0];
+
+    int invalid_triangles[total_triangles];
+    int num_invalid = 0;
+
+    res[0] = 0;
+    int invalid_restore_indx[k];
+    invalid_restore_indx[0] = 0;
+
+    while (l > 0) {
+        if (l>=k) {
+            return true;
+        } else {
+            // Compute S
+            subset_it_seek (triangle_it, lb_idx (S, t));
+            int triangle[3];
+            triangle[0] = triangle_it->idx[0];
+            triangle[1] = triangle_it->idx[1];
+            triangle[2] = triangle_it->idx[2];
+
+            triangle_t choosen_tr = TRIANGLE_IT (ot, triangle_it);
+
+            if (t != NULL) {
+                // NOTE: S_curr=t->next enforces res[] to be an ordered sequence.
+                struct linked_bool *S_prev = NULL;
+                struct linked_bool *S_curr = S_start;
+                while (S_curr != NULL) {
+                    int i = lb_idx (S, S_curr);
+                    subset_it_seek (triangle_it, i);
+                    int candidate_tr_ids[3];
+                    candidate_tr_ids[0] = triangle_it->idx[0];
+                    candidate_tr_ids[1] = triangle_it->idx[1];
+                    candidate_tr_ids[2] = triangle_it->idx[2];
+
+                    int test = count_common_vertices_int (triangle, candidate_tr_ids);
+                    if (test == 2) {
+                        // NOTE: Triangles share an edge or are the same.
+                        invalid_triangles[num_invalid++] = i;
+
+                        if (S_prev == NULL) {
+                            S_start = S_curr->next;
+                        } else {
+                            S_prev->next = S_curr->next;
+                        }
+                        S_curr = S_curr->next;
+                        continue;
+                    } else if (test == 0) {
+                        // NOTE: Triangles have no comon vertices, check if
+                        // edges intersect.
+                        triangle_t candidate_tr = TRIANGLE_IT (ot, triangle_it);
+                        if (!have_intersecting_segments (&choosen_tr, &candidate_tr)) {
+                            invalid_triangles[num_invalid++] = i;
+
+                            if (S_prev == NULL) {
+                                S_start = S_curr->next;
+                            } else {
+                                S_prev->next = S_curr->next;
+                            }
+                            S_curr = S_curr->next;
+                            continue;
+                        }
+                    }
+                    S_prev = S_curr;
+                    S_curr = S_curr->next;
+                }
+                t = S_start;
+            }
+        }
+
+        while (1) {
+            // Try to advance
+            if (t != NULL) {
+                invalid_restore_indx[l] = num_invalid;
+                res[l] = lb_idx(S, t);
+                l++;
+                (*count)++;
+                break;
+            }
+
+            // Backtrack
+            l--;
+            if (l>=0) {
+                t = &S[res[l]];
+                struct linked_bool *S_prev = NULL;
+                struct linked_bool *S_curr = S_start;
+                int curr_invalid = invalid_restore_indx[l];
+                while (curr_invalid<num_invalid) {
+                    if (S_curr != NULL) {
+                        while (lb_idx (S, S_curr)<invalid_triangles[curr_invalid]) {
+                            S_prev = S_curr;
+                            S_curr = S_curr->next;
+                        }
+                    }
+
+                    while ((S_curr==NULL && curr_invalid<num_invalid) ||
+                           (curr_invalid<num_invalid &&
+                            lb_idx (S, S_curr)>invalid_triangles[curr_invalid])) {
+                        if (S_prev == NULL) {
+                            S_start = &S[invalid_triangles[curr_invalid]];
+                            S_prev = S_start;
+                            S_start->next = S_curr;
+                        } else {
+                            S_prev->next = &S[invalid_triangles[curr_invalid]];
+                            S_prev->next->next = S_curr;
+                            S_prev = S_prev->next;
+                        }
+                        curr_invalid++;
+                    }
+
+                    if (S_curr == NULL) {
+                        break;
+                    }
+                }
+                num_invalid = invalid_restore_indx[l];
+                t = t->next;
+            } else {
+                break;
+            }
+        }
+    }
+    return false;
+}
+
+bool single_thrackle (int n, int k, order_type_t *ot, int *res, int *count)
 {
     assert (n==ot->n);
     int l = 1; // Tree level
@@ -1477,6 +1618,7 @@ bool single_thrackle (int n, int k, order_type_t *ot, int *res)
             if (t != NULL) {
                 invalid_restore_indx[l] = num_invalid;
                 res[l] = lb_idx(S, t);
+                (*count)++;
                 l++;
                 break;
             }
