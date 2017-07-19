@@ -916,6 +916,72 @@ backtrack_node_t* seq_tree_end (struct sequence_store_t *stor)
     return ret;
 }
 
+/* Prints all sequences on a backtrack tree of length len. A sequence
+/ necessarily ends in a node without children. See examples below.
+/
+/                   R        -1
+/                 / | \
+/                1  2  3      0
+/               /|  |  |\
+/              1 5  4  7 1    1
+/             / /|    /|\
+/            5 2 9   3 5 2    2
+/
+/ seq_tree_print_sequences (R, 1):
+/  <Nothing>
+/ seq_tree_print_sequences (R, 2):
+/  [2,4]
+/  [3,1]
+/ seq_tree_print_sequences (R, 3):
+/  [1,1,5]
+/  [1,5,2]
+/  [1,5,9]
+/  [3,7,3]
+/  [3,7,5]
+/  [3,7,2]
+*/
+void seq_tree_print_sequences (backtrack_node_t *root, int len)
+{
+    int l = 1;
+    int seq[len];
+    backtrack_node_t *seq_nodes[len];
+    seq_nodes[0] = root;
+    int curr_child_id[len];
+
+    backtrack_node_t *curr = root->children[0];
+    seq[0] = curr->val;
+    curr_child_id[0] = 0;
+    curr_child_id[1] = 0;
+
+    while (l>0) {
+        if (l == len && curr->num_children == 0) {
+            array_print (seq, l);
+        }
+
+        while (1) {
+            if (curr->num_children != 0 && curr_child_id[l] < curr->num_children) {
+                seq_nodes[l] = curr;
+                curr = curr->children[curr_child_id[l]];
+                seq[l] = curr->val;
+
+                if (l < len-1) {
+                    curr_child_id[l+1] = 0;
+                }
+                l++;
+                break;
+            }
+
+            l--;
+            if (l >= 0) {
+                curr = seq_nodes[l];
+                curr_child_id[l]++;
+            } else {
+                break;
+            }
+        }
+    }
+}
+
 void seq_timing_begin (struct sequence_store_t *stor)
 {
     clock_gettime (CLOCK_MONOTONIC, &stor->begin);

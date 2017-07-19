@@ -257,13 +257,16 @@ void print_info_order (int n, uint64_t ot_id, int *triangle_order)
     struct sequence_store_t seq = new_sequence_store (NULL, &temp_pool);
     thrackle_search_tree_full (n, ot, &seq, triangle_order);
 
-    printf ("Levels: %d + root\n", seq.final_height);
+    uint32_t h = seq.final_height;
+    printf ("Levels: %d + root\n", h);
     printf ("Nodes: %d + root\n", seq.num_nodes-1);
     printf ("Nodes per level: ");
     print_uint_array (seq.nodes_per_len, seq.final_height);
     printf ("Time: %f ms\n", seq.time);
 
-    seq_tree_end (&seq);
+    backtrack_node_t *tree = seq_tree_end (&seq);
+    seq_tree_print_sequences (tree, h);
+
     mem_pool_destroy (&temp_pool);
 }
 
@@ -455,7 +458,7 @@ int main ()
     //print_triangle_sizes_for_thrackles_in_convex_position (10);
     //print_info (8, 0);
     //average_search_nodes_lexicographic (8);
-    print_info_random_order (10, 0);
+    print_info_random_order (6, 0);
 
     //int count = count_2_regular_subgraphs_of_k_n_n (5);
     //printf ("Total: %d\n", count);
