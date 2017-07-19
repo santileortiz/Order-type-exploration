@@ -1537,7 +1537,7 @@ bool single_thrackle_slow (int n, int k, order_type_t *ot, int *res, int *count)
     return false;
 }
 
-bool single_thrackle (int n, int k, order_type_t *ot, int *res, int *count)
+bool single_thrackle (int n, int k, order_type_t *ot, int *res)
 {
     assert (n==ot->n);
     int l = 1; // Tree level
@@ -1618,7 +1618,6 @@ bool single_thrackle (int n, int k, order_type_t *ot, int *res, int *count)
             if (t != NULL) {
                 invalid_restore_indx[l] = num_invalid;
                 res[l] = lb_idx(S, t);
-                (*count)++;
                 l++;
                 break;
             }
