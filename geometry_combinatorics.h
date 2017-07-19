@@ -1424,6 +1424,9 @@ bool single_thrackle_slow (int n, int k, order_type_t *ot, int *res, int *count)
     invalid_restore_indx[0] = 0;
 
     while (l > 0) {
+        if (l>=k-1) {
+            array_print (res, k-1);
+        }
         if (l>=k) {
             return true;
         } else {
