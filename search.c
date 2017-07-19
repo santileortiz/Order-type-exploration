@@ -31,7 +31,10 @@ void get_thrackle_for_each_ot (int n, int k)
 
     subset_it_precompute (triangle_it);
     //int total_triangles = binomial (n, 3);
-    bool found = single_thrackle (n, k, ot, curr_set);
+    int nodes = 0, searches = 1;
+    float avg_nodes = 0;
+    bool found = single_thrackle_slow (n, k, ot, curr_set, &nodes);
+    avg_nodes += nodes;
 
     while (!db_is_eof ()) {
         printf ("%ld: ", id);
@@ -46,10 +49,14 @@ void get_thrackle_for_each_ot (int n, int k)
         db_next (ot);
         triangle_set_from_ids (ot, n, curr_set, k, triangle_set);
         if (!is_thrackle(triangle_set)) {
-            found = single_thrackle (n, k, ot, curr_set);
+            nodes = 0;
+            found = single_thrackle_slow (n, k, ot, curr_set, &nodes);
+            avg_nodes += nodes;
+            searches++;
         }
         id++;
     }
+    printf ("Average nodes: %f, searches: %d\n", avg_nodes/searches, searches);
     free (triangle_it);
 }
 
@@ -436,7 +443,7 @@ void print_triangle_sizes_for_thrackles_in_convex_position (int n)
 
 int main ()
 {
-    //get_thrackle_for_each_ot (8, 9);
+    get_thrackle_for_each_ot (8, 8);
     //count_thrackles (8);
     //print_differing_triples (n, 0, 1);
     //print_edge_disjoint_sets (8, 8);
@@ -465,13 +472,13 @@ int main ()
     //average_search_nodes_lexicographic (8);
     //print_info_random_order (6, 0);
     
-    int n=8, k=8, nodes=0;
-    int res [k];
-    order_type_t *ot = order_type_from_id (n, 0);
-    if (single_thrackle_slow (n, k, ot, res, &nodes)) {
-        array_print (res, k);
-        printf ("nodes: %d\n", nodes);
-    }
+    //int n=8, k=8, nodes=0;
+    //int res [k];
+    //order_type_t *ot = order_type_from_id (n, 0);
+    //if (single_thrackle_slow (n, k, ot, res, &nodes)) {
+    //    array_print (res, k);
+    //    printf ("nodes: %d\n", nodes);
+    //}
 
     //int count = count_2_regular_subgraphs_of_k_n_n (5);
     //printf ("Total: %d\n", count);
