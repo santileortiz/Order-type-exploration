@@ -30,8 +30,12 @@ void get_thrackle_for_each_ot (int n, int k)
     subset_it_t *triangle_it = subset_it_new (n, 3, NULL);
 
     subset_it_precompute (triangle_it);
-    //int total_triangles = binomial (n, 3);
-    bool found = single_thrackle (n, k, ot, curr_set);
+    int total_triangles = binomial (n, 3);
+    float average = 0;
+    int nodes = 0, searches = 0;
+    int rand_arr[total_triangles];
+    init_random_array (rand_arr, total_triangles);
+    bool found = single_thrackle_slow (n, k, ot, curr_set, &nodes, rand_arr);
 
     while (!db_is_eof ()) {
         printf ("%ld: ", id);
@@ -44,12 +48,14 @@ void get_thrackle_for_each_ot (int n, int k)
         //printf ("%ld: %lu\n", id, subset_it_id_for_idx (total_triangles, curr_set, k));
 
         db_next (ot);
-        triangle_set_from_ids (ot, n, curr_set, k, triangle_set);
-        if (!is_thrackle(triangle_set)) {
-            found = single_thrackle (n, k, ot, curr_set);
-        }
+        fisher_yates_shuffle (rand_arr, total_triangles);
+        nodes = 0;
+        found = single_thrackle_slow (n, k, ot, curr_set, &nodes, rand_arr);
+        average += nodes;
+        searches++;
         id++;
     }
+    printf ("Searches: %d, Average nodes: %f\n", searches, average/searches);
     free (triangle_it);
 }
 
@@ -275,16 +281,6 @@ void print_info_order (int n, uint64_t ot_id, int *triangle_order)
     mem_pool_destroy (&temp_pool);
 }
 
-void init_random_array (int *arr, int size)
-{
-    int i;
-    for (i=0; i<size; i++) {
-        arr[i] = i;
-    }
-    srand (time(NULL));
-    fisher_yates_shuffle (arr, size);
-}
-
 void print_info_random_order (int n, uint64_t ot_id)
 {
     int rand_arr[binomial(n,3)];
@@ -436,7 +432,7 @@ void print_triangle_sizes_for_thrackles_in_convex_position (int n)
 
 int main ()
 {
-    //get_thrackle_for_each_ot (8, 9);
+    get_thrackle_for_each_ot (8, 8);
     //count_thrackles (8);
     //print_differing_triples (n, 0, 1);
     //print_edge_disjoint_sets (8, 8);
@@ -465,13 +461,23 @@ int main ()
     //average_search_nodes_lexicographic (8);
     //print_info_random_order (6, 0);
     
-    int n=8, k=9, nodes=0;
+    int n=8, k=8, nodes=0;
     int res [k];
+    float average = 0; int times = 1000;
     order_type_t *ot = order_type_from_id (n, 0);
-    if (single_thrackle_slow (n, k, ot, res, &nodes)) {
-        array_print (res, k);
+
+    int rand_arr[binomial(n,3)];
+    init_random_array (rand_arr, ARRAY_SIZE(rand_arr));
+    int i=0;
+    while (times>i) {
+        i++;
+        fisher_yates_shuffle (rand_arr, ARRAY_SIZE (rand_arr));
+        nodes = 0;
+        single_thrackle_slow (n, k, ot, res, &nodes, rand_arr);
+        average += nodes;
     }
-    printf ("nodes: %d\n", nodes);
+    printf ("Times: %d, Average nodes: %f\n", times, average/times);
+    //print_info (n, 0);
 
     //int count = count_2_regular_subgraphs_of_k_n_n (5);
     //printf ("Total: %d\n", count);

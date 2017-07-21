@@ -318,6 +318,16 @@ void fisher_yates_shuffle (int *arr, int n)
     }
 }
 
+void init_random_array (int *arr, int size)
+{
+    int i;
+    for (i=0; i<size; i++) {
+        arr[i] = i;
+    }
+    srand (time(NULL));
+    fisher_yates_shuffle (arr, size);
+}
+
 // TODO: Make this zero initialized in all cases
 typedef struct {
     uint32_t size;
