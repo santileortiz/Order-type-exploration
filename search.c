@@ -48,15 +48,86 @@ void get_thrackle_for_each_ot (int n, int k)
         //printf ("%ld: %lu\n", id, subset_it_id_for_idx (total_triangles, curr_set, k));
 
         db_next (ot);
-        fisher_yates_shuffle (rand_arr, total_triangles);
-        nodes = 0;
-        found = single_thrackle_slow (n, k, ot, curr_set, &nodes, rand_arr);
-        average += nodes;
-        searches++;
+        triangle_set_from_ids (ot, n, curr_set, k, triangle_set);
+        if (!is_thrackle(triangle_set)) {
+            fisher_yates_shuffle (rand_arr, total_triangles);
+            nodes = 0;
+            found = single_thrackle_slow (n, k, ot, curr_set, &nodes, rand_arr);
+            average += nodes;
+            searches++;
+        }
         id++;
     }
     printf ("Searches: %d, Average nodes: %f\n", searches, average/searches);
     free (triangle_it);
+}
+
+// TODO: Add timing:
+//   - Compute ETA.
+//   - If ETA is too short, do not print anything.
+//   - Have a maximum update delay so that slow procedures don't seem to be
+//     stalled until the first # is printed.
+void progress_bar (float val, float total)
+{
+    float percent = (val/(total-1))*100;
+    int length = 60;
+
+    char str[length+30];
+
+    static int prev = -1;
+    static int idx;
+
+    idx = length*percent/100;
+    if (prev != idx) {
+        prev = idx;
+        int i;
+        for (i=1; i<length; i++) {
+            if (i < idx) {
+                str[i] = '#';
+            } else {
+                str[i] = '-';
+            }
+        }
+        str[0] = str[length] = '|';
+        fprintf (stderr, "\r%s %.2f%%", str, percent);
+        if (percent == 100) {
+            printf ("\e[K");
+        }
+    }
+}
+
+void search_full_tree_all_ot (int n)
+{
+    assert(n <= 10);
+    mem_pool_t pool = {0};
+    uint64_t id = 0;
+    order_type_t *ot = order_type_new (n, NULL);
+
+    open_database (n);
+    db_seek (ot, id);
+
+    float average = 0;
+    int Tn = 0;
+
+    // FIXME: Remove this as soon as the bug on mem_pool_end_temporary_memory()
+    // is solved.
+    mem_pool_push_size (&pool, 10);
+
+    while (!db_is_eof ()) {
+        pool_temp_marker_t mrk = mem_pool_begin_temporary_memory (&pool);
+        struct sequence_store_t seq = new_sequence_store (NULL, &pool);
+        thrackle_search_tree (n, ot, &seq);
+        seq_tree_end (&seq);
+
+        average += seq.num_nodes;
+        Tn = MAX(seq.final_height, Tn);
+
+        progress_bar (id, __g_db_data.num_order_types);
+        db_next (ot);
+        id++;
+        mem_pool_end_temporary_memory (mrk);
+    }
+    printf ("Tn: %d, Average nodes: %f\n", Tn, average/(id+1));
 }
 
 // This version does an exhaustive search over all binomial(binomial(n,3),k)
@@ -432,7 +503,7 @@ void print_triangle_sizes_for_thrackles_in_convex_position (int n)
 
 int main ()
 {
-    get_thrackle_for_each_ot (8, 8);
+    //get_thrackle_for_each_ot (8, 8);
     //count_thrackles (8);
     //print_differing_triples (n, 0, 1);
     //print_edge_disjoint_sets (8, 8);
@@ -444,9 +515,8 @@ int main ()
     //matching_decompositions_over_K_n_n (6, NULL, &seq);
     //seq_tree_end (&seq);
 
-    //int n = 8, k = 9;
-    //order_type_t *ot = order_type_new (n, NULL);
-    //convex_ot_searchable (ot);
+    //int n = 10, k = 16;
+    //order_type_t *ot = order_type_from_id (n, 0);
     //int res[k];
     //bool found = single_thrackle (n, k, ot, res);
     //if (!found) {
@@ -461,23 +531,8 @@ int main ()
     //average_search_nodes_lexicographic (8);
     //print_info_random_order (6, 0);
     
-    int n=8, k=8, nodes=0;
-    int res [k];
-    float average = 0; int times = 1000;
-    order_type_t *ot = order_type_from_id (n, 0);
-
-    int rand_arr[binomial(n,3)];
-    init_random_array (rand_arr, ARRAY_SIZE(rand_arr));
-    int i=0;
-    while (times>i) {
-        i++;
-        fisher_yates_shuffle (rand_arr, ARRAY_SIZE (rand_arr));
-        nodes = 0;
-        single_thrackle_slow (n, k, ot, res, &nodes, rand_arr);
-        average += nodes;
-    }
-    printf ("Times: %d, Average nodes: %f\n", times, average/times);
-    //print_info (n, 0);
+    //print_info (8, 0);
+    search_full_tree_all_ot (9);
 
     //int count = count_2_regular_subgraphs_of_k_n_n (5);
     //printf ("Total: %d\n", count);

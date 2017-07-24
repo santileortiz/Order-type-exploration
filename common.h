@@ -560,6 +560,8 @@ pool_temp_marker_t mem_pool_begin_temporary_memory (mem_pool_t *pool)
     return res;
 }
 
+// FIXME: Temporary memory fails if nothing has been allocated before on the
+// pool, curr_info == NULL.
 void mem_pool_end_temporary_memory (pool_temp_marker_t mrkr)
 {
     bin_info_t *curr_info = (bin_info_t*)((uint8_t*)mrkr.pool->base + mrkr.pool->size);
