@@ -91,7 +91,7 @@ void progress_bar (float val, float total)
         str[0] = str[length] = '|';
         fprintf (stderr, "\r%s %.2f%%", str, percent);
         if (percent == 100) {
-            printf ("\e[K");
+            fprintf (stderr, "\r\e[K");
         }
     }
 }
@@ -530,8 +530,8 @@ int main ()
     //average_search_nodes_lexicographic (8);
     //print_info_random_order (6, 0);
     
-    print_info (9, 0);
-    //search_full_tree_all_ot (9);
+    //print_info (9, 0);
+    search_full_tree_all_ot (7);
 
     //int count = count_2_regular_subgraphs_of_k_n_n (5);
     //printf ("Total: %d\n", count);
