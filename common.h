@@ -497,7 +497,7 @@ enum alloc_opts {
 
 #define mem_pool_push_struct(pool, type) mem_pool_push_size(pool, sizeof(type))
 #define mem_pool_push_array(pool, n, type) mem_pool_push_size(pool, (n)*sizeof(type))
-#define mem_pool_push_size(pool, size) mem_pool_push_size_full(pool, size, POOL_UNINITIALIZED);
+#define mem_pool_push_size(pool, size) mem_pool_push_size_full(pool, size, POOL_UNINITIALIZED)
 void* mem_pool_push_size_full (mem_pool_t *pool, int size, enum alloc_opts opts)
 {
     if (pool->used + size >= pool->size) {
