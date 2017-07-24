@@ -567,19 +567,23 @@ pool_temp_marker_t mem_pool_begin_temporary_memory (mem_pool_t *pool)
     return res;
 }
 
-// FIXME: Temporary memory fails if nothing has been allocated before on the
-// pool, curr_info == NULL.
 void mem_pool_end_temporary_memory (pool_temp_marker_t mrkr)
 {
-    bin_info_t *curr_info = (bin_info_t*)((uint8_t*)mrkr.pool->base + mrkr.pool->size);
-    while (curr_info->base != mrkr.base) {
-        void *to_free = curr_info->base;
-        curr_info = curr_info->prev_bin_info;
-        free (to_free);
+    if (mrkr.base != NULL) {
+        bin_info_t *curr_info = (bin_info_t*)((uint8_t*)mrkr.pool->base + mrkr.pool->size);
+        while (curr_info->base != mrkr.base) {
+            void *to_free = curr_info->base;
+            curr_info = curr_info->prev_bin_info;
+            free (to_free);
+        }
+        mrkr.pool->size = curr_info->size;
+        mrkr.pool->base = curr_info->base;
+        mrkr.pool->used = mrkr.used;
+    } else {
+        // NOTE: Here mrkr was created before the pool was initialized, so we
+        // destroy everything.
+        mem_pool_destroy (mrkr.pool);
     }
-    mrkr.pool->size = curr_info->size;
-    mrkr.pool->base = curr_info->base;
-    mrkr.pool->used = mrkr.used;
 }
 
 #define COMMON_H

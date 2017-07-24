@@ -109,10 +109,6 @@ void search_full_tree_all_ot (int n)
     float average = 0;
     int Tn = 0;
 
-    // FIXME: Remove this as soon as the bug on mem_pool_end_temporary_memory()
-    // is solved.
-    mem_pool_push_size (&pool, 10);
-
     while (!db_is_eof ()) {
         pool_temp_marker_t mrk = mem_pool_begin_temporary_memory (&pool);
         struct sequence_store_t seq = new_sequence_store (NULL, &pool);
