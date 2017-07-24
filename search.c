@@ -346,8 +346,7 @@ void print_info_order (int n, uint64_t ot_id, int *triangle_order)
     print_uint_array (seq.nodes_per_len, seq.final_height);
     printf ("Time: %f ms\n", seq.time);
 
-    backtrack_node_t *tree = seq_tree_end (&seq);
-    seq_tree_print_sequences (tree, h);
+    seq_tree_end (&seq);
 
     mem_pool_destroy (&temp_pool);
 }
@@ -531,8 +530,8 @@ int main ()
     //average_search_nodes_lexicographic (8);
     //print_info_random_order (6, 0);
     
-    //print_info (8, 0);
-    search_full_tree_all_ot (9);
+    print_info (9, 0);
+    //search_full_tree_all_ot (9);
 
     //int count = count_2_regular_subgraphs_of_k_n_n (5);
     //printf ("Total: %d\n", count);

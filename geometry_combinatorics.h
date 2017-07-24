@@ -892,9 +892,11 @@ void seq_tree_extents (struct sequence_store_t *stor,
 
     if (max_depth > 0) {
         stor->max_depth = max_depth;
-        stor->node_stack = mem_pool_push_size (&stor->temp_pool,(stor->max_depth+1)*stor->max_node_size);
+        stor->node_stack =
+            mem_pool_push_size (&stor->temp_pool,(stor->max_depth+1)*stor->max_node_size);
         stor->nodes_per_len =
-            mem_pool_push_size (&stor->temp_pool,(stor->max_depth+1)*sizeof(*stor->nodes_per_len));
+            mem_pool_push_size_full (&stor->temp_pool,(stor->max_depth+1)*sizeof(*stor->nodes_per_len),
+                                     POOL_ZERO_INIT);
     } else {
         // TODO: If we don't know max_depth then node_stack should be a
         // cont_buff_t of elements of size max_node_size.

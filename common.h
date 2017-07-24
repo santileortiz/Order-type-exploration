@@ -490,18 +490,21 @@ struct _bin_info_t {
 
 typedef struct _bin_info_t bin_info_t;
 
-// NOTE: All allocations are zero initialized!
-// TODO: For performance reasons we may want a version that leaves everything
-// uninitialized.
+enum alloc_opts {
+    POOL_UNINITIALIZED,
+    POOL_ZERO_INIT
+};
+
 #define mem_pool_push_struct(pool, type) mem_pool_push_size(pool, sizeof(type))
 #define mem_pool_push_array(pool, n, type) mem_pool_push_size(pool, (n)*sizeof(type))
-void* mem_pool_push_size (mem_pool_t *pool, int size)
+#define mem_pool_push_size(pool, size) mem_pool_push_size_full(pool, size, POOL_UNINITIALIZED);
+void* mem_pool_push_size_full (mem_pool_t *pool, int size, enum alloc_opts opts)
 {
     if (pool->used + size >= pool->size) {
         int new_bin_size = MAX (MAX (MEM_POOL_MIN_BIN_SIZE, pool->min_bin_size), size);
         void *new_bin;
         bin_info_t *new_info;
-        if ((new_bin = calloc (new_bin_size + sizeof(bin_info_t), 1))) {
+        if ((new_bin = malloc (new_bin_size + sizeof(bin_info_t)))) {
             new_info = (bin_info_t*)((uint8_t*)new_bin + new_bin_size);
         } else {
             printf ("Malloc failed.\n");
@@ -525,6 +528,10 @@ void* mem_pool_push_size (mem_pool_t *pool, int size)
 
     void *ret = (uint8_t*)pool->base + pool->used;
     pool->used += size;
+
+    if (opts == POOL_ZERO_INIT) {
+        memset (ret, 0, size);
+    }
     return ret;
 }
 
