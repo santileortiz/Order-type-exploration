@@ -13,13 +13,13 @@ DEP_FLAGS = -lcairo \
 			-I/usr/include/glib-2.0 \
 			-I/usr/lib/x86_64-linux-gnu/glib-2.0/include
 
-DEFAULT_PROG = database_expl
-#DEFAULT_PROG = search
+#DEFAULT_PROG = database_expl
+DEFAULT_PROG = search
 #DEFAULT_PROG = save_file_to_pdf
 
 FLAGS = -g -Wall #Debug
-#FLAGS = -O2 -Wall #Release
-#FLAGS = -O2 -pg -Wall #Profile release
+#FLAGS = -O3 -DNDEBUG -Wall #Release
+#FLAGS = -O3 -pg -Wall #Profile release
 
 all: $(DEFAULT_PROG)
 

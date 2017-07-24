@@ -243,7 +243,7 @@ void triple_from_id (int n, int id, int *a, int *b, int *c)
 }
 
 void print_triple (int n, int id) {
-    int a, b, c;
+    int a=0, b=0, c=0;
     triple_from_id (n, id, &a, &b, &c);
     printf ("id:%d (%d, %d, %d)\n", id, a, b, c);
 }
