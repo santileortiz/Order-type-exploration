@@ -411,7 +411,7 @@ bool tree_mode (struct app_state_t *st, app_graphics_t *gr)
         compute_all_permutations (n, tree_mode->all_perms);
 
         mem_pool_t bt_res_pool = {0};
-        struct sequence_store_t seq = new_tree (NULL, &bt_res_pool);
+        struct sequence_store_t seq = new_sequence_store (NULL, &bt_res_pool);
         matching_decompositions_over_K_n_n (n, tree_mode->all_perms, &seq);
         backtrack_node_t *bt_root = seq_tree_end (&seq);
 

@@ -864,17 +864,6 @@ void complete_and_pop_node (struct sequence_store_t *stor, uint32_t l)
     }
 }
 
-struct sequence_store_t new_tree (char *filename, mem_pool_t *pool)
-{
-    struct sequence_store_t ret = {0};
-    ret.pool = pool;
-    ret.filename = filename;
-    if (filename != NULL) {
-        // TODO: Create file
-    }
-    return ret;
-}
-
 void seq_tree_extents (struct sequence_store_t *stor,
                        uint32_t max_children, uint32_t max_depth)
 {
