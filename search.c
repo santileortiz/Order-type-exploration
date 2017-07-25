@@ -111,19 +111,19 @@ void search_full_tree_all_ot (int n)
 
     while (!db_is_eof ()) {
         pool_temp_marker_t mrk = mem_pool_begin_temporary_memory (&pool);
-        struct sequence_store_t seq = new_sequence_store (NULL, &pool);
+        struct sequence_store_t seq = new_sequence_store_opts (NULL, &pool, SEQ_DRY_RUN);
         thrackle_search_tree (n, ot, &seq);
         seq_tree_end (&seq);
 
         average += seq.num_nodes;
-        Tn = MAX(seq.final_height, Tn);
+        Tn = MAX(seq.final_max_len, Tn);
 
         progress_bar (id, __g_db_data.num_order_types);
         db_next (ot);
         id++;
         mem_pool_end_temporary_memory (mrk);
     }
-    printf ("Tn: %d, Average nodes: %f\n", Tn, average/(id+1));
+    printf ("Tn: %d, Average nodes: %f\n", Tn, average/(id));
 }
 
 // This version does an exhaustive search over all binomial(binomial(n,3),k)
@@ -332,18 +332,18 @@ void print_info_order (int n, uint64_t ot_id, int *triangle_order)
 {
     order_type_t *ot = order_type_from_id (n, ot_id);
     mem_pool_t temp_pool = {0};
-    struct sequence_store_t seq = new_sequence_store (NULL, &temp_pool);
+    struct sequence_store_t seq = new_sequence_store_opts (NULL, &temp_pool, SEQ_DRY_RUN);
     thrackle_search_tree_full (n, ot, &seq, triangle_order);
-
-    uint32_t h = seq.final_height;
-    printf ("Levels: %d + root\n", h);
-    printf ("Nodes: %d + root\n", seq.num_nodes-1);
-    printf ("Nodes per level: ");
-    print_uint_array (seq.nodes_per_len, seq.final_height);
-    printf ("Time: %f ms\n", seq.time);
-
     seq_tree_end (&seq);
 
+    uint32_t h = seq.final_max_len;
+    printf ("Levels: %d + root\n", h);
+    printf ("Nodes: %"PRIu64" + root\n", seq.num_nodes-1);
+    printf ("Nodes per level: ");
+    print_uint_array (seq.nodes_per_len, seq.final_max_len);
+    if (seq.time != 0) {
+        printf ("Time: %f ms\n", seq.time);
+    }
     mem_pool_destroy (&temp_pool);
 }
 
@@ -526,8 +526,8 @@ int main ()
     //average_search_nodes_lexicographic (8);
     //print_info_random_order (6, 0);
     
-    //print_info (9, 0);
-    search_full_tree_all_ot (7);
+    print_info (9, 0);
+    //search_full_tree_all_ot (7);
 
     //int count = count_2_regular_subgraphs_of_k_n_n (5);
     //printf ("Total: %d\n", count);

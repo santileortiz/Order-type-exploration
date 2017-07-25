@@ -768,52 +768,55 @@ struct _backtrack_node_t {
 };
 typedef struct _backtrack_node_t backtrack_node_t;
 
-struct tree_build_st_t {
-    uint32_t max_depth;
-    uint32_t max_children;
-    uint32_t max_node_size;
-    uint32_t num_nodes_stack; // num_nodes_in_stack
-    backtrack_node_t *node_stack;
-    uint32_t num_nodes;
-    cont_buff_t nodes;
-    mem_pool_t temp_pool;
-};
-
 enum sequence_file_type_t {
     SEQ_FIXED_LEN           = 1L<<1,
     SEQ_TIMING              = 1L<<2,
 };
 
+enum sequence_stor_options_t {
+    SEQ_DEFAULT             = 0,
+    // Enables capturing of extra information about the search, while disabling
+    // all allocations of the result.
+    SEQ_DRY_RUN             = 1L<<1,
+};
+
 struct sequence_store_t {
     enum sequence_file_type_t type;
+    enum sequence_stor_options_t opts;
     int file;
     char *filename;
     uint32_t custom_file_header_size;
     mem_pool_t *pool;
+
     struct timespec begin;
     struct timespec end;
     float time;
+
     uint32_t sequence_size;
     uint32_t num_sequences;
     uint32_t max_sequences;
-    int_dyn_arr_t dyn_arr; // TODO: use cont_buff_t for non int sequences
+    int_dyn_arr_t dyn_arr;
     int *seq;
 
     // Tree data
-    uint32_t max_depth;
+    uint32_t max_len; // Height of the tree
     uint32_t max_children;
     uint32_t max_node_size;
     uint32_t num_nodes_stack; // num_nodes_in_stack
     backtrack_node_t *node_stack;
-    uint32_t num_nodes;
+    uint64_t num_nodes;
     cont_buff_t nodes;
     mem_pool_t temp_pool;
 
-    // Information on the resulting tree
-    uint32_t final_height;
-    uint32_t *nodes_per_len;
+    int64_t last_l;
 
-    int last_l;
+    // Optional information about the search
+    uint32_t final_max_len;
+    // TODO: Implement the following info:
+    // uint32_t final_max_children;
+    // uint64_t expected_tree_size;
+    // uint64_t expected_sequence_size;
+    uint32_t *nodes_per_len; // Requires sequence_store_t->pool
 };
 
 backtrack_node_t* stack_element (struct sequence_store_t *stor, uint32_t i)
@@ -864,8 +867,31 @@ void complete_and_pop_node (struct sequence_store_t *stor, uint32_t l)
     }
 }
 
+void seq_push_element (struct sequence_store_t *stor,
+                       int val, int64_t level)
+{
+    if (stor->opts & SEQ_DRY_RUN) {
+        stor->num_nodes++;
+        stor->final_max_len = MAX (stor->final_max_len, level);
+
+        if (stor->nodes_per_len != NULL && level >= 0) {
+            stor->nodes_per_len[level-1]++;
+        }
+        return;
+    }
+
+    while (stor->last_l > level - 1) {
+        //printf ("(%d) Pop\n", stor->last_l);
+        complete_and_pop_node (stor, stor->last_l);
+        stor->last_l--;
+    }
+    stor->last_l = level;
+    //printf ("(%d) Push %d\n", level, val);
+    push_partial_node (stor, val);
+}
+
 void seq_tree_extents (struct sequence_store_t *stor,
-                       uint32_t max_children, uint32_t max_depth)
+                       uint32_t max_children, uint32_t max_len)
 {
     if (max_children > 0) {
         stor->max_children = max_children;
@@ -879,29 +905,36 @@ void seq_tree_extents (struct sequence_store_t *stor,
         invalid_code_path;
     }
 
-    if (max_depth > 0) {
-        stor->max_depth = max_depth;
+    if (max_len > 0) {
+        stor->max_len = max_len;
         stor->node_stack =
-            mem_pool_push_size (&stor->temp_pool,(stor->max_depth+1)*stor->max_node_size);
-        stor->nodes_per_len =
-            mem_pool_push_size_full (&stor->temp_pool,(stor->max_depth+1)*sizeof(*stor->nodes_per_len),
-                                     POOL_ZERO_INIT);
+            mem_pool_push_size (&stor->temp_pool,(stor->max_len+1)*stor->max_node_size);
+        if (stor->pool != NULL && (stor->opts & SEQ_DRY_RUN)) {
+            stor->nodes_per_len =
+                mem_pool_push_size_full (stor->pool,
+                                         (stor->max_len+1)*sizeof(*stor->nodes_per_len),
+                                         POOL_ZERO_INIT);
+        }
     } else {
-        // TODO: If we don't know max_depth then node_stack should be a
+        // TODO: If we don't know max_len then node_stack should be a
         // cont_buff_t of elements of size max_node_size.
         invalid_code_path;
     }
     // Pushing the root node to the stack.
-    push_partial_node (stor, -1);
+    seq_push_element (stor, -1, -1);
 }
 
 backtrack_node_t* seq_tree_end (struct sequence_store_t *stor)
 {
-    while (stor->last_l > -1) {
-        complete_and_pop_node (stor, stor->last_l);
-        stor->last_l--;
+    backtrack_node_t* ret = NULL;
+    if (stor->opts != SEQ_DRY_RUN) {
+        while (stor->last_l > -1) {
+            complete_and_pop_node (stor, stor->last_l);
+            stor->last_l--;
+        }
+        ret = ((backtrack_node_t**)stor->nodes.data)[stor->num_nodes-1];
     }
-    backtrack_node_t* ret = ((backtrack_node_t**)stor->nodes.data)[stor->num_nodes-1];
+
     cont_buff_destroy (&stor->nodes);
     mem_pool_destroy (&stor->temp_pool);
     return ret;
@@ -1063,9 +1096,12 @@ void seq_add_file_header (struct sequence_store_t *stor, void *header, uint32_t 
     file_write (stor->file, header, stor->custom_file_header_size);
 }
 
-struct sequence_store_t new_sequence_store (char *filename, mem_pool_t *pool)
+#define new_sequence_store(filename, pool) new_sequence_store_opts(filename, pool, SEQ_DEFAULT);
+struct sequence_store_t new_sequence_store_opts (char *filename, mem_pool_t *pool,
+                                                 enum sequence_stor_options_t opts)
 {
     struct sequence_store_t res = {0};
+    res.opts = opts;
     if (filename != NULL) {
         remove (filename);
         res.filename = filename;
@@ -1140,26 +1176,6 @@ void seq_push_sequence_size (struct sequence_store_t *stor, int *seq, uint32_t s
     } else {
         //TODO: Implement tree behavior here.
     }
-}
-
-void seq_push_element (struct sequence_store_t *stor,
-                       int val, uint32_t level)
-{
-    //TODO: Maybe this slow down computations a lot, if that's the case,
-    //then add an option to ommit computing this.
-    stor->nodes_per_len[level-1]++;
-    if (level > stor->final_height) {
-        stor->final_height = level;
-    }
-
-    while (stor->last_l > level - 1) {
-        //printf ("(%d) Pop\n", stor->last_l);
-        complete_and_pop_node (stor, stor->last_l);
-        stor->last_l--;
-    }
-    stor->last_l++;
-    //printf ("(%d) Push %d\n", level, val);
-    push_partial_node (stor, val);
 }
 
 int* seq_end (struct sequence_store_t *stor)
