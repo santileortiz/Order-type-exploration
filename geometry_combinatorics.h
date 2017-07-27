@@ -839,9 +839,9 @@ void push_partial_node (struct sequence_store_t *stor, int val)
     stor->num_nodes++;
 }
 
-void complete_and_pop_node (struct sequence_store_t *stor, uint32_t l)
+void complete_and_pop_node (struct sequence_store_t *stor, int64_t l)
 {
-    backtrack_node_t *finished = stack_element (stor, l);
+    backtrack_node_t *finished = stack_element (stor, l+1);
     uint32_t node_size;
     if (finished->num_children > 1) {
         node_size = sizeof(backtrack_node_t)+(finished->num_children-1)*sizeof(backtrack_node_t*);
@@ -930,8 +930,8 @@ void seq_tree_extents (struct sequence_store_t *stor,
 backtrack_node_t* seq_tree_end (struct sequence_store_t *stor)
 {
     backtrack_node_t* ret = NULL;
-    if (stor->opts != SEQ_DRY_RUN) {
-        while (stor->last_l > -1) {
+    if (!(stor->opts & SEQ_DRY_RUN)) {
+        while (stor->last_l >= -1) {
             complete_and_pop_node (stor, stor->last_l);
             stor->last_l--;
         }
@@ -2041,11 +2041,11 @@ void matching_decompositions_over_K_n_n (int n, int *all_perms,
         compute_all_permutations (n, all_perms);
     }
 
-    seq_tree_extents (seq, num_perms, n+1);
+    seq_tree_extents (seq, num_perms, n);
 
     int decomp[n];
     decomp[0] = 0;
-    seq_push_element (seq, 0, 1);
+    seq_push_element (seq, 0, 0);
     int l = 1;
 
     int invalid_restore_indx[n];
@@ -2114,9 +2114,8 @@ void matching_decompositions_over_K_n_n (int n, int *all_perms,
                 invalid_restore_indx[l] = num_invalid;
                 decomp[l] = min_S_l;
                 first_S_l[l] = first_S_l[l]->next;
-                l++;
-
                 seq_push_element (seq, min_S_l, l);
+                l++;
                 break;
             }
 
