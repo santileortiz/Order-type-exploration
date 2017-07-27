@@ -889,6 +889,8 @@ void seq_push_element (struct sequence_store_t *stor,
         complete_and_pop_node (stor, stor->last_l);
         stor->last_l--;
     }
+    assert (stor->last_l + 1 == level
+            && "Nodes should be pushed with level increasing by 1");
     stor->last_l = level;
     push_partial_node (stor, val);
 }
