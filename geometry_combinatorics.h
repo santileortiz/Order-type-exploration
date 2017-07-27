@@ -821,7 +821,11 @@ struct sequence_store_t {
 
 backtrack_node_t* stack_element (struct sequence_store_t *stor, uint32_t i)
 {
-    return ((backtrack_node_t*)((char*)stor->node_stack + (i)*stor->max_node_size));
+    backtrack_node_t *res = (backtrack_node_t*)((char*)stor->node_stack + (i)*stor->max_node_size);
+    assert (stor->node_stack != NULL);
+    assert (res <= (backtrack_node_t*)((char*)stor->node_stack +
+                                       (stor->max_len+1)*stor->max_node_size));
+    return (res);
 }
 
 void push_partial_node (struct sequence_store_t *stor, int val)
@@ -859,11 +863,11 @@ void complete_and_pop_node (struct sequence_store_t *stor, uint32_t l)
 
     stor->num_nodes_stack--;
 
-    if (l > 0) {
-        l--;
+    if (l >= 0) {
         backtrack_node_t *parent = stack_element (stor, l);
         parent->children[parent->num_children] = pushed_node;
         parent->num_children++;
+        l--;
     }
 }
 
@@ -872,21 +876,20 @@ void seq_push_element (struct sequence_store_t *stor,
 {
     if (stor->opts & SEQ_DRY_RUN) {
         stor->num_nodes++;
-        stor->final_max_len = MAX (stor->final_max_len, level);
+        stor->final_max_len = MAX (stor->final_max_len, level+1);
 
-        if (stor->nodes_per_len != NULL && level >= 0) {
-            stor->nodes_per_len[level-1]++;
+        if (stor->nodes_per_len != NULL) {
+            stor->nodes_per_len[level+1]++;
         }
         return;
     }
 
-    while (stor->last_l > level - 1) {
-        //printf ("(%d) Pop\n", stor->last_l);
+    while (stor->last_l >= level) {
+        assert (stor->last_l >= 0);
         complete_and_pop_node (stor, stor->last_l);
         stor->last_l--;
     }
     stor->last_l = level;
-    //printf ("(%d) Push %d\n", level, val);
     push_partial_node (stor, val);
 }
 
@@ -1102,6 +1105,7 @@ struct sequence_store_t new_sequence_store_opts (char *filename, mem_pool_t *poo
 {
     struct sequence_store_t res = {0};
     res.opts = opts;
+    res.last_l = -2;
     if (filename != NULL) {
         remove (filename);
         res.filename = filename;
@@ -1852,7 +1856,7 @@ void thrackle_search_tree_full (int n, order_type_t *ot, struct sequence_store_t
     }
 
     seq_tree_extents (seq, total_triangles, k);
-    seq_push_element (seq, 0, 1);
+    seq_push_element (seq, 0, 0);
 
     int res[k];
     res[0] = 0;
@@ -1903,8 +1907,8 @@ void thrackle_search_tree_full (int n, order_type_t *ot, struct sequence_store_t
             if (t != NULL) {
                 invalid_restore_indx[l] = num_invalid;
                 res[l] = lb_idx(S, t);
+                seq_push_element (seq, res[l], l);
                 l++;
-                seq_push_element (seq, res[l-1], l);
                 break;
             }
 

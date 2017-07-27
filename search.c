@@ -339,8 +339,11 @@ void print_info_order (int n, uint64_t ot_id, int *triangle_order)
     uint32_t h = seq.final_max_len;
     printf ("Levels: %d + root\n", h);
     printf ("Nodes: %"PRIu64" + root\n", seq.num_nodes-1);
-    printf ("Nodes per level: ");
-    print_uint_array (seq.nodes_per_len, seq.final_max_len);
+    if (seq.nodes_per_len != NULL) {
+        printf ("Nodes per level: ");
+        print_uint_array (seq.nodes_per_len, seq.final_max_len+1);
+    }
+
     if (seq.time != 0) {
         printf ("Time: %f ms\n", seq.time);
     }
@@ -520,7 +523,7 @@ int main ()
     //    array_print (res, k);
     //}
 
-    //get_all_thrackles (10, 12, 0, NULL);
+    //get_all_thrackles (9, 10, 0, NULL);
     //print_triangle_sizes_for_thrackles_in_convex_position (10);
     //print_info (8, 0);
     //average_search_nodes_lexicographic (8);
