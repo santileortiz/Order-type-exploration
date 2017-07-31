@@ -16,9 +16,17 @@ DEP_FLAGS = '-lcairo ' \
             '-I/usr/include/glib-2.0 ' \
             '-I/usr/lib/x86_64-linux-gnu/glib-2.0/include '
 
-FLAGS = '-g -Wall' #Debug
-#FLAGS = '-O3 -DNDEBUG -Wall' #Release
-#FLAGS = '-O3 -pg -Wall #Profile' release
+modes = {
+        'debug': '-g -Wall',
+        'release': '-O3 -DNDEBUG -Wall',
+        'profile_release': '-O3 -pg -Wall'
+        }
+cli_mode = get_cli_option('-M', modes.keys())
+FLAGS = modes[pers('mode', 'debug', cli_mode)]
+
+def default():
+    target = pers ('last_target', 'database_expl')
+    call_user_function(target)
 
 def database_expl ():
     ex ('gcc {FLAGS} database_expl.c -o bin/database_expl {DEP_FLAGS}')

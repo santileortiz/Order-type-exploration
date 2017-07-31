@@ -5,7 +5,7 @@ _pymk()
     local cur prev words cword
     _init_completion || return
 
-    res="$(python3 ./pymk.py --get_completions $COMP_POINT $COMP_LINE)"
+    res="$(./pymk.py --get_completions "$COMP_POINT $COMP_LINE")"
     COMPREPLY=( $( compgen -W '$res' -- "$cur" ) )
     [[ $COMPREPLY ]] || \
         COMPREPLY=( $( compgen -f -- "$cur" ) )

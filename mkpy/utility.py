@@ -1,23 +1,26 @@
-import sys, subprocess, os
+import sys, subprocess, os, ast
 
 import importlib.util, inspect, pathlib, filecmp
 def get_user_functions():
     """
-    Executes pymk.py with __name__=="pymk" and returns a list with tuples of
-    its functions [(f_name, f), ...].
+    Returns a list of functions defined in the __main__ module, it's a list of
+    tuples like [(f_name, f), ...].
 
-    NOTE: Functions imported like 'from <module> import <function>' are included too.
+    NOTE: Functions imported like 'from <module> import <function>' are
+    included too.
     """
-    spec = importlib.util.spec_from_file_location('pymk', 'pymk.py')
-    pymk_user = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(pymk_user)
-    return inspect.getmembers(pymk_user, inspect.isfunction).copy()
+    return inspect.getmembers(sys.modules['__main__'], inspect.isfunction).copy()
 
-def get_user_function(name):
+def call_user_function(name):
+    fun = None
     for f_name, f in get_user_functions():
         if f_name == name:
-            return f
-    return None
+            fun = f
+            break
+
+    check_completions ()
+    fun() if fun else print ('No function: '+name)
+    return
 
 def get_completions ():
     keys = globals().copy().keys()
@@ -44,6 +47,22 @@ def check_completions ():
 def install_completions ():
     ex ("cp mkpy/pymk.py /usr/share/bash-completion/completions/")
     return
+
+def cli_completion_options ():
+    """
+    Handles command line options used by tab completion.
+    The option --get_completions exits the script after printing completions.
+    """
+    data_str = get_cli_option('--get_completions', unique_option=True, has_argument=True)
+    if data_str != None:
+        data_lst = data_str.split(' ')
+        curs_pos = int(data_lst[0])
+        line = data_lst[1:]
+        get_completions()
+        exit ()
+
+    if get_cli_option('--install_completions'):
+        install_completions ()
 
 def err (string):
     print ('\033[1m\033[91m{}\033[0m'.format(string))
@@ -72,23 +91,103 @@ def ex (cmd, no_stdout=False, echo=True):
     redirect = open(os.devnull, 'wb') if no_stdout else None
     return subprocess.call(resolved_cmd, shell=True, stdout=redirect)
 
+def pers (name, default=None, value=None):
+    """
+    Makes persistent some value across runs of the script storing it in a
+    dctionary on "mkpy/cache".  Stores _name_:_value_ pair in cache unless
+    value==None.  Returns the value of _name_ in the cache.
+
+    If default is used, when _value_==None and _name_ is not in the cache the
+    pair _name_:_default is stored.
+    """
+
+    cache_dict = {}
+    if os.path.exists('mkpy/cache'):
+        cache = open ('mkpy/cache', 'r')
+        cache_dict = ast.literal_eval (cache.readline())
+        cache.close ()
+
+    if value == None:
+        if name in cache_dict.keys ():
+            return cache_dict[name]
+        else:
+            if default != None:
+                cache_dict[name] = default
+            else:
+                print ('Key '+name+' is not in cache.')
+                return
+    else:
+        cache_dict[name] = value
+
+    cache = open ('mkpy/cache', 'w')
+    cache.write (str(cache_dict)+'\n')
+    return cache_dict.get (name)
+
+def get_cli_option (opt, values=None, has_argument=False, unique_option=False):
+    """
+    Parses sys.argv looking for option _opt_.
+
+    If _opt_ is not found, returns None.
+    If _opt_ does not have arguments, returns True if the option is found.
+    If _opt_ has an argument, returns the value of the argument. In this case
+    additional error checking is available if _values_ is set to a list of the
+    possible values the argument could take.
+
+    When unique_option is True then _opt_ must be the only option used.
+
+    """
+    res = None
+    i = 1
+    if values != None: has_argument = True
+
+    while i<len(sys.argv):
+        if opt == sys.argv[i]:
+            if has_argument:
+                if i+1 >= len(sys.argv):
+                    print ('Missing argument for option '+opt+'.');
+                    if values != None:
+                        print ('Possible values are [ '+' | '.join(values)+' ].')
+                    return
+                else:
+                    res = sys.argv[i+1]
+                    break
+            else:
+                res = True
+        i = i+1
+
+    if unique_option and res != None:
+        if (has_argument and len(sys.argv) != 3) or  (not has_argument and len(sys.argv) != 2):
+            print ('Option '+opt+' receives no other option.')
+            return
+
+    if values != None and res != None:
+        if res not in values:
+            print ('Argument '+res+' is not valid for option '+opt+',')
+            print ('Possible values are: [ '+' | '.join(values)+' ].')
+            return
+    return res
+
+def get_cli_rest ():
+    """
+    Returns an array of all argv values that are after options starting with '-'.
+    """
+    i = 1;
+    while i<len(sys.argv):
+        if sys.argv[i].startswith ('-'):
+            if len(sys.argv) > i+1 and not sys.argv[i+1].startswith('-'):
+                i = i+1
+        else:
+            return sys.argv[i:]
+        i = i+1
+    return None
+
 def pymk_default ():
     if len(sys.argv) == 1:
-        check_completions ()
-        f = get_user_function("default")
-        f() if f else print ('No default function.')
+        call_user_function ('default')
         return
+    cli_completion_options()
+    if get_cli_rest():
+        for targ in get_cli_rest():
+            call_user_function (targ)
+            pers ('last_target', value=targ)
 
-    if (sys.argv[1] == '--get_completions'):
-        get_completions()
-        return
-    elif sys.argv[1] == '--install_completions':
-        install_completions ()
-        return
-    else:
-        check_completions ()
-        f = get_user_function (sys.argv[1])
-        if f != None:
-            f()
-        else:
-            print ('No function "' + sys.argv[1] + '".')
