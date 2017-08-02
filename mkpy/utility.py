@@ -1,7 +1,7 @@
 import sys, subprocess, os, ast
 
 import importlib.util, inspect, pathlib, filecmp
-def get_user_functions():
+def get_functions():
     """
     Returns a list of functions defined in the __main__ module, it's a list of
     tuples like [(f_name, f), ...].
@@ -10,6 +10,13 @@ def get_user_functions():
     included too.
     """
     return inspect.getmembers(sys.modules['__main__'], inspect.isfunction).copy()
+
+def get_user_functions():
+    """
+    Like get_functions() removing the ones defined in this file.
+    """
+    keys = globals().copy().keys()
+    return [(m,v) for m,v in get_functions() if m not in keys]
 
 def call_user_function(name):
     fun = None
@@ -21,15 +28,6 @@ def call_user_function(name):
     check_completions ()
     fun() if fun else print ('No function: '+name)
     return
-
-def get_completions ():
-    keys = globals().copy().keys()
-    for m,v in get_user_functions():
-        if  m in keys:
-            # Ignore functions in this file when user
-            # imports everything from here.
-            continue
-        print (str(m))
 
 def check_completions ():
     comp_path = pathlib.Path('/usr/share/bash-completion/completions/pymk.py')
@@ -48,21 +46,51 @@ def install_completions ():
     ex ("cp mkpy/pymk.py /usr/share/bash-completion/completions/")
     return
 
+
+
+def default_opt (s):
+    opt_lst = s.split(',')
+    res = None
+    for s in opt_lst: 
+        if s.startswith('--'):
+            res = s
+    if res == None:
+        res = opt_lst[0]
+    return res
+
+cli_completions = {}
 def cli_completion_options ():
     """
     Handles command line options used by tab completion.
     The option --get_completions exits the script after printing completions.
     """
+    if get_cli_option('--install_completions'):
+        install_completions ()
+
     data_str = get_cli_option('--get_completions', unique_option=True, has_argument=True)
     if data_str != None:
         data_lst = data_str.split(' ')
         curs_pos = int(data_lst[0])
         line = data_lst[1:]
-        get_completions()
-        exit ()
+        if len(line) == 1: line.append('')
 
-    if get_cli_option('--install_completions'):
-        install_completions ()
+        match_found = False
+        for opt,vals in cli_completions.items():
+            if line[-2] in opt.split(',') and vals != None:
+                match_found = True
+                print (' '.join(vals))
+
+        if not match_found:
+            f_names = [s for s,f in get_user_functions()]
+            print (' '.join(f_names))
+            if line[-1] == '-':
+                def_opts = [default_opt(s) for s in cli_completions.keys()]
+                print (' '.join(def_opts))
+            elif line[-1] != '':
+                def_opts = []
+                for s in cli_completions.keys(): def_opts += s.split(',')
+                print (' '.join(def_opts))
+        exit ()
 
 def err (string):
     print ('\033[1m\033[91m{}\033[0m'.format(string))
@@ -123,7 +151,7 @@ def pers (name, default=None, value=None):
     cache.write (str(cache_dict)+'\n')
     return cache_dict.get (name)
 
-def get_cli_option (opt, values=None, has_argument=False, unique_option=False):
+def get_cli_option (opts, values=None, has_argument=False, unique_option=False):
     """
     Parses sys.argv looking for option _opt_.
 
@@ -139,9 +167,10 @@ def get_cli_option (opt, values=None, has_argument=False, unique_option=False):
     res = None
     i = 1
     if values != None: has_argument = True
+    cli_completions[opts] = values
 
     while i<len(sys.argv):
-        if opt == sys.argv[i]:
+        if sys.argv[i] in opts.split(','):
             if has_argument:
                 if i+1 >= len(sys.argv):
                     print ('Missing argument for option '+opt+'.');
@@ -187,7 +216,9 @@ def pymk_default ():
         return
     cli_completion_options()
     if get_cli_rest():
-        for targ in get_cli_rest():
-            call_user_function (targ)
-            pers ('last_target', value=targ)
+        f_names = [s for s,f in get_user_functions()]
+        targets = set(get_cli_rest()).intersection(f_names)
+        for t in targets:
+            call_user_function (t)
+            pers ('last_target', value=t)
 
