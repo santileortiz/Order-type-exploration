@@ -25,7 +25,6 @@ def call_user_function(name):
             fun = f
             break
 
-    check_completions ()
     fun() if fun else print ('No function: '+name)
     return
 
@@ -41,12 +40,6 @@ def check_completions ():
             print ('Update with "sudo ./pymk.py --install_completions"\n')
     else:
         err ('Something funky is going on.')
-
-def install_completions ():
-    ex ("cp mkpy/pymk.py /usr/share/bash-completion/completions/")
-    return
-
-
 
 def default_opt (s):
     opt_lst = s.split(',')
@@ -65,7 +58,7 @@ def cli_completion_options ():
     The option --get_completions exits the script after printing completions.
     """
     if get_cli_option('--install_completions'):
-        install_completions ()
+        ex ("cp mkpy/pymk.py /usr/share/bash-completion/completions/")
 
     data_str = get_cli_option('--get_completions', unique_option=True, has_argument=True)
     if data_str != None:
@@ -91,65 +84,6 @@ def cli_completion_options ():
                 for s in cli_completions.keys(): def_opts += s.split(',')
                 print (' '.join(def_opts))
         exit ()
-
-def err (string):
-    print ('\033[1m\033[91m{}\033[0m'.format(string))
-
-def ok (string):
-    print ('\033[1m\033[92m{}\033[0m'.format(string))
-
-def get_user_str_vars ():
-    """
-    Executes pymk.py with __name__=="pymk" and returns a dictionary
-    with its string variables.
-    """
-    spec = importlib.util.spec_from_file_location('pymk', 'pymk.py')
-    pymk_user = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(pymk_user)
-    var_list = inspect.getmembers(pymk_user)
-    var_dict = {}
-    for v_name, v in var_list:
-        if type(v) == type(""):
-            var_dict[v_name] = v
-    return var_dict
-
-def ex (cmd, no_stdout=False, echo=True):
-    resolved_cmd = cmd.format(**get_user_str_vars())
-    if echo: print (resolved_cmd)
-    redirect = open(os.devnull, 'wb') if no_stdout else None
-    return subprocess.call(resolved_cmd, shell=True, stdout=redirect)
-
-def pers (name, default=None, value=None):
-    """
-    Makes persistent some value across runs of the script storing it in a
-    dctionary on "mkpy/cache".  Stores _name_:_value_ pair in cache unless
-    value==None.  Returns the value of _name_ in the cache.
-
-    If default is used, when _value_==None and _name_ is not in the cache the
-    pair _name_:_default is stored.
-    """
-
-    cache_dict = {}
-    if os.path.exists('mkpy/cache'):
-        cache = open ('mkpy/cache', 'r')
-        cache_dict = ast.literal_eval (cache.readline())
-        cache.close ()
-
-    if value == None:
-        if name in cache_dict.keys ():
-            return cache_dict[name]
-        else:
-            if default != None:
-                cache_dict[name] = default
-            else:
-                print ('Key '+name+' is not in cache.')
-                return
-    else:
-        cache_dict[name] = value
-
-    cache = open ('mkpy/cache', 'w')
-    cache.write (str(cache_dict)+'\n')
-    return cache_dict.get (name)
 
 def get_cli_option (opts, values=None, has_argument=False, unique_option=False):
     """
@@ -210,8 +144,64 @@ def get_cli_rest ():
         i = i+1
     return None
 
+def err (string):
+    print ('\033[1m\033[91m{}\033[0m'.format(string))
+
+def ok (string):
+    print ('\033[1m\033[92m{}\033[0m'.format(string))
+
+def get_user_str_vars ():
+    """
+    Returns a dictionary with global strings in module __main__.
+    """
+    var_list = inspect.getmembers(sys.modules['__main__'])
+    var_dict = {}
+    for v_name, v in var_list:
+        if type(v) == type(""):
+            var_dict[v_name] = v
+    return var_dict
+
+def ex (cmd, no_stdout=False, echo=True):
+    resolved_cmd = cmd.format(**get_user_str_vars())
+    if echo: print (resolved_cmd)
+    redirect = open(os.devnull, 'wb') if no_stdout else None
+    return subprocess.call(resolved_cmd, shell=True, stdout=redirect)
+
+def pers (name, default=None, value=None):
+    """
+    Makes persistent some value across runs of the script storing it in a
+    dctionary on "mkpy/cache".  Stores _name_:_value_ pair in cache unless
+    value==None.  Returns the value of _name_ in the cache.
+
+    If default is used, when _value_==None and _name_ is not in the cache the
+    pair _name_:_default is stored.
+    """
+
+    cache_dict = {}
+    if os.path.exists('mkpy/cache'):
+        cache = open ('mkpy/cache', 'r')
+        cache_dict = ast.literal_eval (cache.readline())
+        cache.close ()
+
+    if value == None:
+        if name in cache_dict.keys ():
+            return cache_dict[name]
+        else:
+            if default != None:
+                cache_dict[name] = default
+            else:
+                print ('Key '+name+' is not in cache.')
+                return
+    else:
+        cache_dict[name] = value
+
+    cache = open ('mkpy/cache', 'w')
+    cache.write (str(cache_dict)+'\n')
+    return cache_dict.get (name)
+
 def pymk_default ():
     if len(sys.argv) == 1:
+        check_completions ()
         call_user_function ('default')
         return
     cli_completion_options()
@@ -219,6 +209,7 @@ def pymk_default ():
         f_names = [s for s,f in get_user_functions()]
         targets = set(get_cli_rest()).intersection(f_names)
         for t in targets:
+            check_completions ()
             call_user_function (t)
             pers ('last_target', value=t)
 
