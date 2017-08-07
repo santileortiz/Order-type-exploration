@@ -88,8 +88,7 @@ void progress_bar (float val, float total)
                 str[i] = '-';
             }
         }
-        str[0] = str[length] = '|';
-        fprintf (stderr, "\r%s %.2f%%", str, percent);
+        fprintf (stderr, "\r[%s] %.2f%%", str, percent);
         if (percent == 100) {
             fprintf (stderr, "\r\e[K");
         }
