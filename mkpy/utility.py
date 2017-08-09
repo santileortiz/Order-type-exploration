@@ -161,11 +161,25 @@ def get_user_str_vars ():
             var_dict[v_name] = v
     return var_dict
 
-def ex (cmd, no_stdout=False, echo=True):
+def get_deps_pkgs (flags):
+    """
+    Prints dpkg packages from where -l* options in _flags_ are comming from.
+    """
+    # TODO: Is there a better way to find out this information?
+    libs = [f for f in flags.split(" ") if f.startswith("-l")]
+    strs = ex ('ld --verbose '+" ".join(libs)+' | grep succeeded | grep -Po "/\K(/.*.so)" | xargs dpkg-query --search', ret_stdout=True, echo=False)
+    ex ('rm a.out', echo=False) # ld always creates a.out
+    res = ex ('echo "' +str(strs)+ '" | grep -Po "^.*?(?=:)" | sort | uniq | xargs echo', ret_stdout=True, echo=False)
+    print (res[:-1])
+
+def ex (cmd, no_stdout=False, ret_stdout=False, echo=True):
     resolved_cmd = cmd.format(**get_user_str_vars())
     if echo: print (resolved_cmd)
-    redirect = open(os.devnull, 'wb') if no_stdout else None
-    return subprocess.call(resolved_cmd, shell=True, stdout=redirect)
+    if not ret_stdout:
+        redirect = open(os.devnull, 'wb') if no_stdout else None
+        return subprocess.call(resolved_cmd, shell=True, stdout=redirect)
+    else:
+        return subprocess.check_output(resolved_cmd, shell=True, stderr=open(os.devnull, 'wb')).decode()
 
 def pers (name, default=None, value=None):
     """

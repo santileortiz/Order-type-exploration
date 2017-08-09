@@ -40,5 +40,8 @@ def save_file_to_pdf ():
     ex ('gcc {FLAGS} -o bin/save_file_to_pdf save_file_to_pdf.c -lcairo -lm')
 
 if __name__ == "__main__":
+    if get_cli_option ('--get_deps_pkgs'):
+        get_deps_pkgs (DEP_FLAGS)
+        exit()
     pymk_default()
 
