@@ -1,3 +1,7 @@
+/*
+ * Copyright (C) 2017 Santiago León O. <santileortiz@gmail.com>
+ */
+
 #if !defined(GEOMETRY_COMBINATORICS_H)
 #include <math.h>
 #include <time.h>

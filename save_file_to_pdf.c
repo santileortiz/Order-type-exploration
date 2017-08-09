@@ -1,3 +1,7 @@
+/*
+ * Copyright (C) 2017 Santiago León O. <santileortiz@gmail.com>
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <cairo/cairo.h>

@@ -1,3 +1,7 @@
+/*
+ * Copyright (C) 2017 Santiago León O. <santileortiz@gmail.com>
+ */
+
 #if !defined(GRID_MODE_H)
 struct grid_mode_state_t{
     int n;

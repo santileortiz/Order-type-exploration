@@ -1,4 +1,9 @@
 //gcc -g -Wall -o bin/Hex_to_double_RGB Hex_to_double_RGB.c
+
+/*
+ * Copyright (C) 2017 Santiago León O. <santileortiz@gmail.com>
+ */
+
 #include <stdio.h>
 
 typedef struct {

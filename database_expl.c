@@ -1,3 +1,7 @@
+/*
+ * Copyright (C) 2017 Santiago León O. <santileortiz@gmail.com>
+ */
+
 // Dependencies:
 // sudo apt-get install libxcb1-dev libcairo2-dev
 #include <X11/Xlib-xcb.h>

@@ -1,3 +1,7 @@
+/*
+ * Copyright (C) 2017 Santiago León O. <santileortiz@gmail.com>
+ */
+
 #if !defined(POINT_SET_MODE_H)
 typedef enum {triangle, segment} entity_type;
 typedef struct {

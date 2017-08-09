@@ -1,3 +1,7 @@
+/*
+ * Copyright (C) 2017 Santiago León O. <santileortiz@gmail.com>
+ */
+
 #if !defined(OT_DB_H)
 #include "geometry_combinatorics.h"
 #include <fcntl.h>

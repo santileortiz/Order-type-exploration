@@ -1,3 +1,7 @@
+/*
+ * Copyright (C) 2017 Santiago León O. <santileortiz@gmail.com>
+ */
+
 #if !defined(GUI_H)
 #include <cairo/cairo.h>
 #include <math.h>

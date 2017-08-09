@@ -1,3 +1,7 @@
+/*
+ * Copyright (C) 2017 Santiago León O. <santileortiz@gmail.com>
+ */
+
 #if !defined(APP_API_H)
 #include "tree_mode.h"
 #include "point_set_mode.h"

@@ -1,3 +1,7 @@
+/*
+ * Copyright (C) 2017 Santiago León O. <santileortiz@gmail.com>
+ */
+
 #if !defined(COMMON_H)
 #include <inttypes.h>
 #include <assert.h>

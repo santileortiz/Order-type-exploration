@@ -1,3 +1,7 @@
+/*
+ * Copyright (C) 2017 Santiago León O. <santileortiz@gmail.com>
+ */
+
 #if !defined(TREE_MODE_H)
 struct tree_mode_state_t{
     vect2_t root_pos;
