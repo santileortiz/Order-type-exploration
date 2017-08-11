@@ -29,11 +29,11 @@ def default():
     call_user_function(target)
 
 def database_expl ():
-    ex ('gcc {FLAGS} database_expl.c -o bin/database_expl {DEP_FLAGS}')
+    ex ('gcc {FLAGS} database_expl.c -o bin/database_expl {DEP_FLAGS} -lcurl')
     return
 
 def search ():
-    ex ('gcc {FLAGS} -o bin/search search.c -lm')
+    ex ('gcc {FLAGS} -o bin/search search.c -lm -lcurl')
     return
 
 def save_file_to_pdf ():

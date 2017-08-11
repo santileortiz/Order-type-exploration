@@ -9,6 +9,7 @@
 #include <inttypes.h>
 #include <assert.h>
 #include <errno.h>
+#include <curl/curl.h>
 
 #include "slo_timers.h"
 
@@ -55,6 +56,70 @@ uint64_t db_num_order_types (int n)
    }
 }
 
+int db_coord_size (int n)
+{
+    if (n>8 && n<11) {
+        return 16;
+    } else {
+        return 8;
+    }
+}
+
+char* otdb_names [] = { "", "", "",
+                       "otypes03.b08", "otypes04.b08", "otypes05.b08", "otypes06.b08",
+                       "otypes07.b08", "otypes08.b08", "otypes09.b16", "otypes10.b16"};
+
+
+#define DEF_DB_LOCATION "~/.ot_viewer/"
+#define OTDB_URL "http://www.ist.tugraz.at/aichholzer/research/rp/triangulations/ordertypes/data/"
+void ensure_full_database ()
+{
+    char *dir_path = sh_expand (DEF_DB_LOCATION, NULL);
+    struct stat st;
+
+    int missing [10];
+    int num_missing = 0;
+
+    char *full_path = malloc (strlen(dir_path)+strlen(otdb_names[10])+1);
+    char *f_loc = stpcpy (full_path, dir_path);
+    int i;
+    for (i=3; i<11; i++) {
+        strcpy (f_loc, otdb_names[i]);
+        if (stat(full_path, &st) == -1 && errno == ENOENT) {
+            missing[num_missing] = i;
+            num_missing++;
+        }
+    }
+
+    if (num_missing > 0) {
+        printf ("Missing %i order type databases.\n", num_missing);
+        char *url = malloc(strlen(OTDB_URL)+strlen(otdb_names[10])+1);
+        char *u_loc = stpcpy (url, OTDB_URL);
+
+        CURL *h = curl_easy_init ();
+        //curl_easy_setopt (h, CURLOPT_VERBOSE, 1);
+        curl_easy_setopt (h, CURLOPT_WRITEFUNCTION, NULL); // Required on Windows
+        for (i=0; i<num_missing; i++) {
+            if (h) {
+                strcpy (f_loc, otdb_names[missing[i]]);
+                FILE *f = fopen (full_path, "w");
+                curl_easy_setopt (h, CURLOPT_WRITEDATA, f);
+
+                strcpy (u_loc, otdb_names[missing[i]]);
+                printf ("Downloading: %s\n", url);
+                curl_easy_setopt (h, CURLOPT_URL, url);
+                curl_easy_perform (h);
+                printf ("Downloaded: %s\n\n", full_path);
+                fclose (f);
+            }
+        }
+        curl_easy_cleanup (h);
+        free (url);
+    }
+    free (dir_path);
+    free (full_path);
+}
+
 int open_database (int n)
 {
     if (__g_db_data.db) {
@@ -63,30 +128,19 @@ int open_database (int n)
     __g_db_data.n = n;
     __g_db_data.indx = -1;
     __g_db_data.eof_reached = 0;
-
-    if (n>8 && n<11) {
-        __g_db_data.coord_size = 16;
-    } else if (n>2) {
-        __g_db_data.coord_size = 8;
-    }
-
     __g_db_data.num_order_types = db_num_order_types(n);
-
+    __g_db_data.coord_size = db_coord_size (n);
     __g_db_data.ot_size = 2*n*__g_db_data.coord_size/8;
 
-    char *data_dir = sh_expand ("~/.ot_viewer/", NULL);
-    char filename[13];
-    sprintf (filename, "otypes%02d.b%02u", n, __g_db_data.coord_size);
+    char *dir_path = sh_expand (DEF_DB_LOCATION, NULL);
+    char *full_path = malloc (strlen(dir_path)+strlen(otdb_names[10])+1);
+    char *f_loc = stpcpy (full_path, dir_path);
+    strcpy (f_loc, otdb_names[n]);
 
-    char *path = malloc (strlen (data_dir) + strlen (filename) + 1);
-    char *ptr = path;
-    ptr = stpcpy (path, data_dir);
-    stpcpy (ptr, filename);
-    free (data_dir);
-
-    __g_db_data.db = open (path, O_RDONLY);
-    free (path);
+    __g_db_data.db = open (full_path, O_RDONLY);
+    free (full_path);
     if (__g_db_data.db == -1) {
+        invalid_code_path;
         return 0;
     }
 

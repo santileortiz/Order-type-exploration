@@ -504,6 +504,7 @@ void print_triangle_sizes_for_thrackles_in_convex_position (int n)
 
 int main ()
 {
+    ensure_full_database ();
     //get_thrackle_for_each_ot (8, 8);
     //count_thrackles (8);
     //print_differing_triples (n, 0, 1);
