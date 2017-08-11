@@ -29,6 +29,32 @@ void db_seek (order_type_t *ot, uint64_t id);
 void db_prev (order_type_t *ot);
 int db_is_eof ();
 
+uint64_t db_num_order_types (int n)
+{
+    switch (n) {
+        case 11:
+            return 2334512907;
+        case 10:
+            return 14309547;
+        case 9:
+            return 158817;
+        case 8:
+            return 3315;
+        case 7:
+            return 135;
+        case 6:
+            return 16;
+        case 5:
+            return 3;
+        case 4:
+            return 2;
+        case 3:
+            return 1;
+        default:
+            return 0;
+   }
+}
+
 int open_database (int n)
 {
     if (__g_db_data.db) {
@@ -42,46 +68,24 @@ int open_database (int n)
         __g_db_data.coord_size = 16;
     } else if (n>2) {
         __g_db_data.coord_size = 8;
-    } else {
-        printf ("Could not open order type database. Invalid n.\n");
-        return 0;
     }
+
+    __g_db_data.num_order_types = db_num_order_types(n);
 
     __g_db_data.ot_size = 2*n*__g_db_data.coord_size/8;
 
-    switch (n) {
-        case 11:
-            __g_db_data.num_order_types = 2334512907;
-            break;
-        case 10:
-            __g_db_data.num_order_types = 14309547;
-            break;
-        case 9:
-            __g_db_data.num_order_types = 158817;
-            break;
-        case 8:
-            __g_db_data.num_order_types = 3315;
-            break;
-        case 7:
-            __g_db_data.num_order_types = 135;
-            break;
-        case 6:
-            __g_db_data.num_order_types = 16;
-            break;
-        case 5:
-            __g_db_data.num_order_types = 3;
-            break;
-        case 4:
-            __g_db_data.num_order_types = 2;
-            break;
-        case 3:
-            __g_db_data.num_order_types = 1;
-            break;
-    }
-
+    char *data_dir = sh_expand ("~/.ot_viewer/", NULL);
     char filename[13];
     sprintf (filename, "otypes%02d.b%02u", n, __g_db_data.coord_size);
-    __g_db_data.db = open (filename, O_RDONLY);
+
+    char *path = malloc (strlen (data_dir) + strlen (filename) + 1);
+    char *ptr = path;
+    ptr = stpcpy (path, data_dir);
+    stpcpy (ptr, filename);
+    free (data_dir);
+
+    __g_db_data.db = open (path, O_RDONLY);
+    free (path);
     if (__g_db_data.db == -1) {
         return 0;
     }

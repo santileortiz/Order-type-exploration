@@ -6,6 +6,8 @@
 #include <inttypes.h>
 #include <assert.h>
 #include <stdlib.h>
+#include <string.h>
+#include <wordexp.h>
 typedef enum {false, true} bool;
 
 #define ARRAY_SIZE(arr) (sizeof(arr)/sizeof((arr)[0]))
@@ -499,6 +501,11 @@ enum alloc_opts {
     POOL_ZERO_INIT
 };
 
+// pom == pool or malloc
+#define pom_push_struct(pool, type) pom_push_size(pool, sizeof(type))
+#define pom_push_array(pool, n, type) pom_push_size(pool, (n)*sizeof(type))
+#define pom_push_size(pool, size) (pool==NULL? malloc(size) : mem_pool_push_size(pool,size))
+
 #define mem_pool_push_struct(pool, type) mem_pool_push_size(pool, sizeof(type))
 #define mem_pool_push_array(pool, n, type) mem_pool_push_size(pool, (n)*sizeof(type))
 #define mem_pool_push_size(pool, size) mem_pool_push_size_full(pool, size, POOL_UNINITIALIZED)
@@ -588,6 +595,40 @@ void mem_pool_end_temporary_memory (pool_temp_marker_t mrkr)
         // destroy everything.
         mem_pool_destroy (mrkr.pool);
     }
+}
+
+// Flatten an array of null terminated strings into a single string allocated
+// into _pool_ or heap.
+char* collapse_str_arr (char **arr, int n, mem_pool_t *pool)
+{
+    int len = 0;
+    int i;
+    for (i=0; i<n; i++) {
+        len += strlen (arr[i]) + 1;
+    }
+    char *res = pom_push_size (pool, len);
+
+    char *ptr = res;
+    for (i=0; i<n; i++) {
+        ptr = stpcpy (ptr, arr[i]);
+        *ptr = ' ';
+        ptr++;
+    }
+    ptr--;
+    *ptr = '\0';
+    return res;
+}
+
+// Expand _str_ as bash would, allocate it in _pool_ or heap. 
+// NOTE: $(<cmd>) and `<cmd>` work but don't get too crazy, this spawns /bin/sh
+// and a subprocess. Using env vars like $HOME, or ~/ doesn't.
+char* sh_expand (char *str, mem_pool_t *pool)
+{
+    wordexp_t out;
+    wordexp (str, &out, 0);
+    char *res = collapse_str_arr (out.we_wordv, out.we_wordc, pool);
+    wordfree (&out);
+    return res;
 }
 
 #define COMMON_H
