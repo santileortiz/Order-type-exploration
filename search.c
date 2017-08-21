@@ -336,6 +336,7 @@ void print_info_order (int n, uint64_t ot_id, int *triangle_order)
     order_type_t *ot = order_type_from_id (n, ot_id);
     mem_pool_t temp_pool = {0};
     struct sequence_store_t seq = new_sequence_store_opts (NULL, &temp_pool, SEQ_DRY_RUN);
+
     thrackle_search_tree_full (n, ot, &seq, triangle_order);
     seq_tree_end (&seq);
 
@@ -350,6 +351,21 @@ void print_info_order (int n, uint64_t ot_id, int *triangle_order)
     if (seq.time != 0) {
         printf ("Time: %f ms\n", seq.time);
     }
+    mem_pool_destroy (&temp_pool);
+}
+
+void print_all_thrackles (int n, uint64_t ot_id, int *triangle_order)
+{
+    order_type_t *ot = order_type_from_id (n, ot_id);
+    mem_pool_t temp_pool = {0};
+    struct sequence_store_t seq;
+    seq = new_sequence_store (NULL, &temp_pool);
+
+    thrackle_search_tree_full (n, ot, &seq, triangle_order);
+    backtrack_node_t *root = seq_tree_end (&seq);
+
+    seq_tree_print_sequences_print (root, seq.final_max_len, sorted_array_print);
+
     mem_pool_destroy (&temp_pool);
 }
 
@@ -533,7 +549,11 @@ int main ()
     //average_search_nodes_lexicographic (8);
     //print_info_random_order (6, 0);
     
-    print_info (9, 0);
+    int n = 8;
+    int rand_arr[binomial(n,3)];
+    init_random_array (rand_arr, ARRAY_SIZE(rand_arr));
+    print_all_thrackles (n, 0, rand_arr);
+
     //search_full_tree_all_ot (7);
 
     //int count = count_2_regular_subgraphs_of_k_n_n (5);

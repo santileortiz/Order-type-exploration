@@ -299,6 +299,14 @@ void FUNCNAME (TYPE *arr, int n)                            \
     }                                                       \
 }
 
+void sorted_array_print (int *arr, int n)
+{
+    int sorted[n];
+    memcpy (sorted, arr, n*sizeof(int));
+    int_sort (sorted, n);
+    array_print (sorted, n);
+}
+
 // Function that returns an integer in [min,max] with a uniform distribution.
 // NOTE: Remember to call srand() ONCE before using this.
 #define rand_int_max(max) rand_int_range(0,max)

@@ -878,10 +878,9 @@ void complete_and_pop_node (struct sequence_store_t *stor, int64_t l)
 void seq_push_element (struct sequence_store_t *stor,
                        int val, int64_t level)
 {
+    stor->final_max_len = MAX (stor->final_max_len, level+1);
     if (stor->opts & SEQ_DRY_RUN) {
         stor->num_nodes++;
-        stor->final_max_len = MAX (stor->final_max_len, level+1);
-
         if (stor->nodes_per_len != NULL) {
             stor->nodes_per_len[level+1]++;
         }
@@ -963,18 +962,27 @@ backtrack_node_t* seq_tree_end (struct sequence_store_t *stor)
 / seq_tree_print_sequences (R, 1):
 /  <Nothing>
 / seq_tree_print_sequences (R, 2):
-/  [2,4]
-/  [3,1]
+/  2 4
+/  3 1
 / seq_tree_print_sequences (R, 3):
-/  [1,1,5]
-/  [1,5,2]
-/  [1,5,9]
-/  [3,7,3]
-/  [3,7,5]
-/  [3,7,2]
+/  1 1 5
+/  1 5 2
+/  1 5 9
+/  3 7 3
+/  3 7 5
+/  3 7 2
+/
+/ Function print_func is called to print a sequence, by default array_print is used.
 */
-void seq_tree_print_sequences (backtrack_node_t *root, int len)
+
+#define INT_ARR_PRINT_CALLBACK(name) void name(int *arr, int n)
+typedef INT_ARR_PRINT_CALLBACK(int_arr_print_callback_t);
+
+#define seq_tree_print_sequences(root,len) seq_tree_print_sequences_print(root, len, array_print)
+void seq_tree_print_sequences_print (backtrack_node_t *root, int len, int_arr_print_callback_t *print_func)
 {
+    if (len <= 0) return;
+
     int l = 1;
     int seq[len];
     backtrack_node_t *seq_nodes[len];
@@ -988,7 +996,7 @@ void seq_tree_print_sequences (backtrack_node_t *root, int len)
 
     while (l>0) {
         if (l == len && curr->num_children == 0) {
-            array_print (seq, l);
+            print_func (seq, l);
         }
 
         while (1) {
@@ -1413,6 +1421,27 @@ int count_common_vertices_int (int *a, int *b)
     return res;
 }
 
+#define LEX_TRIANG_ID(order,i) (order==NULL ? i : order[i])
+int *get_all_triangles_array (int n, mem_pool_t *pool, int *triangle_order)
+{
+    int *res, *lex_triangles;
+    int total_triangles = binomial (n,3);
+    lex_triangles = mem_pool_push_size (pool, subset_it_computed_size(n,3));
+    subset_it_compute_all (n, 3, lex_triangles);
+    if (triangle_order == NULL) {
+        res = lex_triangles;
+    } else {
+        res = mem_pool_push_size (pool, subset_it_computed_size(n,3));
+        int *ptr_dest = res;
+        while (ptr_dest < res+total_triangles*3) {
+            memcpy (ptr_dest, lex_triangles+triangle_order[0]*3, 3*sizeof(int));
+            triangle_order++;
+            ptr_dest += 3;
+        }
+    }
+    return res;
+}
+
 // This is for demonstration purposes only, shows what happens when we don't
 // enforce the condition of sequences being in ascending order.
 bool single_thrackle_slow (int n, int k, order_type_t *ot, int *res, int *count,
@@ -1436,21 +1465,7 @@ bool single_thrackle_slow (int n, int k, order_type_t *ot, int *res, int *count,
     int num_invalid = 0;
 
     mem_pool_t temp_pool = {0};
-    int *all_triangles, *lex_triangles;
-    lex_triangles = mem_pool_push_size (&temp_pool, subset_it_computed_size(n,3));
-    subset_it_compute_all (n, 3, lex_triangles);
-    if (triangle_order == NULL) {
-        all_triangles = lex_triangles;
-    } else {
-        all_triangles = mem_pool_push_size (&temp_pool, subset_it_computed_size(n,3));
-        int *ptr = all_triangles;
-        while (ptr < all_triangles+total_triangles*3) {
-            memcpy (ptr, lex_triangles+triangle_order[0]*3, 3*sizeof(int));
-            triangle_order++;
-            ptr += 3;
-        }
-    }
-
+    int *all_triangles = get_all_triangles_array (n, &temp_pool, triangle_order);
 
     res[0] = 0;
     (*count)++;
@@ -1459,6 +1474,16 @@ bool single_thrackle_slow (int n, int k, order_type_t *ot, int *res, int *count,
 
     while (l > 0) {
         if (l>=k) {
+            // Convert resulting thrackle to lexicographic ids of triangles, not
+            // position in all_triangles array.
+            for (i=0; i<k; i++) {
+                res[i] = LEX_TRIANG_ID (triangle_order, res[i]);
+            }
+
+            if (triangle_order) {
+                int_sort (res, k);
+            }
+
             return true;
         } else {
             // Compute S
@@ -1846,23 +1871,10 @@ void thrackle_search_tree_full (int n, order_type_t *ot, struct sequence_store_t
     }
 
     mem_pool_t temp_pool = {0};
-    int *all_triangles, *lex_triangles;
-    lex_triangles = mem_pool_push_size (&temp_pool, subset_it_computed_size(n,3));
-    subset_it_compute_all (n, 3, lex_triangles);
-    if (triangle_order == NULL) {
-        all_triangles = lex_triangles;
-    } else {
-        all_triangles = mem_pool_push_size (&temp_pool, subset_it_computed_size(n,3));
-        int *ptr = all_triangles;
-        while (ptr < all_triangles+total_triangles*3) {
-            memcpy (ptr, lex_triangles+triangle_order[0]*3, 3*sizeof(int));
-            triangle_order++;
-            ptr += 3;
-        }
-    }
+    int *all_triangles = get_all_triangles_array (n, &temp_pool, triangle_order);
 
     seq_tree_extents (seq, total_triangles, k);
-    seq_push_element (seq, 0, 0);
+    seq_push_element (seq, LEX_TRIANG_ID(triangle_order,0), 0);
 
     int res[k];
     res[0] = 0;
@@ -1913,7 +1925,7 @@ void thrackle_search_tree_full (int n, order_type_t *ot, struct sequence_store_t
             if (t != NULL) {
                 invalid_restore_indx[l] = num_invalid;
                 res[l] = lb_idx(S, t);
-                seq_push_element (seq, res[l], l);
+                seq_push_element (seq, LEX_TRIANG_ID(triangle_order, res[l]), l);
                 l++;
                 break;
             }
