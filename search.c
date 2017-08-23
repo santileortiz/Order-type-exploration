@@ -347,6 +347,8 @@ void print_info_order (int n, uint64_t ot_id, int *triangle_order)
         printf ("Nodes per level: ");
         print_uint_array (seq.nodes_per_len, seq.final_max_len+1);
     }
+    printf ("Tree size: %"PRIu64" bytes\n", seq.expected_tree_size);
+    printf ("Max children: %u\n", seq.final_max_children);
 
     if (seq.time != 0) {
         printf ("Time: %f ms\n", seq.time);
@@ -545,14 +547,14 @@ int main ()
 
     //get_all_thrackles (9, 10, 0, NULL);
     //print_triangle_sizes_for_thrackles_in_convex_position (10);
-    //print_info (8, 0);
+    print_info (10, 0);
     //average_search_nodes_lexicographic (8);
     //print_info_random_order (6, 0);
     
-    int n = 8;
-    int rand_arr[binomial(n,3)];
-    init_random_array (rand_arr, ARRAY_SIZE(rand_arr));
-    print_all_thrackles (n, 0, rand_arr);
+    //int n = 8;
+    //int rand_arr[binomial(n,3)];
+    //init_random_array (rand_arr, ARRAY_SIZE(rand_arr));
+    //print_all_thrackles (n, 0, rand_arr);
 
     //search_full_tree_all_ot (7);
 

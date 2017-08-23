@@ -816,11 +816,13 @@ struct sequence_store_t {
 
     // Optional information about the search
     uint32_t final_max_len;
+    uint32_t final_max_children;
+    uint64_t expected_tree_size;
+    uint32_t *nodes_per_len; // Allocated in sequence_store_t->pool
+    int *children_count_stack; // Used to compute expected_tree_size, allocated in sequence_store_t->temp_pool
+    int num_children_count_stack;
     // TODO: Implement the following info:
-    // uint32_t final_max_children;
-    // uint64_t expected_tree_size;
     // uint64_t expected_sequence_size;
-    uint32_t *nodes_per_len; // Requires sequence_store_t->pool
 };
 
 backtrack_node_t* stack_element (struct sequence_store_t *stor, uint32_t i)
@@ -843,16 +845,21 @@ void push_partial_node (struct sequence_store_t *stor, int val)
     stor->num_nodes++;
 }
 
-void complete_and_pop_node (struct sequence_store_t *stor, int64_t l)
+uint32_t backtrack_node_size (int num_children)
 {
-    backtrack_node_t *finished = stack_element (stor, l+1);
     uint32_t node_size;
-    if (finished->num_children > 1) {
-        node_size = sizeof(backtrack_node_t)+(finished->num_children-1)*sizeof(backtrack_node_t*);
+    if (num_children > 1) {
+        node_size = sizeof(backtrack_node_t)+(num_children-1)*sizeof(backtrack_node_t*);
     } else {
         node_size = sizeof(backtrack_node_t);
     }
+    return node_size;
+}
 
+void complete_and_pop_node (struct sequence_store_t *stor, int64_t l)
+{
+    backtrack_node_t *finished = stack_element (stor, l+1);
+    uint32_t node_size = backtrack_node_size (finished->num_children);
     backtrack_node_t *pushed_node = mem_pool_push_size (stor->pool, node_size);
     pushed_node->id = finished->id;
     pushed_node->val = finished->val;
@@ -884,6 +891,27 @@ void seq_push_element (struct sequence_store_t *stor,
         if (stor->nodes_per_len != NULL) {
             stor->nodes_per_len[level+1]++;
         }
+
+        while (stor->last_l >= level) {
+            assert (stor->last_l >= 0);
+            uint32_t final_children_count = stor->children_count_stack[stor->last_l+1];
+            stor->final_max_children = MAX (stor->final_max_children, final_children_count);
+            stor->expected_tree_size += backtrack_node_size (final_children_count);
+            stor->num_children_count_stack--;
+            if (stor->last_l >= 0) {
+                stor->children_count_stack[stor->last_l]++;
+            }
+            stor->last_l--;
+        }
+        assert (stor->last_l + 1 == level
+                && "Nodes should be pushed with level increasing by 1");
+        stor->last_l = level;
+        stor->children_count_stack[stor->num_children_count_stack] = 0;
+        stor->num_children_count_stack++;
+
+        // NOTE: Why would someone want to compute the tree size while also
+        // computing it?, if this is an actual usecase, then we don't really want
+        // to return here. CAREFUL: stor->last_l will be used from two places.
         return;
     }
 
@@ -917,11 +945,18 @@ void seq_tree_extents (struct sequence_store_t *stor,
         stor->max_len = max_len;
         stor->node_stack =
             mem_pool_push_size (&stor->temp_pool,(stor->max_len+1)*stor->max_node_size);
-        if (stor->pool != NULL && (stor->opts & SEQ_DRY_RUN)) {
-            stor->nodes_per_len =
-                mem_pool_push_size_full (stor->pool,
-                                         (stor->max_len+1)*sizeof(*stor->nodes_per_len),
+
+        if (stor->opts & SEQ_DRY_RUN) {
+            stor->children_count_stack =
+                mem_pool_push_size_full (&stor->temp_pool,
+                                         (stor->max_len+1)*sizeof(stor->children_count_stack),
                                          POOL_ZERO_INIT);
+            if (stor->pool != NULL) {
+                stor->nodes_per_len =
+                    mem_pool_push_size_full (stor->pool,
+                                             (stor->max_len+1)*sizeof(*stor->nodes_per_len),
+                                             POOL_ZERO_INIT);
+            }
         }
     } else {
         // TODO: If we don't know max_len then node_stack should be a
@@ -941,6 +976,17 @@ backtrack_node_t* seq_tree_end (struct sequence_store_t *stor)
             stor->last_l--;
         }
         ret = ((backtrack_node_t**)stor->nodes.data)[stor->num_nodes-1];
+    } else {
+        while (stor->last_l >= -1) {
+            uint32_t final_children_count = stor->children_count_stack[stor->last_l+1];
+            stor->final_max_children = MAX (stor->final_max_children, final_children_count);
+            stor->expected_tree_size += backtrack_node_size (final_children_count);
+            stor->num_children_count_stack--;
+            if (stor->last_l >= 0) {
+                stor->children_count_stack[stor->last_l]++;
+            }
+            stor->last_l--;
+        }
     }
 
     cont_buff_destroy (&stor->nodes);

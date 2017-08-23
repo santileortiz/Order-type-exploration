@@ -494,6 +494,9 @@ typedef struct {
     uint32_t size;
     uint32_t used;
     void *base;
+
+    uint32_t total_used;
+    uint32_t num_bins;
 } mem_pool_t;
 
 struct _bin_info_t {
@@ -520,6 +523,7 @@ enum alloc_opts {
 void* mem_pool_push_size_full (mem_pool_t *pool, int size, enum alloc_opts opts)
 {
     if (pool->used + size >= pool->size) {
+        pool->num_bins++;
         int new_bin_size = MAX (MAX (MEM_POOL_MIN_BIN_SIZE, pool->min_bin_size), size);
         void *new_bin;
         bin_info_t *new_info;
@@ -547,6 +551,7 @@ void* mem_pool_push_size_full (mem_pool_t *pool, int size, enum alloc_opts opts)
 
     void *ret = (uint8_t*)pool->base + pool->used;
     pool->used += size;
+    pool->total_used += size;
 
     if (opts == POOL_ZERO_INIT) {
         memset (ret, 0, size);
@@ -569,17 +574,56 @@ void mem_pool_destroy (mem_pool_t *pool)
     }
     pool->size = 0;
     pool->used = 0;
+    pool->total_used = 0;
+    pool->num_bins = 0;
+}
+
+uint32_t mem_pool_allocated (mem_pool_t *pool)
+{
+    uint64_t allocated = 0;
+    if (pool->base != NULL) {
+        bin_info_t *curr_info = (bin_info_t*)((uint8_t*)pool->base + pool->size);
+        while (curr_info != NULL) {
+            allocated += curr_info->size + sizeof(bin_info_t);
+            curr_info = curr_info->prev_bin_info;
+        }
+    }
+    return allocated;
+}
+
+void mem_pool_print (mem_pool_t *pool)
+{
+    uint32_t allocated = mem_pool_allocated(pool);
+    printf ("Allocated: %u bytes\n", allocated);
+    printf ("Available: %u bytes\n", pool->size-pool->used);
+    printf ("Used: %u bytes (%.2f%%)\n", pool->total_used, ((double)pool->total_used*100)/allocated);
+    uint64_t info_size = pool->num_bins*sizeof(bin_info_t);
+    printf ("Info: %lu bytes (%.2f%%)\n", info_size, ((double)info_size*100)/allocated);
+
+    // NOTE: This is the amount of space left empty in previous bins
+    uint64_t left_empty;
+    if (pool->num_bins>0)
+        left_empty = (allocated - pool->size - sizeof(bin_info_t))- /*allocated except last bin*/
+                     (pool->total_used - pool->used)-               /*total_used except last bin*/
+                     (pool->num_bins-1)*sizeof(bin_info_t);         /*size used in bin_info_t*/
+    else {
+        left_empty = 0;
+    }
+    printf ("Left empty: %lu bytes (%.2f%%)\n", left_empty, ((double)left_empty*100)/allocated);
+    printf ("Bins: %u\n", pool->num_bins);
 }
 
 typedef struct {
     mem_pool_t *pool;
     void* base;
     uint32_t used;
+    uint32_t total_used;
 } pool_temp_marker_t;
 
 pool_temp_marker_t mem_pool_begin_temporary_memory (mem_pool_t *pool)
 {
     pool_temp_marker_t res;
+    res.total_used = pool->total_used;
     res.used = pool->used;
     res.base = pool->base;
     res.pool = pool;
@@ -594,10 +638,12 @@ void mem_pool_end_temporary_memory (pool_temp_marker_t mrkr)
             void *to_free = curr_info->base;
             curr_info = curr_info->prev_bin_info;
             free (to_free);
+            mrkr.pool->num_bins--;
         }
         mrkr.pool->size = curr_info->size;
         mrkr.pool->base = curr_info->base;
         mrkr.pool->used = mrkr.used;
+        mrkr.pool->total_used = mrkr.total_used;
     } else {
         // NOTE: Here mrkr was created before the pool was initialized, so we
         // destroy everything.
