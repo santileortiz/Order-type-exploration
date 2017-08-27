@@ -1633,14 +1633,13 @@ bool single_thrackle_slow (int n, int k, order_type_t *ot, int *res, int *count,
     return false;
 }
 
-bool single_thrackle (int n, int k, order_type_t *ot, int *res)
+bool single_thrackle (int n, int k, order_type_t *ot, int *res, int *count,
+                           int *triangle_order)
 {
     assert (n==ot->n);
     int l = 1; // Tree level
 
-    subset_it_t *triangle_it = subset_it_new (n, 3, NULL);
-    subset_it_precompute (triangle_it);
-    int total_triangles = triangle_it->size;
+    int total_triangles = binomial (n,3);
 
     struct linked_bool S[total_triangles];
     int i;
@@ -1653,22 +1652,31 @@ bool single_thrackle (int n, int k, order_type_t *ot, int *res)
     int invalid_triangles[total_triangles];
     int num_invalid = 0;
 
+    mem_pool_t temp_pool = {0};
+    int *all_triangles = get_all_triangles_array (n, &temp_pool, triangle_order);
+
     res[0] = 0;
+    (*count)++;
     int invalid_restore_indx[k];
     invalid_restore_indx[0] = 0;
 
     while (l > 0) {
         if (l>=k) {
+            // Convert resulting thrackle to lexicographic ids of triangles, not
+            // position in all_triangles array.
+            for (i=0; i<k; i++) {
+                res[i] = LEX_TRIANG_ID (triangle_order, res[i]);
+            }
+
+            if (triangle_order) {
+                int_sort (res, k);
+            }
+
             return true;
         } else {
             // Compute S
-            subset_it_seek (triangle_it, lb_idx (S, t));
-            int triangle[3];
-            triangle[0] = triangle_it->idx[0];
-            triangle[1] = triangle_it->idx[1];
-            triangle[2] = triangle_it->idx[2];
-
-            triangle_t choosen_tr = TRIANGLE_IT (ot, triangle_it);
+            int *triangle = all_triangles + 3*lb_idx (S, t);
+            triangle_t choosen_tr = TRIANGLE_IDXS (ot, triangle);
 
             if (t != NULL) {
                 // NOTE: S_curr=t->next enforces res[] to be an ordered sequence.
@@ -1676,11 +1684,7 @@ bool single_thrackle (int n, int k, order_type_t *ot, int *res)
                 struct linked_bool *S_curr = t->next;
                 while (S_curr != NULL) {
                     int i = lb_idx (S, S_curr);
-                    subset_it_seek (triangle_it, i);
-                    int candidate_tr_ids[3];
-                    candidate_tr_ids[0] = triangle_it->idx[0];
-                    candidate_tr_ids[1] = triangle_it->idx[1];
-                    candidate_tr_ids[2] = triangle_it->idx[2];
+                    int *candidate_tr_ids = all_triangles + 3*i;
 
                     int test = count_common_vertices_int (triangle, candidate_tr_ids);
                     if (test == 2) {
@@ -1693,7 +1697,7 @@ bool single_thrackle (int n, int k, order_type_t *ot, int *res)
                     } else if (test == 0) {
                         // NOTE: Triangles have no comon vertices, check if
                         // edges intersect.
-                        triangle_t candidate_tr = TRIANGLE_IT (ot, triangle_it);
+                        triangle_t candidate_tr = TRIANGLE_IDXS (ot, candidate_tr_ids);
                         if (!have_intersecting_segments (&choosen_tr, &candidate_tr)) {
                             invalid_triangles[num_invalid++] = i;
                             S_prev->next = S_curr->next;
@@ -1715,6 +1719,7 @@ bool single_thrackle (int n, int k, order_type_t *ot, int *res)
                 invalid_restore_indx[l] = num_invalid;
                 res[l] = lb_idx(S, t);
                 l++;
+                (*count)++;
                 break;
             }
 

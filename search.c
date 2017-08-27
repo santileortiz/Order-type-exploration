@@ -19,53 +19,6 @@
 #define OT_DB_IMPLEMENTATION
 #include "ot_db.h"
 
-void get_thrackle_for_each_ot (int n, int k)
-{
-    uint64_t id = 0;
-    order_type_t *ot = order_type_new (n, NULL);
-    int *curr_set = malloc (sizeof(int)*k);
-
-    triangle_set_t *triangle_set = malloc (triangle_set_size (k));
-    triangle_set->k = k;
-
-    open_database (n);
-    db_seek (ot, id);
-
-    subset_it_t *triangle_it = subset_it_new (n, 3, NULL);
-
-    subset_it_precompute (triangle_it);
-    int total_triangles = binomial (n, 3);
-    float average = 0;
-    int nodes = 0, searches = 0;
-    int rand_arr[total_triangles];
-    init_random_array (rand_arr, total_triangles);
-    bool found = single_thrackle_slow (n, k, ot, curr_set, &nodes, rand_arr);
-
-    while (!db_is_eof ()) {
-        printf ("%ld: ", id);
-        if (found) {
-            array_print (curr_set, k);
-        } else {
-            printf ("None\n");
-        }
-
-        //printf ("%ld: %lu\n", id, subset_it_id_for_idx (total_triangles, curr_set, k));
-
-        db_next (ot);
-        triangle_set_from_ids (ot, n, curr_set, k, triangle_set);
-        if (!is_thrackle(triangle_set)) {
-            fisher_yates_shuffle (rand_arr, total_triangles);
-            nodes = 0;
-            found = single_thrackle_slow (n, k, ot, curr_set, &nodes, rand_arr);
-            average += nodes;
-            searches++;
-        }
-        id++;
-    }
-    printf ("Searches: %d, Average nodes: %f\n", searches, average/searches);
-    free (triangle_it);
-}
-
 // TODO: Add timing:
 //   - Compute ETA.
 //   - If ETA is too short, do not print anything.
@@ -85,18 +38,75 @@ void progress_bar (float val, float total)
     if (prev != idx) {
         prev = idx;
         int i;
-        for (i=1; i<length; i++) {
+        for (i=0; i<length; i++) {
             if (i < idx) {
                 str[i] = '#';
             } else {
                 str[i] = '-';
             }
         }
+        str[i] = '\0';
         fprintf (stderr, "\r[%s] %.2f%%", str, percent);
         if (percent == 100) {
             fprintf (stderr, "\r\e[K");
         }
     }
+}
+
+#if 1
+#define single_thrackle_func single_thrackle
+#else
+#define single_thrackle_func single_thrackle_slow
+#endif
+void get_thrackle_for_each_ot (int n, int k)
+{
+    uint64_t id = 0;
+    order_type_t *ot = order_type_new (n, NULL);
+    int *curr_set = malloc (sizeof(int)*k);
+
+    triangle_set_t *triangle_set = malloc (triangle_set_size (k));
+    triangle_set->k = k;
+
+    open_database (n);
+    db_seek (ot, id);
+
+    int total_triangles = binomial (n, 3);
+    float average = 0;
+    int nodes = 0, searches = 0;
+    int rand_arr[total_triangles];
+    init_random_array (rand_arr, total_triangles);
+    bool found = single_thrackle_func (n, k, ot, curr_set, &nodes, rand_arr);
+
+    bool print_all = false;
+    while (!db_is_eof ()) {
+        if (print_all) {
+            printf ("%ld: ", id);
+            if (found) {
+                array_print (curr_set, k);
+            } else {
+                printf ("None\n");
+            }
+
+            //printf ("%ld: %lu\n", id, subset_it_id_for_idx (total_triangles, curr_set, k));
+        } else {
+            if (!found) {
+                printf ("%ld\n", id);
+            }
+            progress_bar (id, __g_db_data.num_order_types);
+        }
+
+        db_next (ot);
+        triangle_set_from_ids (ot, n, curr_set, k, triangle_set);
+        if (!is_thrackle(triangle_set)) {
+            fisher_yates_shuffle (rand_arr, total_triangles);
+            nodes = 0;
+            found = single_thrackle_func (n, k, ot, curr_set, &nodes, rand_arr);
+            average += nodes;
+            searches++;
+        }
+        id++;
+    }
+    printf ("Searches: %d, Average nodes: %f\n", searches, average/searches);
 }
 
 void search_full_tree_all_ot (int n)
@@ -126,7 +136,7 @@ void search_full_tree_all_ot (int n)
         id++;
         mem_pool_end_temporary_memory (mrk);
     }
-    printf ("Tn: %d, Average nodes: %f\n", Tn, average/(id));
+    printf ("Max Size: %d, Average nodes: %f\n", Tn, average/(id));
 }
 
 // This version does an exhaustive search over all binomial(binomial(n,3),k)
@@ -523,7 +533,7 @@ void print_triangle_sizes_for_thrackles_in_convex_position (int n)
 int main ()
 {
     ensure_full_database ();
-    //get_thrackle_for_each_ot (8, 8);
+    //get_thrackle_for_each_ot (10, 12);
     //count_thrackles (8);
     //print_differing_triples (n, 0, 1);
     //print_edge_disjoint_sets (8, 8);
