@@ -3,6 +3,7 @@
  */
 
 #include <inttypes.h>
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <fcntl.h>
@@ -97,12 +98,16 @@ void get_thrackle_for_each_ot (int n, int k)
 
         db_next (ot);
         triangle_set_from_ids (ot, n, curr_set, k, triangle_set);
+
+        found = false;
         if (!is_thrackle(triangle_set)) {
             fisher_yates_shuffle (rand_arr, total_triangles);
             nodes = 0;
             found = single_thrackle_func (n, k, ot, curr_set, &nodes, rand_arr);
             average += nodes;
             searches++;
+        } else {
+            found = true;
         }
         id++;
     }
@@ -120,7 +125,7 @@ void search_full_tree_all_ot (int n)
     db_seek (ot, id);
 
     float average = 0;
-    int Tn = 0;
+    int max_size = 0;
 
     while (!db_is_eof ()) {
         pool_temp_marker_t mrk = mem_pool_begin_temporary_memory (&pool);
@@ -129,14 +134,80 @@ void search_full_tree_all_ot (int n)
         seq_tree_end (&seq);
 
         average += seq.num_nodes;
-        Tn = MAX(seq.final_max_len, Tn);
+        max_size = MAX(seq.final_max_len, max_size);
 
         progress_bar (id, __g_db_data.num_order_types);
         db_next (ot);
         id++;
         mem_pool_end_temporary_memory (mrk);
     }
-    printf ("Max Size: %d, Average nodes: %f\n", Tn, average/(id));
+    printf ("Max Size: %d, Average nodes: %f\n", max_size, average/(id));
+}
+
+uint32_t* load_uint32_from_text_file (char *filename, int *count)
+{
+    assert (count != NULL);
+    *count = 0;
+    FILE *f = fopen (filename, "r");
+    char *str = NULL;
+    size_t str_len = 0;
+    while (getline (&str, &str_len, f) != -1) {
+        if (isdigit (str[0])) {
+            (*count)++;
+        }
+        free (str);
+        str = NULL;
+        str_len = 0;
+    }
+
+    uint32_t *res = malloc ((*count) * sizeof(uint32_t));
+    if (res != NULL ) {
+        int i = 0;
+        str = NULL;
+        str_len = 0;
+        rewind (f);
+        while (getline (&str, &str_len, f) != -1) {
+            if (isdigit (str[0])) {
+                res[i++] = (uint32_t)strtoul (str, NULL, 0);
+            }
+            free (str);
+            str = NULL;
+            str_len = 0;
+        }
+    } else {
+        printf ("malloc() failed reading file '%s'\n", filename);
+    }
+    return res;
+}
+
+void max_thrackle_size_ot_file (int n, char *filename)
+{
+    assert(n <= 10);
+    mem_pool_t pool = {0};
+    order_type_t *ot = order_type_new (n, NULL);
+
+    int num_ot_ids = 0;
+    uint32_t *ot_ids = load_uint32_from_text_file (filename, &num_ot_ids);
+
+    open_database (n);
+    float average = 0;
+    int i;
+    for (i=0; i < num_ot_ids; i++) {
+        db_seek (ot, ot_ids[i]);
+
+        pool_temp_marker_t mrk = mem_pool_begin_temporary_memory (&pool);
+        struct sequence_store_t seq = new_sequence_store_opts (NULL, &pool, SEQ_DRY_RUN);
+        thrackle_search_tree (n, ot, &seq);
+        seq_tree_end (&seq);
+
+        progress_bar (i, num_ot_ids);
+        average += seq.num_nodes;
+        printf ("%u: %d\n", ot_ids[i], seq.final_max_len);
+
+        mem_pool_end_temporary_memory (mrk);
+    }
+    printf ("Average nodes: %f\n", average/(num_ot_ids));
+    free (ot_ids);
 }
 
 // This version does an exhaustive search over all binomial(binomial(n,3),k)
@@ -545,10 +616,11 @@ int main ()
     //matching_decompositions_over_K_n_n (6, NULL, &seq);
     //seq_tree_end (&seq);
 
-    //int n = 10, k = 16;
-    //order_type_t *ot = order_type_from_id (n, 0);
+    //int n = 10, k = 12;
+    //order_type_t *ot = order_type_from_id (n, 403098);
     //int res[k];
-    //bool found = single_thrackle (n, k, ot, res);
+    //int nodes;
+    //bool found = single_thrackle (n, k, ot, res, &nodes, NULL);
     //if (!found) {
     //    printf ("None\n");
     //} else {
@@ -557,9 +629,10 @@ int main ()
 
     //get_all_thrackles (9, 10, 0, NULL);
     //print_triangle_sizes_for_thrackles_in_convex_position (10);
-    print_info (10, 0);
+    //print_info (10, 0);
     //average_search_nodes_lexicographic (8);
     //print_info_random_order (6, 0);
+    max_thrackle_size_ot_file (10, "n_10_sin_thrackle_12.txt");
     
     //int n = 8;
     //int rand_arr[binomial(n,3)];
