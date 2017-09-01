@@ -54,6 +54,19 @@ void progress_bar (float val, float total)
     }
 }
 
+order_type_t* order_type_from_id (int n, uint64_t ot_id)
+{
+    order_type_t *res = order_type_new (n, NULL);
+    if (ot_id == 0 && n>10) {
+        convex_ot_searchable (res);
+    } else {
+        assert (n<=10);
+        open_database (n);
+        db_seek (res, ot_id);
+    }
+    return res;
+}
+
 #if 1
 #define single_thrackle_func single_thrackle
 #else
@@ -74,6 +87,7 @@ void get_thrackle_for_each_ot (int n, int k)
     int total_triangles = binomial (n, 3);
     float average = 0;
     int nodes = 0, searches = 0;
+    srand (time(NULL));
     int rand_arr[total_triangles];
     init_random_array (rand_arr, total_triangles);
     bool found = single_thrackle_func (n, k, ot, curr_set, &nodes, rand_arr);
@@ -112,6 +126,59 @@ void get_thrackle_for_each_ot (int n, int k)
         id++;
     }
     printf ("Searches: %d, Average nodes: %f\n", searches, average/searches);
+}
+
+enum tr_order_t {
+    LEXICOGRAPHIC,
+    TR_SIZE,
+    TR_EDGE_LEXICOGRAPHIC
+};
+
+void single_thrackle_size_order (int n, int k, int *nodes, int *res, enum tr_order_t ord)
+{
+    int total_triangles = binomial(n,3);
+    int *triangle_order;
+    switch (ord) {
+        case TR_EDGE_LEXICOGRAPHIC:
+         triangle_order = malloc (sizeof(int) * total_triangles);
+         int j;
+            for (j=0; j<total_triangles; j++) {
+                triangle_order[j] = j;
+            }
+            lex_size_triangle_sort_user_data (triangle_order, total_triangles, &n);
+            break;
+        case TR_SIZE:
+            triangle_order = malloc (sizeof(int) * total_triangles);
+            order_triangles_size (n, triangle_order);
+            break;
+        default:
+            triangle_order = NULL;
+    }
+
+    if (triangle_order != NULL) {
+        // NOTE: Reverse array
+        int i;
+        for (i=0; i<total_triangles/2; i++) {
+            swap (&triangle_order[i], &triangle_order[total_triangles-i-1]);
+        }
+    }
+
+    // NOTE: Current triagle size computations are defined only over convex sets
+    order_type_t *ot = order_type_from_id (n, 0);
+
+    single_thrackle (n, k, ot, res, nodes, triangle_order);
+    free (ot);
+}
+
+void single_thrackle_random_order (int n, int k, uint64_t ot_id, int *nodes, int *res)
+{
+    order_type_t *ot = order_type_from_id (n, ot_id);
+
+    int triangle_order[binomial(n,3)];
+    init_random_array (triangle_order, ARRAY_SIZE(triangle_order));
+
+    single_thrackle (n, k, ot, res, nodes, triangle_order);
+    free (ot);
 }
 
 void search_full_tree_all_ot (int n)
@@ -398,19 +465,6 @@ int* get_all_thrackles_cached (int n, int k, uint32_t ot_id)
     return res;
 }
 
-order_type_t* order_type_from_id (int n, uint64_t ot_id)
-{
-    order_type_t *res = order_type_new (n, NULL);
-    if (ot_id == 0 && n>10) {
-        convex_ot_searchable (res);
-    } else {
-        assert (n<=10);
-        open_database (n);
-        db_seek (res, ot_id);
-    }
-    return res;
-}
-
 #define print_info(n,ot_id) print_info_order (n,ot_id,NULL)
 void print_info_order (int n, uint64_t ot_id, int *triangle_order)
 {
@@ -455,6 +509,7 @@ void print_all_thrackles (int n, uint64_t ot_id, int *triangle_order)
 void print_info_random_order (int n, uint64_t ot_id)
 {
     int rand_arr[binomial(n,3)];
+    srand (time(NULL));
     init_random_array (rand_arr, ARRAY_SIZE(rand_arr));
     print_info_order (n, ot_id, rand_arr);
 }
@@ -493,8 +548,29 @@ void average_search_nodes (int n, int *triangle_order)
 void average_search_nodes_random (int n)
 {
     int rand_arr[binomial(n,3)];
+    srand (time(NULL));
     init_random_array (rand_arr, ARRAY_SIZE(rand_arr));
     average_search_nodes (n, rand_arr);
+}
+
+void compare_convex_thrackle_orderings (int n, int k)
+{
+    int nodes, res[k];
+    single_thrackle_size_order (n, k, &nodes, res, LEXICOGRAPHIC);
+    printf ("Lexicographic: %d\n", nodes);
+    single_thrackle_size_order (n, k, &nodes, res, TR_SIZE);
+    printf ("Triangle size: %d\n", nodes);
+    single_thrackle_size_order (n, k, &nodes, res, TR_EDGE_LEXICOGRAPHIC);
+    printf ("Triangle edge size: %d\n", nodes);
+
+    srand (time(NULL));
+    int iters = 1000, i;
+    float avg = 0;
+    for (i=0; i<iters; i++) {
+        single_thrackle_random_order (n, k, 0, &nodes, res);
+        avg += nodes;
+    }
+    printf ("Random avg (%d): %.2f\n", iters, avg/(float)iters);
 }
 
 int* get_all_thrackles_convex_position (int n, int k, int *num_found)
@@ -543,50 +619,15 @@ void print_triangle_sizes_for_thrackles_in_convex_position (int n)
             int t[3];
             subset_it_idx_for_id (t_id, n, t, 3);
 
-            int dist[3];
-            int d_a = 0;
-            int d_b = 0;
-
-            d_a = t[1] - t[0] - 1;
-            d_b = n + t[0] - t[1] - 1;
-            if (d_a <d_b) {
-                dist [0] = d_a;
-            } else {
-                dist [0] = d_b;
-            }
-
-            d_a = t[2] - t[1] - 1;
-            d_b = n + t[1] - t[2] - 1;
-            if (d_a <d_b) {
-                dist [1] = d_a;
-            } else {
-                dist [1] = d_b;
-            }
-
-            d_a = t[2] - t[0] - 1;
-            d_b = n + t[0] - t[2] - 1;
-            if (d_a <d_b) {
-                dist [2] = d_a;
-            } else {
-                dist [2] = d_b;
-            }
-
+            int tr_size = triangle_size (n, t);
             //printf ("triangle: ");
             //array_print (t, 3);
             //printf ("distances: ");
             //array_print (dist, 3);
 
-            int h;
-            int max_distance = 0;
-            for (h=0; h<3; h++) {
-                if (dist[h] > max_distance) {
-                    max_distance = dist[h];
-                }
-            }
-
-            assert (max_distance != 0);
+            assert (tr_size != 0);
             //printf ("max_dist: %d\n", max_distance);
-            sizes[max_distance - 1]++;
+            sizes[tr_size - 1]++;
             //printf ("\n");
         }
 
@@ -628,11 +669,13 @@ int main ()
     //}
 
     //get_all_thrackles (9, 10, 0, NULL);
-    //print_triangle_sizes_for_thrackles_in_convex_position (10);
+    //print_triangle_sizes_for_thrackles_in_convex_position (7);
+
+    compare_convex_thrackle_orderings (10, 12);
     //print_info (10, 0);
     //average_search_nodes_lexicographic (8);
     //print_info_random_order (6, 0);
-    max_thrackle_size_ot_file (10, "n_10_sin_thrackle_12.txt");
+    //max_thrackle_size_ot_file (10, "n_10_sin_thrackle_12.txt");
     
     //int n = 8;
     //int rand_arr[binomial(n,3)];

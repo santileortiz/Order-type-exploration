@@ -1655,6 +1655,7 @@ bool single_thrackle (int n, int k, order_type_t *ot, int *res, int *count,
     mem_pool_t temp_pool = {0};
     int *all_triangles = get_all_triangles_array (n, &temp_pool, triangle_order);
 
+    *count = 0;
     res[0] = 0;
     (*count)++;
     int invalid_restore_indx[k];
@@ -2384,6 +2385,84 @@ uint32_t count_2_regular_subgraphs_of_k_n_n (int n, int_dyn_arr_t *edges_out)
         }
     }
     return count;
+}
+
+void edge_sizes (int n, int *t, int *dist)
+{
+    int d_a = 0;
+    int d_b = 0;
+    d_a = t[1] - t[0] - 1;
+    d_b = n + t[0] - t[1] - 1;
+    dist[0] = MIN (d_a, d_b);
+
+    d_a = t[2] - t[1] - 1;
+    d_b = n + t[1] - t[2] - 1;
+    dist[1] = MIN (d_a, d_b);
+
+    d_a = t[2] - t[0] - 1;
+    d_b = n + t[0] - t[2] - 1;
+    dist[2] = MIN (d_a, d_b);
+    int_sort (dist, 3);
+}
+
+int triangle_size (int n, int *t)
+{
+    int dist[3];
+    edge_sizes (n, t, dist);
+
+    int h;
+    int res = 0;
+    for (h=0; h<3; h++) {
+        if (dist[h] > res) {
+            res = dist[h];
+        }
+    }
+    return res;
+}
+
+int tr_less_than (int n, int a, int b)
+{
+    int dist_a[3];
+    int t_a[3];
+    subset_it_idx_for_id (a, n, t_a, 3);
+    edge_sizes (n, t_a, dist_a);
+
+    int dist_b[3];
+    int t_b[3];
+    subset_it_idx_for_id (b, n, t_b, 3);
+    edge_sizes (n, t_b, dist_b);
+
+    if (dist_a[0] < dist_b[0]) {
+        return 1;
+    } else if (dist_a[1] < dist_b[1]) {
+        return 1;
+    } else if (dist_a[2] < dist_b[2]) {
+        return 1;
+    } else {
+        return 0;
+    }
+}
+
+templ_sort (lex_size_triangle_sort, int, tr_less_than (*(int*)user_data, *a, *b))
+
+void order_triangles_size (int n, int *triangle_order)
+{
+    int total_triangles = binomial (n,3);
+    int_key_t *sort_structs = malloc (sizeof(int_key_t)*(total_triangles));
+    int i;
+    for (i=0; i<total_triangles; i++) {
+        sort_structs[i].origin = i;
+
+        int t[3];
+        subset_it_idx_for_id (i, n, t, 3);
+        sort_structs[i].key = triangle_size (n, t);
+    }
+    sort_int_keys (sort_structs, total_triangles);
+
+    for (i=0; i<total_triangles; i++) {
+        triangle_order[i] = sort_structs[i].origin;
+    }
+    free (sort_structs);
 }
 #define GEOMETRY_COMBINATORICS_H
 #endif

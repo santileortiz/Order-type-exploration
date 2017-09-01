@@ -261,42 +261,45 @@ void swap_n_bytes (void *a, void*b, int n)
 // Templetized merge sort
 // IS_A_LT_B is an expression where *a and *b are pointers
 // to _arr_ true when *a<*b.
-#define templ_sort(FUNCNAME,TYPE,IS_A_LT_B)                 \
-void FUNCNAME (TYPE *arr, int n)                            \
-{                                                           \
-    if (n==1) {                                             \
-        return;                                             \
-    } else if (n == 2) {                                    \
-        TYPE *a = &arr[1];                                  \
-        TYPE *b = &arr[0];                                  \
-        int c = IS_A_LT_B;                                  \
-        if (c) {                                            \
-            swap_n_bytes (&arr[0], &arr[1], sizeof(TYPE));  \
-        }                                                   \
-    } else {                                                \
-        TYPE res[n];                                        \
-        FUNCNAME (arr, n/2);                                \
-        FUNCNAME (&arr[n/2], n-n/2);                        \
-                                                            \
-        int i;                                              \
-        int h=0;                                            \
-        int k=n/2;                                          \
-        for (i=0; i<n; i++) {                               \
-            TYPE *a = &arr[h];                              \
-            TYPE *b = &arr[k];                              \
-            int c = IS_A_LT_B;                              \
-            if (k==n || (h<n/2 && c)) {                     \
-                res[i] = arr[h];                            \
-                h++;                                        \
-            } else {                                        \
-                res[i] = arr[k];                            \
-                k++;                                        \
-            }                                               \
-        }                                                   \
-        for (i=0; i<n; i++) {                               \
-            arr[i] = res[i];                                \
-        }                                                   \
-    }                                                       \
+#define templ_sort(FUNCNAME,TYPE,IS_A_LT_B)                     \
+void FUNCNAME ## _user_data (TYPE *arr, int n, void *user_data) \
+{                                                               \
+    if (n==1) {                                                 \
+        return;                                                 \
+    } else if (n == 2) {                                        \
+        TYPE *a = &arr[1];                                      \
+        TYPE *b = &arr[0];                                      \
+        int c = IS_A_LT_B;                                      \
+        if (c) {                                                \
+            swap_n_bytes (&arr[0], &arr[1], sizeof(TYPE));      \
+        }                                                       \
+    } else {                                                    \
+        TYPE res[n];                                            \
+        FUNCNAME ## _user_data (arr, n/2, user_data);           \
+        FUNCNAME ## _user_data (&arr[n/2], n-n/2, user_data);   \
+                                                                \
+        int i;                                                  \
+        int h=0;                                                \
+        int k=n/2;                                              \
+        for (i=0; i<n; i++) {                                   \
+            TYPE *a = &arr[h];                                  \
+            TYPE *b = &arr[k];                                  \
+            if (k==n || (h<n/2 && (IS_A_LT_B))) {               \
+                res[i] = arr[h];                                \
+                h++;                                            \
+            } else {                                            \
+                res[i] = arr[k];                                \
+                k++;                                            \
+            }                                                   \
+        }                                                       \
+        for (i=0; i<n; i++) {                                   \
+            arr[i] = res[i];                                    \
+        }                                                       \
+    }                                                           \
+}                                                               \
+\
+void FUNCNAME(TYPE *arr, int n) {                               \
+    FUNCNAME ## _user_data (arr,n,NULL);                        \
 }
 
 void sorted_array_print (int *arr, int n)
@@ -332,13 +335,13 @@ void fisher_yates_shuffle (int *arr, int n)
     }
 }
 
+// NOTE: Remember to call srand() ONCE before using this.
 void init_random_array (int *arr, int size)
 {
     int i;
     for (i=0; i<size; i++) {
         arr[i] = i;
     }
-    srand (time(NULL));
     fisher_yates_shuffle (arr, size);
 }
 
