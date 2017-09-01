@@ -642,6 +642,62 @@ void print_triangle_sizes_for_thrackles_in_convex_position (int n)
     }
 }
 
+void print_triangle_edge_sizes_for_thrackles_in_convex_position (int n)
+{
+    int k = thrackle_size (n);
+    int num_found;
+    int *thrackles = get_all_thrackles_convex_position (n, k, &num_found);
+    int i;
+    for (i=0; i<num_found*k; i+=k) {
+        int *thrackle = &thrackles[i];
+
+        //array_print (thrackle, k);
+
+        int num_sizes = n/2-1;
+        int sizes[num_sizes];
+        array_clear (sizes, num_sizes);
+
+        int j;
+        for (j = 0; j<k; j++) {
+            int t_id = thrackle[j];
+            int t[3];
+            subset_it_idx_for_id (t_id, n, t, 3);
+
+            int tr_size = triangle_size (n, t);
+            //printf ("triangle: ");
+            //array_print (t, 3);
+            //printf ("distances: ");
+            //array_print (dist, 3);
+
+            assert (tr_size != 0);
+            //printf ("max_dist: %d\n", max_distance);
+            sizes[tr_size - 1]++;
+            //printf ("\n");
+        }
+
+        //int total_triangles = binomial (n, 3);
+        //uint64_t choosen_set_id = subset_it_id_for_idx (total_triangles, thrackle, k);
+        //if (sizes [0] == 0 && sizes[1] == 2 && sizes[2] == 7 && sizes[3] == 3) {
+        //if (sizes [0] == 0 && sizes[1] == 0) {
+        //if (sizes[3] == 5) {
+            //printf ("%"PRIu64": ", choosen_set_id);
+            array_print (sizes, num_sizes);
+        //}
+    }
+}
+
+void print_lex_edg_triangles (int n)
+{
+    int i;
+    for (i=0; i<binomial(n, 3); i++) {
+        int dist[3];
+        int t[3];
+        subset_it_idx_for_id (i, n, t, 3);
+        edge_sizes (n, t, dist);
+        printf ("%d%d%d\n", dist[2], dist[1], dist[0]);
+    }
+}
+
 int main ()
 {
     ensure_full_database ();
@@ -671,7 +727,8 @@ int main ()
     //get_all_thrackles (9, 10, 0, NULL);
     //print_triangle_sizes_for_thrackles_in_convex_position (7);
 
-    compare_convex_thrackle_orderings (10, 12);
+    //compare_convex_thrackle_orderings (10, 12);
+    print_lex_edg_triangles (10);
     //print_info (10, 0);
     //average_search_nodes_lexicographic (8);
     //print_info_random_order (6, 0);
