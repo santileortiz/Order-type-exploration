@@ -338,6 +338,7 @@ int thrackle_size_lower_bound (int n)
             case 2:
                 return (n*n-n+16)/9;
             default:
+                invalid_code_path;
                 return -1;
         }
     }
