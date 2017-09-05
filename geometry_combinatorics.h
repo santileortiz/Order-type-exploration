@@ -2336,6 +2336,76 @@ void print_2_regular_cycle_decomposition (int *edges, int n)
     array_print (cycle_count, ARRAY_SIZE(cycle_count));
 }
 
+uint64_t e_n (int n) {
+    uint64_t res = 1;
+    int i;
+    for (i=1; i<=n; i++) {
+        res *= i;
+    }
+    return res*res/(2*n);
+}
+
+// Implements the derived formula that counts the number of 2-factors of the
+// complete bipartite graph K_n_n, with the same characteristic multiset A.
+// NOTE: array _A_ must be sorted
+uint64_t cnt_2_factors_of_k_n_n_for_A (int n, int *A, int A_len)
+{
+    int i;
+    bool all_equal = true, all_different = true;
+    {
+        int sum = 0;
+        for (i=0; i<A_len; i++) {
+            if (i < A_len-1) {
+                assert(A[i] <= A[i+1]);
+            }
+
+            if (i < A_len-1 && A[i] != A[i+1]) {
+                all_equal = false;
+            }
+
+            if (i < A_len-1 && A[i] == A[i+1]) {
+                all_different = false;
+            }
+            sum += A[i];
+        }
+        assert (n == sum);
+    }
+
+    if (all_different) {
+        int S_x = 0;
+        uint64_t res = 1;
+        for (i=0; i<A_len; i++) {
+            uint64_t tmp = binomial(n-S_x, A[i]);
+            tmp = tmp*tmp;
+
+            res *= e_n(A[i])*tmp;
+            S_x += A[i];
+        }
+        return res;
+    } else if (all_equal) {
+        uint64_t e = e_n(A[0]);
+        uint64_t e_n_k = 1;
+        uint64_t k_fact = 1;
+        for (i=0; i<A_len; i++) {
+            e_n_k *= e;
+            k_fact *= A_len-i;
+        }
+
+        int S_x = 0;
+        uint64_t prod = 1;
+        for (i=0; i<A_len; i++) {
+            uint64_t tmp = binomial(n-S_x, A[0]);
+            prod *= tmp*tmp;
+            S_x += A[0];
+        }
+        return (e_n_k*prod)/k_fact;
+    } else {
+        // NOTE: The formula hasn't been proven to work for all multisets A.
+        printf ("Invalid multiset A.\n");
+        invalid_code_path;
+    }
+    return 0;
+}
 
 uint32_t count_2_regular_subgraphs_of_k_n_n (int n, int_dyn_arr_t *edges_out)
 {

@@ -686,6 +686,45 @@ void print_triangle_edge_sizes_for_thrackles_in_convex_position (int n)
     }
 }
 
+uint32_t get_2_factors_of_k_n_n_to_file (int n, char *filename)
+{
+    int file = open (filename, O_RDWR|O_CREAT, 0666);
+    // A subset of k_n_n edges of size 2*n
+    int e_subs_2_n[2*n];
+
+    uint64_t i;
+    subset_it_t edge_subset_it;
+    subset_it_init (&edge_subset_it, n*n, 2*n, e_subs_2_n);
+    uint64_t count = 0;
+    for (i=0; i<edge_subset_it.size; i++) {
+        int node_orders[2*n];
+        array_clear (node_orders, ARRAY_SIZE(node_orders));
+
+        bool is_regular = true;
+        int edges[4*n]; // 2vertices * 2partite * n
+        edges_from_edge_subset (e_subs_2_n, n, edges);
+        subset_it_next_explicit (edge_subset_it.n, edge_subset_it.k, e_subs_2_n);
+
+        int *e;
+        for (e=edges; e < edges+ARRAY_SIZE(edges); e++) {
+            node_orders[e[0]] += 1;
+            if (node_orders[e[0]] > 2) {
+                is_regular = false;
+                break;
+            }
+        }
+
+        progress_bar (i, edge_subset_it.size);
+
+        if (is_regular) {
+            file_write (file, &i, sizeof(i));
+            count++;
+        }
+    }
+    close (file);
+    return count;
+}
+
 void print_lex_edg_triangles (int n)
 {
     int i;
@@ -728,8 +767,9 @@ int main ()
     //print_triangle_sizes_for_thrackles_in_convex_position (7);
 
     //compare_convex_thrackle_orderings (10, 12);
-    print_lex_edg_triangles (10);
+    //print_lex_edg_triangles (10);
     //print_info (10, 0);
+    get_2_factors_of_k_n_n_to_file (7, ".cache/n_7_k_n_n_2-factors.bin");
     //average_search_nodes_lexicographic (8);
     //print_info_random_order (6, 0);
     //max_thrackle_size_ot_file (10, "n_10_sin_thrackle_12.txt");
