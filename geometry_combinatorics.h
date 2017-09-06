@@ -833,6 +833,7 @@ void print_all_partitions (int n)
     array_print (part, m);
 }
 
+// SEQUENTIAL PARTITIONS
 // The followoing functions split iteration over partitions. As an example, the
 // following commented code reimplements print_all_partitions() with calls to them.
 //
@@ -896,6 +897,10 @@ bool next_partition (int n, int *part, int *m, int *q)
     return true;
 }
 
+// RANDOM ACCESS PARTITIONS
+// The following functions allow random access to the list of integer partitions
+// in reverse lexicographic order.
+
 // Computes a 2D array into _p_ such that p[n][m] is the number of
 // integer partitions of n with parts less than or equal to m. _N_ is the
 // maximum value n can take.
@@ -906,7 +911,7 @@ bool next_partition (int n, int *part, int *m, int *q)
 // To access it then use:
 //   (*p_ptr)[n][n];
 //
-// From: CALGO Algorithm 262, by J. K. S. McKay.
+// From: CACM Vol. 8, Issue 8, Algorithm 262, by J. K. S. McKay.
 //
 // NOTE: if m>n, p[n][m] is undefined.
 // NOTE: _p_ptr_ holds [N+1][N+1] integers.
@@ -946,39 +951,19 @@ int partition_number (int n)
   return res;
 }
 
-#if 0
+// Sets the integer partition _part_ and it's size _num_part_ corresponding to
+// the index _id_ in the list of all partitions of _n_ in reverse lexicograpic
+// order. _p_ptr_ is the array computed by compute_partition_sizes().
+//
+// From: CACM Vol. 8, Issue 8, Algorithm 263, by J. K. S. McKay.
+// NOTE: _part_ must have _n_ elements allocated.
 void partition_from_id (void *p_ptr, int n, int id, int *part, int *num_part)
 {
+    int (*p)[n+1][n+1] = (int (*)[n+1][n+1])p_ptr;
+    assert (id >= 0 && id < (*p)[n][n]);
+
     int n_loc = n;
     *num_part = 0;
-    int (*p)[n+1][n+1] = (int (*)[n+1][n+1])p_ptr;
-    int psn = (*p)[n][n] - id - 1;
-
-A:  (*num_part)++;
-    int m = 1;
-B:  if ((*p)[n_loc][m] < psn) {
-        m++;
-        goto B;
-    } else if ((*p)[n_loc][m] > psn) {
-C:      part[*num_part-1] = m;
-        psn -= (*p)[n_loc][m-1];
-        n_loc -= m;
-        if (n_loc != 0) {
-            goto A;
-        }
-        return;
-    } else {
-        m++;
-        goto C;
-    }
-}
-#else
-
-void partition_from_id (void *p_ptr, int n, int id, int *part, int *num_part)
-{
-    int n_loc = n;
-    *num_part = 0;
-    int (*p)[n+1][n+1] = (int (*)[n+1][n+1])p_ptr;
     int psn = (*p)[n][n] - id - 1;
 
     while (n_loc != 0) {
@@ -998,7 +983,6 @@ void partition_from_id (void *p_ptr, int n, int id, int *part, int *num_part)
         }
     }
 }
-#endif
 
 // Returns the integer in [0,p(n)-1] that represents _part_ (parts in descending
 // order) in the list of all partitions of _n_ in reverse lexicograpic order.
@@ -1009,18 +993,17 @@ int partition_to_id (void *p_ptr, int n, int *part)
 {
     int n_loc = n;
     int (*p)[n+1][n+1] = (int (*)[n+1][n+1])p_ptr;
-    int j, d = 0;
-    if (n_loc != 0) {
-        j=0;
-        while (n_loc != 0) {
-            j++;
-            d += (*p)[n_loc][part[j-1]-1];
-            n_loc -= part[j-1];
-        }
+    int j=0, d = 0;
+    while (n_loc != 0) {
+        j++;
+        d += (*p)[n_loc][part[j-1]-1];
+        n_loc -= part[j-1];
     }
     return (*p)[n][n] - 1 - d;
 }
 
+// Example code that shows how to use the random access functions. Also, serves
+// as a test that algorithms are correctly implemented.
 void partition_test_id (int n)
 {
     int (*p)[n+1][n+1] = malloc (partition_sizes_size(n));
@@ -1030,7 +1013,6 @@ void partition_test_id (int n)
     int i;
     for (i=0; i<(*p)[n][n]; i++) {
         partition_from_id (p, n, i, part, &num_part);
-        //array_print (part, num_part);
         int res = partition_to_id (p, n, part);
         if (res != i) {
             printf ("There was an error on id %d.\n", i);
