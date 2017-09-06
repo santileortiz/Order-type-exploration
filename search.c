@@ -769,7 +769,11 @@ int main ()
     //compare_convex_thrackle_orderings (10, 12);
     //print_lex_edg_triangles (10);
     //print_info (10, 0);
-    get_2_factors_of_k_n_n_to_file (7, ".cache/n_7_k_n_n_2-factors.bin");
+    //get_2_factors_of_k_n_n_to_file (7, ".cache/n_7_k_n_n_2-factors.bin");
+    //print_all_partitions (10);
+    partition_test_id (49);
+
+
     //average_search_nodes_lexicographic (8);
     //print_info_random_order (6, 0);
     //max_thrackle_size_ot_file (10, "n_10_sin_thrackle_12.txt");

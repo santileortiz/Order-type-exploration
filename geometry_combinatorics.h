@@ -752,6 +752,293 @@ void subset_it_free (subset_it_t *it)
     free (it);
 }
 
+// _res_ has to be of size sizeof(int)*n!
+// NOTE: This function performs fast until n=10, here are some times:
+// n:9 -> 0.332s
+// n:10 -> 2.877s
+// n:11 -> 37.355s
+void compute_all_permutations (int n, int *res)
+{
+    int i;
+    int *curr= res;
+    for (i=1; i<=n; i++) {
+        res[i-1] = i;
+    }
+
+    int found = 1;
+    while (found < factorial(n)) {
+        int k;
+        for (k=0; k<n; k++) {
+            curr[k+n] = curr[k];
+        }
+        curr+=n;
+
+        int j;
+        for (j=n-2; j>=0 && curr[j] >= curr[j+1]; j--) {
+            if (j==0) {
+                return;
+            }
+        }
+
+        int l;
+        for (l=n-1; curr[j]>=curr[l]; l--) {
+            if (l < 0) {
+                return;
+            }
+        }
+        swap (&curr[j], &curr[l]);
+
+        for (k=j+1, l=n-1; k<l;) {
+            swap (&curr[k], &curr[l]);
+            k++;
+            l--;
+        }
+        found++;
+    }
+}
+
+// Prints all integer partitions of _n_ in reverse lexicographic order.
+// From: D. Knuth, The Art of Computer Programming Vol.4A p 392.
+void print_all_partitions (int n)
+{
+    int part[n];
+    int m = 1; // lenght of partition
+    int i;
+    for (i=1; i<n; i++) {
+        part[i] = 1;
+    }
+
+    part[0] = n;
+    int q = n>1 ? 0 : -1; // position of the last part >1.
+    while (q >= 0) {
+        array_print (part, m);
+        if (part[q] == 2) {
+            part[q] = 1;
+            q--;
+            m++;
+        } else {
+            int x = part[q]-1;
+            part[q] = x;
+            n = m-q;
+            m = q+2;
+            while (n > x) {
+                part[m-1] = x;
+                m++;
+                n -= x;
+            }
+            part[m-1] = n;
+            q = n==1 ? m-2 : m-1;
+        }
+    }
+    array_print (part, m);
+}
+
+// The followoing functions split iteration over partitions. As an example, the
+// following commented code reimplements print_all_partitions() with calls to them.
+//
+// void print_all_partitions (int n)
+// {
+//     int part[n];
+//     int m, q;
+//     init_partition (n, part, &m, &q);
+//
+//     do {
+//         array_print (part, m);
+//     } while (next_partition (n, part, &m, &q));
+// }
+
+// Initialize iteration over integer partitions of _n_.
+// _part_ : Array of _n_ allocated elements.
+// _m_ : Pointer to a signle integer. Size of resulting partition.
+// _q_ : Pointer to a single integer. Highest index of a part >1.
+void init_partition (int n, int *part, int *m, int *q)
+{
+    assert (m != NULL && q != NULL);
+    *m = 1;
+    int i;
+    for (i=1; i<n; i++) {
+        part[i] = 1;
+    }
+    *q = n>1 ? 0 : -1;
+    part[0] = n;
+}
+
+// Updates _part_ to the next partition of _n_ in reverse lexicographic order,
+// updating the number of partitions _m_, and the highest index _q_ of a non 1
+// part.
+// Returns: false if it's there are no more permutations, true otherwise.
+// NOTE: _part_ must have _n_ elements allocated.
+bool next_partition (int n, int *part, int *m, int *q)
+{
+    assert (m != NULL && q != NULL);
+    if (*q < 0) {
+        return false;
+    }
+
+    if (part[*q] == 2) {
+        part[*q] = 1;
+        (*q)--;
+        (*m)++;
+    } else {
+        int x = part[*q]-1;
+        part[*q] = x;
+        n = *m-*q;
+        *m = *q+2;
+        while (n > x) {
+            part[*m-1] = x;
+            (*m)++;
+            n -= x;
+        }
+        part[*m-1] = n;
+        *q = n==1 ? *m-2 : *m-1;
+    }
+
+    return true;
+}
+
+// Computes a 2D array into _p_ such that p[n][m] is the number of
+// integer partitions of n with parts less than or equal to m. _N_ is the
+// maximum value n can take.
+//
+// To allocate _p_ptr_ as an array use:
+//   int (*p_ptr)[n+1][n+1] = malloc (partition_sizes_size(n));
+//
+// To access it then use:
+//   (*p_ptr)[n][n];
+//
+// From: CALGO Algorithm 262, by J. K. S. McKay.
+//
+// NOTE: if m>n, p[n][m] is undefined.
+// NOTE: _p_ptr_ holds [N+1][N+1] integers.
+#define partition_sizes_size(N) ((N+1)*(N+1)*sizeof(int))
+void compute_partition_sizes (void *p_ptr, int N)
+{
+    int (*p)[N+1][N+1] = (int (*)[N+1][N+1])p_ptr;
+    (*p)[0][0] = 1;
+    int n;
+    for (n=1; n<=N; n++) {
+        (*p)[n][0] = 0;
+        int m;
+        for (m=1; m<=n; m++) {
+            (*p)[n][m] = (*p)[n][m-1] + (*p)[n-m][n-m<m ? n-m: m];
+        }
+    }
+}
+
+void print_partition_sizes (void *p_ptr, int N)
+{
+    int (*p)[N+1][N+1] = (int (*)[N+1][N+1])p_ptr;
+    int i;
+    for (i=0; i<=N; i++) {
+        array_print ((*p)[i], i+1);
+    }
+}
+
+// This is SLOW for big _n_, allocates an array of (n+1)(n+1) ints, filling
+// (n+1)(n+2)/2 cells in total. Which means it's O(n^2) in time and space.
+// TODO: There are O(n) algorithms for this.
+int partition_number (int n)
+{
+  int (*p)[n+1][n+1] = malloc (partition_sizes_size(n));
+  compute_partition_sizes (p, n);
+  int res = (*p)[n][n];
+  free (p);
+  return res;
+}
+
+#if 0
+void partition_from_id (void *p_ptr, int n, int id, int *part, int *num_part)
+{
+    int n_loc = n;
+    *num_part = 0;
+    int (*p)[n+1][n+1] = (int (*)[n+1][n+1])p_ptr;
+    int psn = (*p)[n][n] - id - 1;
+
+A:  (*num_part)++;
+    int m = 1;
+B:  if ((*p)[n_loc][m] < psn) {
+        m++;
+        goto B;
+    } else if ((*p)[n_loc][m] > psn) {
+C:      part[*num_part-1] = m;
+        psn -= (*p)[n_loc][m-1];
+        n_loc -= m;
+        if (n_loc != 0) {
+            goto A;
+        }
+        return;
+    } else {
+        m++;
+        goto C;
+    }
+}
+#else
+
+void partition_from_id (void *p_ptr, int n, int id, int *part, int *num_part)
+{
+    int n_loc = n;
+    *num_part = 0;
+    int (*p)[n+1][n+1] = (int (*)[n+1][n+1])p_ptr;
+    int psn = (*p)[n][n] - id - 1;
+
+    while (n_loc != 0) {
+        (*num_part)++;
+        int m = 1;
+        while ((*p)[n_loc][m] < psn) {
+            m++;
+        }
+
+        if ((*p)[n_loc][m] >= psn) {
+            if ((*p)[n_loc][m] == psn) {
+                m++;
+            }
+            part[*num_part-1] = m;
+            psn -= (*p)[n_loc][m-1];
+            n_loc -= m;
+        }
+    }
+}
+#endif
+
+// Returns the integer in [0,p(n)-1] that represents _part_ (parts in descending
+// order) in the list of all partitions of _n_ in reverse lexicograpic order.
+// _p_ptr_ is the array computed by compute_partition_sizes().
+//
+// From: CACM Vol. 8, Issue 8, Algorithm 264, by J. K. S. McKay.
+int partition_to_id (void *p_ptr, int n, int *part)
+{
+    int n_loc = n;
+    int (*p)[n+1][n+1] = (int (*)[n+1][n+1])p_ptr;
+    int j, d = 0;
+    if (n_loc != 0) {
+        j=0;
+        while (n_loc != 0) {
+            j++;
+            d += (*p)[n_loc][part[j-1]-1];
+            n_loc -= part[j-1];
+        }
+    }
+    return (*p)[n][n] - 1 - d;
+}
+
+void partition_test_id (int n)
+{
+    int (*p)[n+1][n+1] = malloc (partition_sizes_size(n));
+    compute_partition_sizes (p, n);
+    int part[n], num_part;
+
+    int i;
+    for (i=0; i<(*p)[n][n]; i++) {
+        partition_from_id (p, n, i, part, &num_part);
+        //array_print (part, num_part);
+        int res = partition_to_id (p, n, part);
+        if (res != i) {
+            printf ("There was an error on id %d.\n", i);
+        }
+    }
+    free (p);
+}
+
 void triangle_set_from_ids (order_type_t *ot, int n, int *triangles, int k, triangle_set_t *set)
 {
     int triangle[3];
@@ -2039,51 +2326,6 @@ void print_decomp (int n, int* decomp, int* all_perms)
         array_print (GET_PERM(decomp[i]), n);
     }
     printf ("\n");
-}
-
-// _res_ has to be of size sizeof(int)*n!
-// NOTE: This function performs fast until n=10, here are some times:
-// n:9 -> 0.332s
-// n:10 -> 2.877s
-// n:11 -> 37.355s
-void compute_all_permutations (int n, int *res)
-{
-    int i;
-    int *curr= res;
-    for (i=1; i<=n; i++) {
-        res[i-1] = i;
-    }
-
-    int found = 1;
-    while (found < factorial(n)) {
-        int k;
-        for (k=0; k<n; k++) {
-            curr[k+n] = curr[k];
-        }
-        curr+=n;
-
-        int j;
-        for (j=n-2; j>=0 && curr[j] >= curr[j+1]; j--) {
-            if (j==0) {
-                return;
-            }
-        }
-
-        int l;
-        for (l=n-1; curr[j]>=curr[l]; l--) {
-            if (l < 0) {
-                return;
-            }
-        }
-        swap (&curr[j], &curr[l]);
-
-        for (k=j+1, l=n-1; k<l;) {
-            swap (&curr[k], &curr[l]);
-            k++;
-            l--;
-        }
-        found++;
-    }
 }
 
 void edges_from_permutation (int *all_perms, int perm, int n, int *e);
