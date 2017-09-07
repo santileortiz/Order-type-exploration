@@ -2519,7 +2519,11 @@ order_2_node_t* next_not_visited (order_2_node_t *trav_graph, int size)
     return NULL;
 }
 
-void print_2_regular_cycle_decomposition (int *edges, int n)
+// Sets the array _cycle_count_ such that cycle_count[i] counts how many cycles
+// of size 2*(i+2) are there. _edges_ and _n_ represent a complete bipartite
+// graph K_n_n.
+// NOTE: _cycle_count_ must have n-1 elements.
+void cycle_count_from_2_regular (int *edges, int n, int *cycle_count)
 {
     order_2_node_t trav_graph[2*n];
     memset (trav_graph, 0, sizeof(order_2_node_t)*ARRAY_SIZE(trav_graph));
@@ -2540,9 +2544,7 @@ void print_2_regular_cycle_decomposition (int *edges, int n)
         e += 2;
     }
 
-    // NOTE: cycle_count[i] counts how many cycles of size 2*(i+2) are there.
-    int cycle_count[n-1];
-    array_clear (cycle_count, ARRAY_SIZE(cycle_count));
+    array_clear (cycle_count, n-1);
     order_2_node_t *curr;
     while ((curr = next_not_visited (trav_graph, ARRAY_SIZE(trav_graph)))) {
         int start = curr->id;
@@ -2557,6 +2559,29 @@ void print_2_regular_cycle_decomposition (int *edges, int n)
         } while (curr->id != start);
         cycle_count[cycle_size/2-2]++;
     }
+}
+
+void partition_from_2_regular (int *edges, int n, int *part, int *num_part)
+{
+    int cycle_count[n-1];
+    cycle_count_from_2_regular (edges, n, cycle_count);
+    *num_part = 0;
+    array_clear (part, n);
+    int i = n-2;
+    while (i >= 0) {
+        int j;
+        for (j=0; j < cycle_count[i]; j++) {
+            part[*num_part] = i+2;
+            (*num_part)++;
+        }
+        i--;
+    }
+}
+
+void print_2_regular_cycle_decomposition (int *edges, int n)
+{
+    int cycle_count[n-1];
+    cycle_count_from_2_regular (edges, n, cycle_count);
     array_print (cycle_count, ARRAY_SIZE(cycle_count));
 }
 
@@ -2570,115 +2595,95 @@ uint64_t e_n (int n) {
 }
 
 // Implements the derived formula that counts the number of 2-factors of the
-// complete bipartite graph K_n_n, with the same characteristic multiset A.
-// NOTE: array _A_ must be sorted
-uint64_t cnt_2_factors_of_k_n_n_for_A (int n, int *A, int A_len)
+// complete bipartite graph K_n_n, with the same characteristic multiset _A_.
+// n is computed from the sum of elements in _A_.
+// NOTE: array _A_ must be sorted in descending order.
+uint64_t cnt_2_factors_of_k_n_n_for_A (int *A, int A_len)
 {
-    int i;
-    bool all_equal = true, all_different = true;
-    {
-        int sum = 0;
-        for (i=0; i<A_len; i++) {
-            if (i < A_len-1) {
-                assert(A[i] <= A[i+1]);
-            }
-
-            if (i < A_len-1 && A[i] != A[i+1]) {
-                all_equal = false;
-            }
-
-            if (i < A_len-1 && A[i] == A[i+1]) {
-                all_different = false;
-            }
-            sum += A[i];
+    int i, n=0;
+    for (i=0; i<A_len; i++) {
+        if (i < A_len-1) {
+            assert(A[i] >= A[i+1]);
         }
-        assert (n == sum);
+        n += A[i];
     }
 
-    if (all_different) {
-        int S_x = 0;
-        uint64_t res = 1;
-        for (i=0; i<A_len; i++) {
+    int S_x = 0;
+    uint64_t res = 1;
+    i=0;
+    while (i < A_len) {
+        int k = 0;
+        uint64_t tmp_repet = 1;
+        do {
             uint64_t tmp = binomial(n-S_x, A[i]);
-            tmp = tmp*tmp;
+            tmp_repet *= tmp*tmp;
 
-            res *= e_n(A[i])*tmp;
             S_x += A[i];
-        }
-        return res;
-    } else if (all_equal) {
-        uint64_t e = e_n(A[0]);
-        uint64_t e_n_k = 1;
-        uint64_t k_fact = 1;
-        for (i=0; i<A_len; i++) {
-            e_n_k *= e;
-            k_fact *= A_len-i;
-        }
+            k++;
+            i++;
+            if (i == A_len) break;
+        } while (A[i-1] == A[i]);
 
-        int S_x = 0;
-        uint64_t prod = 1;
-        for (i=0; i<A_len; i++) {
-            uint64_t tmp = binomial(n-S_x, A[0]);
-            prod *= tmp*tmp;
-            S_x += A[0];
+        uint64_t e = e_n(A[i-1]);
+        uint64_t e_n_pw_k = 1;
+        uint64_t k_fact = 1;
+        int j;
+        for (j=0; j<k; j++) {
+            e_n_pw_k *= e;
+            k_fact *= k-j;
         }
-        return (e_n_k*prod)/k_fact;
-    } else {
-        // NOTE: The formula hasn't been proven to work for all multisets A.
-        printf ("Invalid multiset A.\n");
-        invalid_code_path;
+        tmp_repet = e_n_pw_k*(tmp_repet/k_fact);
+        res *= tmp_repet;
     }
-    return 0;
+    return res;
+}
+
+// Returns true if the graph G of _num_vert_ vertices represented by _edges_ is
+// 2-regular. The _edges_ array has 2*E(G) (2*_num_edges) elements, where each
+// consecutive pair contains indexes of the vertices of one edge.
+// NOTE: Assumes there are no repeated edges.
+bool is_2_regular (int num_vert, int *edges, int num_edges)
+{
+    int node_orders[num_vert];
+    array_clear (node_orders, ARRAY_SIZE(node_orders));
+
+    int *e = edges, verts_done = 0;
+    while (verts_done < 2*num_edges) {
+        verts_done++;
+        node_orders[e[0]] += 1;
+        if (node_orders[e[0]] > 2) {
+            return false;
+        }
+        e++;
+    }
+    return true;
 }
 
 uint32_t count_2_regular_subgraphs_of_k_n_n (int n, int_dyn_arr_t *edges_out)
 {
     // A subset of k_n_n edges of size 2*n
     int e_subs_2_n[2*n];
+    subset_it_reset_idx (e_subs_2_n, 2*n);
 
-    int i;
-    //for (i=0; i<n-1; i++) {
-    //    printf ("%d ", 2*(i+2));
-    //}
-    //printf ("\n");
-    //for (i=0; i<2*n-3; i++) {
-    //    printf ("-");
-    //}
-    //printf ("\n");
-
-    subset_it_t edge_subset_it;
-    subset_it_init (&edge_subset_it, n*n, 2*n, e_subs_2_n);
     uint32_t count = 0;
-    for (i=0; i<edge_subset_it.size; i++) {
-        int node_orders[2*n];
-        array_clear (node_orders, ARRAY_SIZE(node_orders));
-
-        bool is_regular = true;
+    do {
         int edges[4*n]; // 2vertices * 2partite * n
         edges_from_edge_subset (e_subs_2_n, n, edges);
-        subset_it_next_explicit (edge_subset_it.n, edge_subset_it.k, e_subs_2_n);
 
-        int *e;
-        for (e=edges; e < edges+ARRAY_SIZE(edges); e++) {
-            node_orders[e[0]] += 1;
-            if (node_orders[e[0]] > 2) {
-                is_regular = false;
-                break;
-            }
-        }
-
-        if (is_regular) {
+        // NOTE: Because we have 2*n distinct edges in the graph (by
+        // construction), checking regularity implies it's also spanning.
+        if (is_2_regular (2*n, edges, 2*n)) {
             //print_2_regular_graph (e_subs_2_n, n);
-            //print_2_regular_cycle_decomposition (edges, n);
-            if (edges_out) {
-                int j;
-                for (j=0; j<ARRAY_SIZE(edges); j++) {
-                    int_dyn_arr_append (edges_out, edges[j]);
-                }
-            }
+            print_2_regular_cycle_decomposition (edges, n);
+            //if (edges_out) {
+            //    int j;
+            //    for (j=0; j<ARRAY_SIZE(edges); j++) {
+            //        int_dyn_arr_append (edges_out, edges[j]);
+            //    }
+            //}
             count++;
         }
-    }
+    } while (subset_it_next_explicit (n*n, 2*n, e_subs_2_n));
     return count;
 }
 

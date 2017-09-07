@@ -247,6 +247,37 @@ uint32_t* load_uint32_from_text_file (char *filename, int *count)
     return res;
 }
 
+// TODO: Check this works for big endian and little endian.
+uint64_t* load_uint64_from_bin_file (char *filename, uint32_t *count, mem_pool_t *pool)
+{
+    assert (count != NULL);
+    struct stat info;
+    if (stat (filename, &info) != 0) {
+        printf ("Could not get file info.\n");
+        return NULL;
+    }
+
+    uint64_t *res = pom_push_size (pool, info.st_size);
+    *count = info.st_size/sizeof(uint64_t);
+
+    int file = open (filename, O_RDONLY);
+    int bytes_read = 0;
+    while (bytes_read != info.st_size) {
+        bytes_read += read (file, res, info.st_size);
+    }
+    return res;
+}
+
+void write_uint64_to_bin_file (char *filename, uint64_t *arr, uint32_t count)
+{
+    int file = open (filename, O_RDWR|O_CREAT, 0666);
+
+    int i;
+    for (i=0; i<count; i++) {
+        file_write (file, &arr[i], sizeof(*arr));
+    }
+}
+
 void max_thrackle_size_ot_file (int n, char *filename)
 {
     assert(n <= 10);
@@ -686,8 +717,10 @@ void print_triangle_edge_sizes_for_thrackles_in_convex_position (int n)
     }
 }
 
-uint32_t get_2_factors_of_k_n_n_to_file (int n, char *filename)
+uint32_t get_2_factors_of_k_n_n_to_file (int n)
 {
+    char filename[40];
+    snprintf (filename, ARRAY_SIZE(filename), ".cache/n_%d_k_n_n_2-factors.bin", n);
     int file = open (filename, O_RDWR|O_CREAT, 0666);
     // A subset of k_n_n edges of size 2*n
     int e_subs_2_n[2*n];
@@ -722,6 +755,41 @@ uint32_t get_2_factors_of_k_n_n_to_file (int n, char *filename)
         }
     }
     close (file);
+    return count;
+}
+
+uint32_t cycle_sizes_2_factors_of_k_n_n_from_file (int n)
+{
+    char filename[40];
+    snprintf (filename, ARRAY_SIZE(filename), ".cache/n_%d_k_n_n_2-factors.bin", n);
+    // 2*n ints where each one represents an edge of K_n_n. A 2*n size subset of
+    // the total n*n edges.
+    int e_subs_2_n[2*n];
+    subset_it_reset_idx (e_subs_2_n, 2*n);
+    uint32_t count;
+    uint64_t *all_subset_ids = load_uint64_from_bin_file (filename, &count, NULL);
+
+    uint64_t i = 0;
+    while (i < count) {
+        uint64_t curr_id = all_subset_ids[i];
+        subset_it_idx_for_id (curr_id, n*n, e_subs_2_n, 2*n);
+
+        // List of edges. Each consecutive pair contains indexes of the vertices
+        // of an edge.
+        int edges[4*n];
+        edges_from_edge_subset (e_subs_2_n, n, edges);
+
+        if (is_2_regular (2*n, edges, 2*n)) {
+            //print_2_regular_graph (e_subs_2_n, n);
+            //print_2_regular_cycle_decomposition (edges, n);
+            int part[n], num_part;
+            partition_from_2_regular (edges, n, part, &num_part);
+            array_print (part, num_part);
+        } else {
+            printf ("Not 2-regular.\n");
+        }
+        i++;
+    }
     return count;
 }
 
@@ -769,10 +837,12 @@ int main ()
     //compare_convex_thrackle_orderings (10, 12);
     //print_lex_edg_triangles (10);
     //print_info (10, 0);
-    //get_2_factors_of_k_n_n_to_file (7, ".cache/n_7_k_n_n_2-factors.bin");
+    //get_2_factors_of_k_n_n_to_file (6);
+    //cycle_sizes_2_factors_of_k_n_n_from_file (7);
+    int A[] = {3,2,2};
+    printf ("count: %"PRIu64"\n", cnt_2_factors_of_k_n_n_for_A (A, ARRAY_SIZE(A)));
     //print_all_partitions (10);
-    partition_test_id (49);
-
+    //partition_test_id (49);
 
     //average_search_nodes_lexicographic (8);
     //print_info_random_order (6, 0);
@@ -785,6 +855,6 @@ int main ()
 
     //search_full_tree_all_ot (7);
 
-    //int count = count_2_regular_subgraphs_of_k_n_n (5);
+    //int count = count_2_regular_subgraphs_of_k_n_n (4, NULL);
     //printf ("Total: %d\n", count);
 }
