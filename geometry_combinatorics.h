@@ -897,34 +897,38 @@ bool next_partition (int n, int *part, int *m, int *q)
     return true;
 }
 
-// RANDOM ACCESS PARTITIONS
-// The following functions allow random access to the list of integer partitions
-// in reverse lexicographic order.
-
-// Computes a 2D array into _p_ such that p[n][m] is the number of
-// integer partitions of n with parts less than or equal to m. _N_ is the
-// maximum value n can take.
+// NUMBER OF (DOUBLY) RESTRICTED PARTITIONS
+// Computes a 2D array into _p_ such that p[n][m] is the number of integer
+// partitions of n with parts a_i s.t m >= a_i >= _k_. _N_ is the maximum value
+// n (and m) can take (i.e. when _k_=1, p[n][n] is the partition number p(n)).
 //
 // To allocate _p_ptr_ as an array use:
-//   int (*p_ptr)[n+1][n+1] = malloc (partition_sizes_size(n));
+//   int (*p_ptr)[N+1][N+1] = malloc (partition_restr_numbers_size(N));
 //
 // To access it then use:
-//   (*p_ptr)[n][n];
+//   (*p_ptr)[n][m];
 //
 // From: CACM Vol. 8, Issue 8, Algorithm 262, by J. K. S. McKay.
+//       CACM Vol. 13, Issue 2, Algorithm 373, by John S. White.
 //
 // NOTE: if m>n, p[n][m] is undefined.
 // NOTE: _p_ptr_ holds [N+1][N+1] integers.
-#define partition_sizes_size(N) ((N+1)*(N+1)*sizeof(int))
-void compute_partition_sizes (void *p_ptr, int N)
+#define partition_restr_numbers_size(N) ((N+1)*(N+1)*sizeof(int))
+
+#define partition_restr_numbers(ptr,N) partition_dbl_restr_numbers(ptr,N,1)
+void partition_dbl_restr_numbers (void *p_ptr, int N, int k)
 {
     int (*p)[N+1][N+1] = (int (*)[N+1][N+1])p_ptr;
+    if (k > 1) {
+        memset (p, 0, partition_restr_numbers_size (N));
+    }
+
     (*p)[0][0] = 1;
     int n;
-    for (n=1; n<=N; n++) {
+    for (n=k; n<=N; n++) {
         (*p)[n][0] = 0;
         int m;
-        for (m=1; m<=n; m++) {
+        for (m=k; m<=n; m++) {
             (*p)[n][m] = (*p)[n][m-1] + (*p)[n-m][n-m<m ? n-m: m];
         }
     }
@@ -944,20 +948,33 @@ void print_partition_sizes (void *p_ptr, int N)
 // TODO: There are O(n) algorithms for this.
 int partition_number (int n)
 {
-  int (*p)[n+1][n+1] = malloc (partition_sizes_size(n));
-  compute_partition_sizes (p, n);
+  int (*p)[n+1][n+1] = malloc (partition_restr_numbers_size(n));
+  partition_restr_numbers (p, n);
   int res = (*p)[n][n];
   free (p);
   return res;
 }
 
+// RANDOM ACCESS (RESTRICTED) PARTITIONS
+// The following functions allow random access to the list of integer partitions
+// in reverse lexicographic order.
+
 // Sets the integer partition _part_ and it's size _num_part_ corresponding to
 // the index _id_ in the list of all partitions of _n_ in reverse lexicograpic
-// order. _p_ptr_ is the array computed by compute_partition_sizes().
+// order, with parts >=_k_. _p_ptr_ is the array computed
+// by partition_dbl_restr_numbers().
+//
+// For unrestricted partitions (_k_=1) these macros are provided:
+//  partition_restr_numbers(p_ptr,N)
+//  partition_from_id(p_ptr,n,id,part,num_part)
 //
 // From: CACM Vol. 8, Issue 8, Algorithm 263, by J. K. S. McKay.
+//       CACM Vol. 13, Issue 2, Algorithm 374, by John S. White.
+// NOTE: _p_ptr_ must have been created with the same _k_ used in the call.
 // NOTE: _part_ must have _n_ elements allocated.
-void partition_from_id (void *p_ptr, int n, int id, int *part, int *num_part)
+// TODO: How to remove gotos?
+#define partition_from_id(p_ptr,n,id,part,num_part) partition_restr_from_id(p_ptr,n,1,id,part,num_part)
+void partition_restr_from_id (void *p_ptr, int n, int k, int id, int *part, int *num_part)
 {
     int (*p)[n+1][n+1] = (int (*)[n+1][n+1])p_ptr;
     assert (id >= 0 && id < (*p)[n][n]);
@@ -966,29 +983,42 @@ void partition_from_id (void *p_ptr, int n, int id, int *part, int *num_part)
     *num_part = 0;
     int psn = (*p)[n][n] - id - 1;
 
-    while (n_loc != 0) {
-        (*num_part)++;
-        int m = 1;
-        while ((*p)[n_loc][m] < psn) {
-            m++;
-        }
+A:
+    (*num_part)++;
+    int m = k;
+B:
+    if ((*p)[n_loc][m] < psn) {
+        m++;
+        goto B;
+    }
 
-        if ((*p)[n_loc][m] >= psn) {
-            if ((*p)[n_loc][m] == psn) {
-                m++;
-            }
-            part[*num_part-1] = m;
-            psn -= (*p)[n_loc][m-1];
-            n_loc -= m;
+    if ((*p)[n_loc][m] > psn) {
+C:
+        part[*num_part-1] = m;
+        psn -= (*p)[n_loc][m-1];
+        n_loc -= m;
+        if (n_loc < k) {
+            return;
+        } else {
+            goto A;
         }
+    } else {
+        m++;
+    }
+
+    if (m == n_loc) {
+        goto C;
+    } else {
+        goto B;
     }
 }
 
 // Returns the integer in [0,p(n)-1] that represents _part_ (parts in descending
 // order) in the list of all partitions of _n_ in reverse lexicograpic order.
-// _p_ptr_ is the array computed by compute_partition_sizes().
+// _p_ptr_ is the array computed by partition_restr_numbers().
 //
 // From: CACM Vol. 8, Issue 8, Algorithm 264, by J. K. S. McKay.
+// NOTE: For restricted partitions with parts >= k, create _p_ptr_ with that k.
 int partition_to_id (void *p_ptr, int n, int *part)
 {
     int n_loc = n;
@@ -1002,12 +1032,28 @@ int partition_to_id (void *p_ptr, int n, int *part)
     return (*p)[n][n] - 1 - d;
 }
 
+// Prints all integer partitions of _n_ with parts grater than or equal to _k_.
+void print_restricted_partitions (int n, int k)
+{
+    int (*p)[n+1][n+1] = malloc (partition_restr_numbers_size(n));
+    partition_dbl_restr_numbers (p, n, k);
+    int part[n], num_part;
+    int i;
+    for (i=0; i<(*p)[n][n]; i++) {
+        partition_restr_from_id (p, n, k, i, part, &num_part);
+        //Checks partitions to integers works fine too:
+        //printf ("%d: ", partition_to_id (p, n, part));
+        array_print (part, num_part);
+    }
+    free (p);
+}
+
 // Example code that shows how to use the random access functions. Also, serves
 // as a test that algorithms are correctly implemented.
 void partition_test_id (int n)
 {
-    int (*p)[n+1][n+1] = malloc (partition_sizes_size(n));
-    compute_partition_sizes (p, n);
+    int (*p)[n+1][n+1] = malloc (partition_restr_numbers_size(n));
+    partition_restr_numbers (p, n);
     int part[n], num_part;
 
     int i;
@@ -2597,15 +2643,28 @@ uint64_t e_n (int n) {
 // Implements the derived formula that counts the number of 2-factors of the
 // complete bipartite graph K_n_n, with the same characteristic multiset _A_.
 // n is computed from the sum of elements in _A_.
-// NOTE: array _A_ must be sorted in descending order.
+// NOTE: array _A_ must be sorted.
 uint64_t cnt_2_factors_of_k_n_n_for_A (int *A, int A_len)
 {
     int i, n=0;
-    for (i=0; i<A_len; i++) {
-        if (i < A_len-1) {
-            assert(A[i] >= A[i+1]);
+    {
+        bool ascending = true, descending = true;
+        for (i=0; i<A_len; i++) {
+            if (A[i] == 1) {
+                printf ("A can't contain 1.\n");
+                return 0;
+            }
+
+            if (i < A_len-1) {
+                if (A[i] > A[i+1]) ascending = false;
+                if (A[i] < A[i+1]) descending = false;
+            }
+            n += A[i];
         }
-        n += A[i];
+        if (!ascending && !descending) {
+            printf ("A is not sorted\n");
+            return 0;
+        }
     }
 
     int S_x = 0;

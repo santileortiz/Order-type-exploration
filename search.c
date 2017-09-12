@@ -839,8 +839,10 @@ int main ()
     //print_info (10, 0);
     //get_2_factors_of_k_n_n_to_file (6);
     //cycle_sizes_2_factors_of_k_n_n_from_file (7);
-    int A[] = {3,2,2};
-    printf ("count: %"PRIu64"\n", cnt_2_factors_of_k_n_n_for_A (A, ARRAY_SIZE(A)));
+    //int A[] = {3,2,2};
+    //printf ("count: %"PRIu64"\n", cnt_2_factors_of_k_n_n_for_A (A, ARRAY_SIZE(A)));
+
+    print_restricted_partitions (10, 2);
     //print_all_partitions (10);
     //partition_test_id (49);
 
