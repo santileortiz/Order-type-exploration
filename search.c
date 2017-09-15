@@ -805,6 +805,26 @@ void print_lex_edg_triangles (int n)
     }
 }
 
+// Uses the analytic function derived that counts the number of 2-factors of the
+// complete bipartite graph K_n_n. Prints the number of 2-factors for each
+// characteristic multiset of n.
+void print_2_factors_for_each_A (int n)
+{
+    int (*p)[n+1][n+1] = malloc (partition_restr_numbers_size(n));
+    partition_dbl_restr_numbers (p, n, 2);
+    int part[n], num_part;
+    int i;
+    // Careful!! This grows exponentially with n.
+    uint64_t count[(*p)[n][n]];
+    for (i=0; i<(*p)[n][n]; i++) {
+        partition_restr_from_id (p, n, 2, i, part, &num_part);
+        count[i] = cnt_2_factors_of_k_n_n_for_A (part, num_part);
+        printf ("%"PRIu64" ", count[i]);
+        array_print (part, num_part);
+    }
+    free (p);
+}
+
 int main ()
 {
     ensure_full_database ();
@@ -839,10 +859,9 @@ int main ()
     //print_info (10, 0);
     //get_2_factors_of_k_n_n_to_file (6);
     //cycle_sizes_2_factors_of_k_n_n_from_file (7);
-    //int A[] = {3,2,2};
-    //printf ("count: %"PRIu64"\n", cnt_2_factors_of_k_n_n_for_A (A, ARRAY_SIZE(A)));
+    print_2_factors_for_each_A (10);
 
-    print_restricted_partitions (10, 2);
+    //print_restricted_partitions (10, 2);
     //print_all_partitions (10);
     //partition_test_id (49);
 
