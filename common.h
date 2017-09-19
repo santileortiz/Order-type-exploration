@@ -172,13 +172,29 @@ void array_clear (int *arr, int n)
     }
 }
 
-void array_print (int *arr, int n)
+#define array_print(arr,n) array_print_full(arr,n," ",NULL,"\n")
+void array_print_full (int *arr, int n, char *sep, char *start, char *end)
 {
     int i;
-    for (i=0; i<n-1; i++) {
-        printf ("%d ", arr[i]);
+    if (start != NULL) {
+        printf ("%s", start);
     }
-    printf ("%d\n", arr[i]);
+
+    if (sep != NULL) {
+        for (i=0; i<n-1; i++) {
+            printf ("%d%s", arr[i], sep);
+        }
+    } else {
+        for (i=0; i<n-1; i++) {
+            printf ("%d", arr[i]);
+        }
+    }
+
+    if (end != NULL) {
+        printf ("%d%s", arr[i], end);
+    } else {
+        printf ("%d", arr[i]);
+    }
 }
 
 void print_uint_array (uint32_t *arr, int n)
