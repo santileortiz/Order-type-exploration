@@ -805,6 +805,17 @@ void print_lex_edg_triangles (int n)
     }
 }
 
+int num_digits (uint64_t n)
+{
+    int res = 0;
+    if ( n >= 10000000000000000 ) { res |= 16; n /= 10000000000000000; }
+    if ( n >= 100000000         ) { res |=  8; n /= 100000000; }
+    if ( n >= 10000             ) { res |=  4; n /= 10000; }
+    if ( n >= 100               ) { res |=  2; n /= 100; }
+    if ( n >= 10                ) { res |=  1; }
+    return res+1;
+}
+
 // Uses the analytic function derived that counts the number of 2-factors of the
 // complete bipartite graph K_n_n. Prints the number of 2-factors for each
 // characteristic multiset of n.
@@ -816,11 +827,17 @@ void print_2_factors_for_each_A (int n)
     int i;
     // Careful!! This grows exponentially with n.
     uint64_t count[(*p)[n][n]];
+    int digits = 0;
     for (i=0; i<(*p)[n][n]; i++) {
         partition_restr_from_id (p, n, 2, i, part, &num_part);
         count[i] = cnt_2_factors_of_k_n_n_for_A (part, num_part);
-        printf ("%"PRIu64" ", count[i]);
-        array_print (part, num_part);
+        digits = MAX(digits, num_digits (count[i]));
+    }
+
+    for (i=0; i<(*p)[n][n]; i++) {
+        printf ("%*"PRIu64" ", digits, count[i]);
+        partition_restr_from_id (p, n, 2, i, part, &num_part);
+        array_print_full (part, num_part, ", ", "{", "}\n");
     }
     free (p);
 }
