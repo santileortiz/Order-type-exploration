@@ -501,6 +501,11 @@ struct binomial_cache g_binomial_cache = {0};
 void set_global_binomial_cache (uint32_t max_n, uint32_t max_k) {
     g_binomial_cache.max_n = max_n;
     g_binomial_cache.max_k = max_k;
+    //TODO: We could be more inteligent about the size of the cache and instead
+    //of using n*k cells only use ~n*k/2 by not allocating cells for when k>=n
+    //and relying on binomial() to return 0 and 1 in these cases. This would
+    //mean we would need macros to access g_binomial_cache.b and the current 2D
+    //array idiom won't work.
     g_binomial_cache.b = malloc (sizeof(uint64_t)*max_n*max_k);
     memset (g_binomial_cache.b, 0, sizeof(uint64_t)*max_n*max_k);
 }
@@ -514,6 +519,12 @@ void destroy_global_binomial_cache () {
 
 uint64_t binomial (int n, int k)
 {
+    if (n < k) {
+        return 0;
+    } else if (n == k) {
+        return 1;
+    }
+
     bool store_in_cache = false;
     uint64_t (*b)[g_binomial_cache.max_n][g_binomial_cache.max_k];
     if (g_binomial_cache.b != NULL) {
@@ -2397,17 +2408,6 @@ void print_decomp (int n, int* decomp, int* all_perms)
 
 void edges_from_permutation (int *all_perms, int perm, int n, int *e);
 void print_2_regular_cycle_count (int *edges, int n);
-
-// This algorithm returns a contiguous array of pointers to all resulting
-// nodes with res[0] being the root of the tree.
-//
-// Memory Allocations:
-// -------------------
-//
-// Everything will be allocated inside _pool_. Some data besides the resulting
-// tree (Ex. _all_perms_ array) nedds to be stored, for this we use the local
-// memory pool temp_pool. If this data is useful to the caller, it can instead
-// be stored in _pool_ if a pointer is supplied as argument (_ret_all_perms_).
 
 void matching_decompositions_over_K_n_n (int n, int *all_perms,
                                          struct sequence_store_t *seq)
