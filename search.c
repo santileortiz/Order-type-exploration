@@ -248,7 +248,7 @@ uint32_t* load_uint32_from_text_file (char *filename, int *count)
 }
 
 // TODO: Check this works for big endian and little endian.
-uint64_t* load_uint64_from_bin_file (char *filename, uint32_t *count, mem_pool_t *pool)
+uint64_t* load_uint64_from_bin_file (char *filename, uint64_t *count, mem_pool_t *pool)
 {
     assert (count != NULL);
     struct stat info;
@@ -724,36 +724,24 @@ uint32_t get_2_factors_of_k_n_n_to_file (int n)
     int file = open (filename, O_RDWR|O_CREAT, 0666);
     // A subset of k_n_n edges of size 2*n
     int e_subs_2_n[2*n];
+    subset_it_reset_idx (e_subs_2_n, 2*n);
 
-    uint64_t i;
-    subset_it_t edge_subset_it;
-    subset_it_init (&edge_subset_it, n*n, 2*n, e_subs_2_n);
+    uint64_t i=0;
     uint64_t count = 0;
-    for (i=0; i<edge_subset_it.size; i++) {
-        int node_orders[2*n];
-        array_clear (node_orders, ARRAY_SIZE(node_orders));
-
-        bool is_regular = true;
+    uint64_t total_edge_subsets = binomial (n*n, 2*n);
+    do {
         int edges[4*n]; // 2vertices * 2partite * n
         edges_from_edge_subset (e_subs_2_n, n, edges);
-        subset_it_next_explicit (edge_subset_it.n, edge_subset_it.k, e_subs_2_n);
 
-        int *e;
-        for (e=edges; e < edges+ARRAY_SIZE(edges); e++) {
-            node_orders[e[0]] += 1;
-            if (node_orders[e[0]] > 2) {
-                is_regular = false;
-                break;
-            }
-        }
-
-        progress_bar (i, edge_subset_it.size);
-
-        if (is_regular) {
+        progress_bar (i, total_edge_subsets);
+        // NOTE: Because we have 2*n distinct edges in the graph (by
+        // construction), checking regularity implies it's also spanning.
+        if (is_2_regular (2*n, edges, 2*n)) {
             file_write (file, &i, sizeof(i));
             count++;
         }
-    }
+        i++;
+    } while (subset_it_next_explicit (n*n, 2*n, e_subs_2_n));
     close (file);
     return count;
 }
@@ -762,20 +750,23 @@ uint32_t cycle_sizes_2_factors_of_k_n_n_from_file (int n)
 {
     char filename[40];
     snprintf (filename, ARRAY_SIZE(filename), ".cache/n_%d_k_n_n_2-factors.bin", n);
+
+    // NOTE: This makes subset_it_idx_for_id() significantly faster. We can't
+    // precompute all subsets in this case because for n=7 that would require
+    // 34.39 TiB.
+    set_global_binomial_cache (50, 15);
+
     // 2*n ints where each one represents an edge of K_n_n. A 2*n size subset of
     // the total n*n edges.
     int e_subs_2_n[2*n];
     subset_it_reset_idx (e_subs_2_n, 2*n);
-    uint32_t count;
+    uint64_t count;
     uint64_t *all_subset_ids = load_uint64_from_bin_file (filename, &count, NULL);
 
     uint64_t i = 0;
     while (i < count) {
-        uint64_t curr_id = all_subset_ids[i];
-        subset_it_idx_for_id (curr_id, n*n, e_subs_2_n, 2*n);
+        subset_it_idx_for_id (all_subset_ids[i], n*n, e_subs_2_n, 2*n);
 
-        // List of edges. Each consecutive pair contains indexes of the vertices
-        // of an edge.
         int edges[4*n];
         edges_from_edge_subset (e_subs_2_n, n, edges);
 
@@ -790,6 +781,8 @@ uint32_t cycle_sizes_2_factors_of_k_n_n_from_file (int n)
         }
         i++;
     }
+    free (all_subset_ids);
+    destroy_global_binomial_cache ();
     return count;
 }
 
@@ -814,6 +807,87 @@ int num_digits (uint64_t n)
     if ( n >= 100               ) { res |=  2; n /= 100; }
     if ( n >= 10                ) { res |=  1; }
     return res+1;
+}
+
+// Verifies the analytic function of the number of 2-factors of K_n_n. Works by
+// computing the real number of 2-factors of K_n_n by iterating all sets of 2*n
+// edges of K_n_n and stores those that are 2-regular in a file. Then we lookup
+// that file and count the number of 2-regular factors with each
+// multicharacteristic set. Finally we check that the analytic function actually
+// computes this exact number for each characteristic multiset.
+//
+// Because Binomial(n*n, 2*n) grows really big, only up to n=7 has been tested.
+// The hard limit without using infinite precision arithmetic is n=9, for n=10
+// variables will overflow.
+void verify_k_n_n_2_factor_count (int n)
+{
+    if (n >= 10) {
+        printf ("Error: Variables would overflow.\n");
+        return;
+    }
+
+    char filename[40];
+    snprintf (filename, ARRAY_SIZE(filename), ".cache/n_%d_k_n_n_2-factors.bin", n);
+
+    // Ensure file exists
+    int file = open (filename, O_RDONLY);
+    if (file == -1) {
+        if (n >= 7) {
+            printf ("Warning: maybe will take more than 10 hours.");
+        }
+        get_2_factors_of_k_n_n_to_file (n);
+    } else {
+        close (file);
+    }
+
+    // NOTE: This makes subset_it_idx_for_id() significantly faster. We can't
+    // precompute all subsets in this case because for n=7 that would require
+    // 34.39 TiB.
+    set_global_binomial_cache (50, 15);
+
+    int e_subs_2_n[2*n];
+    subset_it_reset_idx (e_subs_2_n, 2*n);
+    uint64_t num_2_factors;
+    mem_pool_t pool = {0};
+    uint64_t *all_subset_ids = load_uint64_from_bin_file (filename, &num_2_factors, &pool);
+
+    int (*p)[n+1][n+1] = mem_pool_push_size (&pool, partition_restr_numbers_size(n));
+    partition_dbl_restr_numbers (p, n, 2);
+
+    uint64_t *count = mem_pool_push_size_full (&pool, (*p)[n][n]*sizeof(uint64_t), POOL_ZERO_INIT);
+    uint64_t i = 0;
+    while (i < num_2_factors) {
+        subset_it_idx_for_id (all_subset_ids[i], n*n, e_subs_2_n, 2*n);
+
+        int edges[4*n];
+        edges_from_edge_subset (e_subs_2_n, n, edges);
+
+        int part[n], num_part;
+        partition_from_2_regular (edges, n, part, &num_part);
+
+        int part_id = partition_to_id (p, n, part);
+        count[part_id]++;
+        i++;
+    }
+
+    bool success = true;
+    int part[n], num_part;
+    int j;
+    for (j=0; j<(*p)[n][n]; j++) {
+        partition_restr_from_id (p, n, 2, j, part, &num_part);
+        if (count[j] != cnt_2_factors_of_k_n_n_for_A (part, num_part)) {
+            // We will never reach this
+            printf ("Count and L(A) differ for partition: ");
+            array_print_full (part, num_part, ", ", "{", "}\n");
+            success = false;
+        }
+    }
+
+    if (success) {
+        printf ("K_n_n 2-factor count test sucessful for n=%d\n.", n);
+    }
+    mem_pool_destroy (&pool);
+    destroy_global_binomial_cache ();
 }
 
 // Uses the analytic function derived that counts the number of 2-factors of the
@@ -875,8 +949,9 @@ int main ()
     //print_lex_edg_triangles (10);
     //print_info (10, 0);
     //get_2_factors_of_k_n_n_to_file (6);
-    //cycle_sizes_2_factors_of_k_n_n_from_file (7);
-    print_2_factors_for_each_A (10);
+    cycle_sizes_2_factors_of_k_n_n_from_file (7);
+    //print_2_factors_for_each_A (5);
+    //verify_k_n_n_2_factor_count (7);
 
     //print_restricted_partitions (10, 2);
     //print_all_partitions (10);

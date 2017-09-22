@@ -491,13 +491,52 @@ uint64_t factorial (int n)
     return res;
 }
 
+struct binomial_cache {
+    void *b;
+    uint32_t max_n;
+    uint32_t max_k;
+};
+struct binomial_cache g_binomial_cache = {0};
+
+void set_global_binomial_cache (uint32_t max_n, uint32_t max_k) {
+    g_binomial_cache.max_n = max_n;
+    g_binomial_cache.max_k = max_k;
+    g_binomial_cache.b = malloc (sizeof(uint64_t)*max_n*max_k);
+    memset (g_binomial_cache.b, 0, sizeof(uint64_t)*max_n*max_k);
+}
+
+void destroy_global_binomial_cache () {
+    g_binomial_cache.max_n = 0;
+    g_binomial_cache.max_k = 0;
+    free (g_binomial_cache.b);
+    g_binomial_cache.b = NULL;
+}
+
 uint64_t binomial (int n, int k)
 {
-    uint64_t i, res = 1;
-    for (i=0; i<k; i++) {
-        res = (res*n)/(i+1);
-        n--;
+    bool store_in_cache = false;
+    uint64_t (*b)[g_binomial_cache.max_n][g_binomial_cache.max_k];
+    if (g_binomial_cache.b != NULL) {
+        b = g_binomial_cache.b;
+        if (n < g_binomial_cache.max_n && k < g_binomial_cache.max_k) {
+            if ((*b)[n][k] != 0) {
+                return (*b)[n][k];
+            } else {
+                store_in_cache = true;
+            }
+        }
     }
+
+    uint64_t i, res = 1, n_loc = n;
+    for (i=0; i<k; i++) {
+        res = (res*n_loc)/(i+1);
+        n_loc--;
+    }
+
+    if (store_in_cache) {
+        (*b)[n][k] = res;
+    }
+
     return res;
 }
 
@@ -2357,7 +2396,7 @@ void print_decomp (int n, int* decomp, int* all_perms)
 }
 
 void edges_from_permutation (int *all_perms, int perm, int n, int *e);
-void print_2_regular_cycle_decomposition (int *edges, int n);
+void print_2_regular_cycle_count (int *edges, int n);
 
 // This algorithm returns a contiguous array of pointers to all resulting
 // nodes with res[0] being the root of the tree.
@@ -2416,7 +2455,7 @@ void matching_decompositions_over_K_n_n (int n, int *all_perms,
             //int edges [4*n];
             //edges_from_permutation (all_perms, decomp[n-1], n, edges);
             //edges_from_permutation (all_perms, decomp[n-2], n, edges+2*n);
-            //print_2_regular_cycle_decomposition (edges, n);
+            //print_2_regular_cycle_count (edges, n);
 
             //print_decomp (n, decomp, all_perms);
             //array_print (decomp, n);
@@ -2526,12 +2565,26 @@ void edges_from_permutation (int *all_perms, int perm, int n, int *e)
    }
 }
 
-void edges_from_edge_subset (int *graph, int n, int *e)
+
+// Interprets _edge_subset_ as a list of labels where each one represents an edge
+// of K_n_n. Edges of K_n_n are labeled as if vertices where labeled from 0 to
+// n-1 on each side, then each vertex id on the left increments the edge id by n
+// while the id of the right side increments it by 1.
+//
+//      0  ●   ●  (0)  n
+//      1  ●   ●  (1)  n+1 (b)
+//         ●  /●
+//           / ---------> (n-2)*n + 1 = (n-2)*n + (n+1)%n = a*n + b%n
+//          /
+// (a) n-2 ●   ● (n-2) 2n-1
+//     n-1 ●   ● (n-1) 2n
+//
+void edges_from_edge_subset (int *edge_subset, int n, int *e)
 {
     int i;
     for (i=0; i<2*n; i++) {
-        e[2*i] = graph[i]/n;
-        e[2*i+1] = graph[i]%n + n;
+        e[2*i] = edge_subset[i]/n;
+        e[2*i+1] = edge_subset[i]%n + n;
     }
 }
 
@@ -2607,12 +2660,19 @@ void cycle_count_from_2_regular (int *edges, int n, int *cycle_count)
     }
 }
 
+// Returns the integer partition of _n_ that represents half of the sizes of the
+// cycles of the 2-regular graph represented by _edges_. Where _edges_ is a list
+// of integers where each consecutive pair contains indexes of the vertices of
+// an edge.
+// NOTE: _edges_ is assumed to be 2-regular.
+// NOTE: cycles on _edges_ are assumed to be even. Currently we only use this on
+// a subgraphs of K_n_n so it's true that cycles are always even.
 void partition_from_2_regular (int *edges, int n, int *part, int *num_part)
 {
     int cycle_count[n-1];
     cycle_count_from_2_regular (edges, n, cycle_count);
     *num_part = 0;
-    array_clear (part, n);
+    array_clear (part, n/2+1); // Longest partition is {2,...,2,3}
     int i = n-2;
     while (i >= 0) {
         int j;
@@ -2624,7 +2684,7 @@ void partition_from_2_regular (int *edges, int n, int *part, int *num_part)
     }
 }
 
-void print_2_regular_cycle_decomposition (int *edges, int n)
+void print_2_regular_cycle_count (int *edges, int n)
 {
     int cycle_count[n-1];
     cycle_count_from_2_regular (edges, n, cycle_count);
@@ -2718,6 +2778,17 @@ bool is_2_regular (int num_vert, int *edges, int num_edges)
     return true;
 }
 
+// Counts the number of subgraphs of K_n_n with 2n edges that are 2-regular
+// (i.e. the 2-factors of K_n_n). It uses K_n_n with vetices tagged as follows:
+//
+//   0  ●   ● n
+//   1  ●   ● n+1
+//   ·        ·
+//   ·        ·
+//   ·        ·
+//  n-2 ●   ● 2n-1
+//  n-1 ●   ● 2n
+//
 uint32_t count_2_regular_subgraphs_of_k_n_n (int n, int_dyn_arr_t *edges_out)
 {
     // A subset of k_n_n edges of size 2*n
@@ -2733,7 +2804,7 @@ uint32_t count_2_regular_subgraphs_of_k_n_n (int n, int_dyn_arr_t *edges_out)
         // construction), checking regularity implies it's also spanning.
         if (is_2_regular (2*n, edges, 2*n)) {
             //print_2_regular_graph (e_subs_2_n, n);
-            print_2_regular_cycle_decomposition (edges, n);
+            print_2_regular_cycle_count (edges, n);
             //if (edges_out) {
             //    int j;
             //    for (j=0; j<ARRAY_SIZE(edges); j++) {
