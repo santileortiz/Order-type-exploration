@@ -1811,6 +1811,7 @@ void generate_edge_disjoint_triangle_sets (int n, int k, struct sequence_store_t
     seq_timing_end (seq);
 }
 
+// NOTE: If ptr==NULL the result is undefined. DO NOT DO.
 #define lb_idx(arr,ptr) (uint32_t)(ptr-arr)
 struct linked_bool {
     struct linked_bool *next;
@@ -2559,18 +2560,17 @@ backtrack:
                     uint32_t max_for_h = (h+1)*num_perms/n;
                     while (S_l_iter != NULL &&
                            curr_restore < prev_invalid && invalid_perms [curr_restore] < max_for_h) {
+
                         while (S_l_iter != NULL &&
                                lb_idx (S_l, S_l_iter) < invalid_perms [curr_restore]) {
                             S_l_prev = S_l_iter;
                             S_l_iter = S_l_iter->next;
                         }
 
-                        // FIXME: Check S_l_iter != NULL allways, if this is not
-                        // true then we need to check this actually does the
-                        // right thing every time.
-                        assert (S_l_iter != NULL);
-                        while (lb_idx (S_l, S_l_iter) > invalid_perms [curr_restore] &&
-                               curr_restore<prev_invalid && invalid_perms[curr_restore]<max_for_h) {
+                        while (curr_restore < prev_invalid &&
+                               (S_l_iter == NULL || lb_idx(S_l, S_l_iter) > invalid_perms[curr_restore]) &&
+                               invalid_perms[curr_restore] < max_for_h) {
+
                             if (S_l_prev != NULL) {
                                 S_l_prev->next = &S_l[invalid_perms [curr_restore]];
                                 S_l_prev->next->next = S_l_iter;
