@@ -138,7 +138,7 @@ bool update_and_render (struct app_state_t *st, app_graphics_t *graphics, app_in
     }
 
     st->input = input;
-    bool blit_needed;
+    bool blit_needed = false;
     switch (st->app_mode) {
         case APP_POINT_SET_MODE:
             blit_needed = point_set_mode (st, graphics);

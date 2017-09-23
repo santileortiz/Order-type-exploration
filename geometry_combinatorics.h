@@ -1175,7 +1175,6 @@ struct sequence_store_t {
     uint32_t num_nodes_stack; // num_nodes_in_stack
     backtrack_node_t *node_stack;
     uint64_t num_nodes;
-    cont_buff_t nodes;
     mem_pool_t temp_pool;
 
     int64_t last_l;
@@ -1184,7 +1183,7 @@ struct sequence_store_t {
     uint32_t final_max_len;
     uint32_t final_max_children;
     uint64_t expected_tree_size;
-    uint32_t *nodes_per_len; // Allocated in sequence_store_t->pool
+    uint64_t *nodes_per_len; // Allocated in sequence_store_t->pool
     int *children_count_stack; // Used to compute expected_tree_size, allocated in sequence_store_t->temp_pool
     int num_children_count_stack;
     // TODO: Implement the following info:
@@ -1222,7 +1221,7 @@ uint32_t backtrack_node_size (int num_children)
     return node_size;
 }
 
-void complete_and_pop_node (struct sequence_store_t *stor, int64_t l)
+backtrack_node_t* complete_and_pop_node (struct sequence_store_t *stor, int64_t l)
 {
     backtrack_node_t *finished = stack_element (stor, l+1);
     uint32_t node_size = backtrack_node_size (finished->num_children);
@@ -1235,9 +1234,6 @@ void complete_and_pop_node (struct sequence_store_t *stor, int64_t l)
         pushed_node->children[i] = finished->children[i];
     }
 
-    backtrack_node_t **node_pos = cont_buff_push (&stor->nodes, sizeof(backtrack_node_t*));
-    *node_pos = pushed_node;
-
     stor->num_nodes_stack--;
 
     if (l >= 0) {
@@ -1246,6 +1242,7 @@ void complete_and_pop_node (struct sequence_store_t *stor, int64_t l)
         parent->num_children++;
         l--;
     }
+    return pushed_node;
 }
 
 void seq_push_element (struct sequence_store_t *stor,
@@ -1337,11 +1334,11 @@ backtrack_node_t* seq_tree_end (struct sequence_store_t *stor)
 {
     backtrack_node_t* ret = NULL;
     if (!(stor->opts & SEQ_DRY_RUN)) {
-        while (stor->last_l >= -1) {
+        while (stor->last_l > -1) {
             complete_and_pop_node (stor, stor->last_l);
             stor->last_l--;
         }
-        ret = ((backtrack_node_t**)stor->nodes.data)[stor->num_nodes-1];
+        ret = complete_and_pop_node (stor, stor->last_l);
     } else {
         while (stor->last_l >= -1) {
             uint32_t final_children_count = stor->children_count_stack[stor->last_l+1];
@@ -1355,43 +1352,66 @@ backtrack_node_t* seq_tree_end (struct sequence_store_t *stor)
         }
     }
 
-    cont_buff_destroy (&stor->nodes);
     mem_pool_destroy (&stor->temp_pool);
     return ret;
 }
 
 /* Prints all sequences on a backtrack tree of length len. A sequence
-/ necessarily ends in a node without children. See examples below.
-/
-/                   R        -1
-/                 / | \
-/                1  2  3      0
-/               /|  |  |\
-/              1 5  4  7 1    1
-/             / /|    /|\
-/            5 2 9   3 5 2    2
-/
-/ seq_tree_print_sequences (R, 1):
-/  <Nothing>
-/ seq_tree_print_sequences (R, 2):
-/  2 4
-/  3 1
-/ seq_tree_print_sequences (R, 3):
-/  1 1 5
-/  1 5 2
-/  1 5 9
-/  3 7 3
-/  3 7 5
-/  3 7 2
-/
-/ Function print_func is called to print a sequence, by default array_print is used.
-*/
+ * necessarily ends in a node without children. See examples below.
+ *
+ *                   R        -1
+ *                 / | \
+ *                1  2  3      0
+ *               /|  |  |\
+ *              1 5  4  7 1    1.
+ *             / /|    /|\
+ *            5 2 9   3 5 2    2
+ *
+ * seq_tree_print_sequences (R, 1):
+ *  <Nothing>
+ * seq_tree_print_sequences (R, 2):
+ *  2 4
+ *  3 1
+ * seq_tree_print_sequences (R, 3):
+ *  1 1 5
+ *  1 5 2
+ *  1 5 9
+ *  3 7 3
+ *  3 7 5
+ *  3 7 2
+ *
+ * The function is actually a macro to seq_tree_print_sequences_full() with some
+ * defaults. These are the extra options:
+ *
+ *    - Function _print_func_ is called to print a sequence (default: array_print()).
+ *    - If _mode_ == TREE_PRINT_FULL then also sequences smaller than _len_ will
+ *      be printed (default: TREE_PRINT_LEN).
+ *
+ *      Example:
+ *
+ *        seq_tree_print_sequences_full (R, 3, array_print, TREE_PRINT_FULL):
+ *         1 1 5
+ *         1 5 2
+ *         1 5 9
+ *         2 4
+ *         3 7 3
+ *         3 7 5
+ *         3 7 2
+ *         3 1
+ */
 
-#define INT_ARR_PRINT_CALLBACK(name) void name(int *arr, int n)
-typedef INT_ARR_PRINT_CALLBACK(int_arr_print_callback_t);
+enum tree_print_mode_t {
+    TREE_PRINT_LEN,
+    TREE_PRINT_FULL
+};
 
-#define seq_tree_print_sequences(root,len) seq_tree_print_sequences_print(root, len, array_print)
-void seq_tree_print_sequences_print (backtrack_node_t *root, int len, int_arr_print_callback_t *print_func)
+#define seq_tree_print_sequences(root,len) \
+    seq_tree_print_sequences_full(root,len,array_print,TREE_PRINT_LEN)
+
+#define seq_tree_print_all_sequences(root,len) \
+    seq_tree_print_sequences_full(root,len,array_print,TREE_PRINT_FULL)
+void seq_tree_print_sequences_full (backtrack_node_t *root, int len, int_arr_print_callback_t *print_func,
+                                    enum tree_print_mode_t mode)
 {
     if (len <= 0) return;
 
@@ -1407,8 +1427,12 @@ void seq_tree_print_sequences_print (backtrack_node_t *root, int len, int_arr_pr
     curr_child_id[1] = 0;
 
     while (l>0) {
-        if (l == len && curr->num_children == 0) {
-            print_func (seq, l);
+        if (curr->num_children == 0) {
+            if (mode == TREE_PRINT_FULL) {
+                print_func (seq, l);
+            } else if (l == len) {
+                print_func (seq, l);
+            }
         }
 
         while (1) {
@@ -1636,6 +1660,22 @@ int* seq_end (struct sequence_store_t *stor)
     }
 
     return stor->seq;
+}
+
+void seq_print_info (struct sequence_store_t *stor) {
+    uint32_t h = stor->final_max_len;
+    printf ("Levels: %d + root\n", h);
+    printf ("Nodes: %"PRIu64" + root\n", stor->num_nodes-1);
+    if (stor->nodes_per_len != NULL) {
+        printf ("Nodes per level: ");
+        print_u64_array (stor->nodes_per_len, stor->final_max_len+1);
+    }
+    printf ("Tree size: %"PRIu64" bytes\n", stor->expected_tree_size);
+    printf ("Max children: %u\n", stor->final_max_children);
+
+    if (stor->time != 0) {
+        printf ("Time: %f ms\n", stor->time);
+    }
 }
 
 // Walker's backtracking algorithm used to generate only
@@ -2450,6 +2490,7 @@ void matching_decompositions_over_K_n_n (int n, int *all_perms,
         first_S_l[0] = S_l + 1;
     }
 
+    seq_timing_begin (seq);
     while (l>0) {
         if (l==n) {
             //int edges [4*n];
@@ -2527,6 +2568,7 @@ backtrack:
                         // FIXME: Check S_l_iter != NULL allways, if this is not
                         // true then we need to check this actually does the
                         // right thing every time.
+                        assert (S_l_iter != NULL);
                         while (lb_idx (S_l, S_l_iter) > invalid_perms [curr_restore] &&
                                curr_restore<prev_invalid && invalid_perms[curr_restore]<max_for_h) {
                             if (S_l_prev != NULL) {
@@ -2548,7 +2590,7 @@ backtrack:
             }
         }
     }
-
+    seq_timing_end (seq);
     mem_pool_destroy (&temp_pool);
 }
 
@@ -2789,6 +2831,10 @@ bool is_2_regular (int num_vert, int *edges, int num_edges)
 //  n-2 ●   ● 2n-1
 //  n-1 ●   ● 2n
 //
+//  If _edges_out_ != NULL then we store all edges of each 2-regular subgraph in
+//  it. It will be a sequence of sets of 4n integers where each consecutive pair
+//  represent vertex ids for one edge.
+//
 uint32_t count_2_regular_subgraphs_of_k_n_n (int n, int_dyn_arr_t *edges_out)
 {
     // A subset of k_n_n edges of size 2*n
@@ -2803,14 +2849,16 @@ uint32_t count_2_regular_subgraphs_of_k_n_n (int n, int_dyn_arr_t *edges_out)
         // NOTE: Because we have 2*n distinct edges in the graph (by
         // construction), checking regularity implies it's also spanning.
         if (is_2_regular (2*n, edges, 2*n)) {
-            //print_2_regular_graph (e_subs_2_n, n);
-            print_2_regular_cycle_count (edges, n);
-            //if (edges_out) {
-            //    int j;
-            //    for (j=0; j<ARRAY_SIZE(edges); j++) {
-            //        int_dyn_arr_append (edges_out, edges[j]);
-            //    }
-            //}
+            if (edges_out) {
+                int j;
+                for (j=0; j<ARRAY_SIZE(edges); j++) {
+                    int_dyn_arr_append (edges_out, edges[j]);
+                }
+            } else {
+                //print_2_regular_graph (e_subs_2_n, n);
+                print_2_regular_cycle_count (edges, n);
+            }
+
             count++;
         }
     } while (subset_it_next_explicit (n*n, 2*n, e_subs_2_n));

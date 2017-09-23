@@ -506,19 +506,7 @@ void print_info_order (int n, uint64_t ot_id, int *triangle_order)
     thrackle_search_tree_full (n, ot, &seq, triangle_order);
     seq_tree_end (&seq);
 
-    uint32_t h = seq.final_max_len;
-    printf ("Levels: %d + root\n", h);
-    printf ("Nodes: %"PRIu64" + root\n", seq.num_nodes-1);
-    if (seq.nodes_per_len != NULL) {
-        printf ("Nodes per level: ");
-        print_uint_array (seq.nodes_per_len, seq.final_max_len+1);
-    }
-    printf ("Tree size: %"PRIu64" bytes\n", seq.expected_tree_size);
-    printf ("Max children: %u\n", seq.final_max_children);
-
-    if (seq.time != 0) {
-        printf ("Time: %f ms\n", seq.time);
-    }
+    seq_print_info (&seq);
     mem_pool_destroy (&temp_pool);
 }
 
@@ -532,7 +520,7 @@ void print_all_thrackles (int n, uint64_t ot_id, int *triangle_order)
     thrackle_search_tree_full (n, ot, &seq, triangle_order);
     backtrack_node_t *root = seq_tree_end (&seq);
 
-    seq_tree_print_sequences_print (root, seq.final_max_len, sorted_array_print);
+    seq_tree_print_sequences_full (root, seq.final_max_len, sorted_array_print, TREE_PRINT_LEN);
 
     mem_pool_destroy (&temp_pool);
 }
@@ -926,10 +914,13 @@ int main ()
     //generate_edge_disjoint_triangle_sets (10, 13);
     //fast_edge_disjoint_sets (9, 10);
 
-    //mem_pool_t pool = {0};
-    //struct sequence_store_t seq = new_tree (NULL, &pool);
-    //matching_decompositions_over_K_n_n (6, NULL, &seq);
-    //seq_tree_end (&seq);
+    mem_pool_t pool = {0};
+    struct sequence_store_t seq = new_sequence_store_opts (NULL, &pool, SEQ_DRY_RUN);
+    matching_decompositions_over_K_n_n (7, NULL, &seq);
+    seq_tree_end (&seq);
+    seq_print_info (&seq);
+    //backtrack_node_t *bt_root = seq_tree_end (&seq);
+    //seq_tree_print_all_sequences (bt_root, seq.final_max_len);
 
     //int n = 10, k = 12;
     //order_type_t *ot = order_type_from_id (n, 403098);
@@ -949,7 +940,7 @@ int main ()
     //print_lex_edg_triangles (10);
     //print_info (10, 0);
     //get_2_factors_of_k_n_n_to_file (6);
-    cycle_sizes_2_factors_of_k_n_n_from_file (7);
+    //cycle_sizes_2_factors_of_k_n_n_from_file (7);
     //print_2_factors_for_each_A (5);
     //verify_k_n_n_2_factor_count (7);
 

@@ -153,60 +153,6 @@ void end_temporary_memory (temporary_marker_t mrkr)
     mrkr.stack->used = mrkr.used;
 }
 
-bool in_array (int i, int* arr, int size)
-{
-    while (size) {
-        size--;
-        if (arr[size] == i) {
-            return true;
-        }
-    }
-    return false;
-}
-
-void array_clear (int *arr, int n)
-{
-    while (n) {
-        n--;
-        arr[n] = 0;
-    }
-}
-
-#define array_print(arr,n) array_print_full(arr,n," ",NULL,"\n")
-void array_print_full (int *arr, int n, char *sep, char *start, char *end)
-{
-    int i;
-    if (start != NULL) {
-        printf ("%s", start);
-    }
-
-    if (sep != NULL) {
-        for (i=0; i<n-1; i++) {
-            printf ("%d%s", arr[i], sep);
-        }
-    } else {
-        for (i=0; i<n-1; i++) {
-            printf ("%d", arr[i]);
-        }
-    }
-
-    if (end != NULL) {
-        printf ("%d%s", arr[i], end);
-    } else {
-        printf ("%d", arr[i]);
-    }
-}
-
-void print_uint_array (uint32_t *arr, int n)
-{
-    printf ("[");
-    int i;
-    for (i=0; i<n-1; i++) {
-        printf ("%"PRIu32", ", arr[i]);
-    }
-    printf ("%"PRIu32"]\n", arr[i]);
-}
-
 void swap (int*a, int*b)
 {
     int temp = *a;
@@ -318,12 +264,74 @@ void FUNCNAME(TYPE *arr, int n) {                               \
     FUNCNAME ## _user_data (arr,n,NULL);                        \
 }
 
+bool in_array (int i, int* arr, int size)
+{
+    while (size) {
+        size--;
+        if (arr[size] == i) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void array_clear (int *arr, int n)
+{
+    while (n) {
+        n--;
+        arr[n] = 0;
+    }
+}
+
+void array_print_full (int *arr, int n, char *sep, char *start, char *end)
+{
+    int i;
+    if (start != NULL) {
+        printf ("%s", start);
+    }
+
+    if (sep != NULL) {
+        for (i=0; i<n-1; i++) {
+            printf ("%d%s", arr[i], sep);
+        }
+    } else {
+        for (i=0; i<n-1; i++) {
+            printf ("%d", arr[i]);
+        }
+    }
+
+    if (end != NULL) {
+        printf ("%d%s", arr[i], end);
+    } else {
+        printf ("%d", arr[i]);
+    }
+}
+
+#define INT_ARR_PRINT_CALLBACK(name) void name(int *arr, int n)
+typedef INT_ARR_PRINT_CALLBACK(int_arr_print_callback_t);
+
+// NOTE: As long as we use array_print() as an INT_ARR_PRINT_CALLBACK, this needs
+// to be a function and not a macro.
+void array_print(int *arr, int n) {
+    array_print_full(arr,n," ",NULL,"\n");
+}
+
 void sorted_array_print (int *arr, int n)
 {
     int sorted[n];
     memcpy (sorted, arr, n*sizeof(int));
     int_sort (sorted, n);
     array_print (sorted, n);
+}
+
+void print_u64_array (uint64_t *arr, int n)
+{
+    printf ("[");
+    int i;
+    for (i=0; i<n-1; i++) {
+        printf ("%"PRIu64", ", arr[i]);
+    }
+    printf ("%"PRIu64"]\n", arr[i]);
 }
 
 // Function that returns an integer in [min,max] with a uniform distribution.
