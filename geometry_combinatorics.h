@@ -1150,6 +1150,25 @@ enum sequence_stor_options_t {
     SEQ_DRY_RUN             = 1L<<1,
 };
 
+struct sequence_store_t;
+
+// Callback type that can be called for each sequence:
+//  _stor_: sequence_store_t being used (provided for weird usecases).
+//  _seq_: Values of the nodes of the path to the leave (excluding root node).
+//  _len_: Size of _seq_.
+//  _closure_: Used to send data to the callback from seq_set_callback()'s call.
+//
+//  Use seq_set_callback() to enable one over a sequence_store_t. Define a new
+//  callback as follows:
+//
+//      SEQ_CALLBACK(callback_name)
+//      {
+//          ...
+//      }
+//
+#define SEQ_CALLBACK(name) void name(struct sequence_store_t *stor, int *seq, int len, void* closure)
+typedef SEQ_CALLBACK(seq_callback_t);
+
 struct sequence_store_t {
     enum sequence_file_type_t type;
     enum sequence_stor_options_t opts;
@@ -1179,6 +1198,13 @@ struct sequence_store_t {
 
     int64_t last_l;
 
+    // Attributes used for the callback
+    // NOTE: If SEQ_DRY_RUN is used, we store the values of the sequence here.
+    // Otherwise we get them from sequence_store_t->node_stack.
+    int *sequence_values;
+    void *closure;
+    seq_callback_t *callback;
+
     // Optional information about the search
     uint32_t final_max_len;
     uint32_t final_max_children;
@@ -1189,6 +1215,16 @@ struct sequence_store_t {
     // TODO: Implement the following info:
     // uint64_t expected_sequence_size;
 };
+
+// Sets up _callback_ to be called with _closure_ in it's arguments every time
+// we reach a leave on the tree (every time we finish a sequence).
+// NOTE: see SEQ_CALLBACK() macro for info on the seq_callback_t type.
+void seq_set_callback (struct sequence_store_t *stor,
+                       seq_callback_t *callback, void *closure)
+{
+    stor->callback = callback;
+    stor->closure = closure;
+}
 
 backtrack_node_t* stack_element (struct sequence_store_t *stor, uint32_t i)
 {
@@ -1245,15 +1281,44 @@ backtrack_node_t* complete_and_pop_node (struct sequence_store_t *stor, int64_t 
     return pushed_node;
 }
 
+void seq_dry_run_call_callback (struct sequence_store_t *stor, int val, int level)
+{
+    if (stor->callback != NULL) {
+        if (stor->last_l >= level) {
+            stor->callback (stor, stor->sequence_values, stor->last_l+1, stor->closure);
+        }
+
+        if (level > -1) {
+            stor->sequence_values[level] = val;
+        }
+    }
+}
+
+void seq_normal_call_callback (struct sequence_store_t *stor, int level)
+{
+    if (stor->callback != NULL && stor->last_l >= level) {
+        int curr_sequence[stor->num_nodes_stack];
+        int i;
+        for (i=1; i<stor->num_nodes_stack; i++) {
+            backtrack_node_t *node = stack_element (stor, i);
+            curr_sequence[i-1] = node->val;
+        }
+        stor->callback (stor, curr_sequence, stor->num_nodes_stack-1, stor->closure);
+    }
+}
+
 void seq_push_element (struct sequence_store_t *stor,
                        int val, int64_t level)
 {
     stor->final_max_len = MAX (stor->final_max_len, level+1);
+
     if (stor->opts & SEQ_DRY_RUN) {
         stor->num_nodes++;
         if (stor->nodes_per_len != NULL) {
             stor->nodes_per_len[level+1]++;
         }
+
+        seq_dry_run_call_callback (stor, val, level);
 
         while (stor->last_l >= level) {
             assert (stor->last_l >= 0);
@@ -1266,17 +1331,21 @@ void seq_push_element (struct sequence_store_t *stor,
             }
             stor->last_l--;
         }
+
         assert (stor->last_l + 1 == level
                 && "Nodes should be pushed with level increasing by 1");
         stor->last_l = level;
         stor->children_count_stack[stor->num_children_count_stack] = 0;
         stor->num_children_count_stack++;
 
-        // NOTE: Why would someone want to compute the tree size while also
-        // computing it?, if this is an actual usecase, then we don't really want
-        // to return here. CAREFUL: stor->last_l will be used from two places.
+        // NOTE: Why would someone want to compute tree information while also
+        // computing the full tree?, if this is an actual usecase, then we don't
+        // really want to return here. CAREFUL: stor->last_l will be used from
+        // two places.
         return;
     }
+
+    seq_normal_call_callback (stor, level);
 
     while (stor->last_l >= level) {
         assert (stor->last_l >= 0);
@@ -1310,6 +1379,12 @@ void seq_tree_extents (struct sequence_store_t *stor,
             mem_pool_push_size (&stor->temp_pool,(stor->max_len+1)*stor->max_node_size);
 
         if (stor->opts & SEQ_DRY_RUN) {
+            if (stor->callback != NULL) {
+                stor->sequence_values =
+                    mem_pool_push_size (&stor->temp_pool,
+                                        (stor->max_len+1)*sizeof(stor->sequence_values));
+            }
+
             stor->children_count_stack =
                 mem_pool_push_size_full (&stor->temp_pool,
                                          (stor->max_len+1)*sizeof(stor->children_count_stack),
@@ -1334,12 +1409,16 @@ backtrack_node_t* seq_tree_end (struct sequence_store_t *stor)
 {
     backtrack_node_t* ret = NULL;
     if (!(stor->opts & SEQ_DRY_RUN)) {
+        seq_normal_call_callback (stor, -1);
+
         while (stor->last_l > -1) {
             complete_and_pop_node (stor, stor->last_l);
             stor->last_l--;
         }
         ret = complete_and_pop_node (stor, stor->last_l);
     } else {
+        seq_dry_run_call_callback (stor, 0, -1);
+
         while (stor->last_l >= -1) {
             uint32_t final_children_count = stor->children_count_stack[stor->last_l+1];
             stor->final_max_children = MAX (stor->final_max_children, final_children_count);

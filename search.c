@@ -904,6 +904,11 @@ void print_2_factors_for_each_A (int n)
     free (p);
 }
 
+SEQ_CALLBACK(seq_callback_print)
+{
+    array_print (seq, len);
+}
+
 int main ()
 {
     ensure_full_database ();
@@ -915,12 +920,14 @@ int main ()
     //fast_edge_disjoint_sets (9, 10);
 
     mem_pool_t pool = {0};
-    struct sequence_store_t seq = new_sequence_store_opts (NULL, &pool, SEQ_DRY_RUN);
-    matching_decompositions_over_K_n_n (7, NULL, &seq);
-    seq_tree_end (&seq);
-    seq_print_info (&seq);
-    //backtrack_node_t *bt_root = seq_tree_end (&seq);
-    //seq_tree_print_all_sequences (bt_root, seq.final_max_len);
+    struct sequence_store_t seq = new_sequence_store (NULL, &pool);
+    seq_set_callback (&seq, seq_callback_print, NULL);
+    matching_decompositions_over_K_n_n (4, NULL, &seq);
+    //seq_tree_end (&seq);
+    //seq_print_info (&seq);
+    backtrack_node_t *bt_root = seq_tree_end (&seq);
+    printf ("---------------\n");
+    seq_tree_print_all_sequences (bt_root, seq.final_max_len);
 
     //int n = 10, k = 12;
     //order_type_t *ot = order_type_from_id (n, 403098);
