@@ -1158,16 +1158,15 @@ struct sequence_store_t;
 //  _len_: Size of _seq_.
 //  _closure_: Used to send data to the callback from seq_set_callback()'s call.
 //
-//  Use seq_set_callback() to enable one over a sequence_store_t. Define a new
-//  callback as follows:
-//
-//      SEQ_CALLBACK(callback_name)
-//      {
-//          ...
-//      }
-//
+//  Use seq_set_callback() to enable one over a sequence_store_t.
 #define SEQ_CALLBACK(name) void name(struct sequence_store_t *stor, int *seq, int len, void* closure)
 typedef SEQ_CALLBACK(seq_callback_t);
+
+// Simple example callback.
+SEQ_CALLBACK(seq_print_callback)
+{
+    array_print (seq, len);
+}
 
 struct sequence_store_t {
     enum sequence_file_type_t type;
@@ -2517,20 +2516,7 @@ bool has_fixed_point (int n, int *perm_a, int *perm_b)
 }
 
 #define GET_PERM(i) &all_perms[(i)*n]
-void print_decomp (int n, int* decomp, int* all_perms)
-{
-    int i;
-    for (i=0; i<n; i++) {
-        array_print (GET_PERM(decomp[i]), n);
-    }
-    printf ("\n");
-}
-
-void edges_from_permutation (int *all_perms, int perm, int n, int *e);
-void print_2_regular_cycle_count (int *edges, int n);
-
-void matching_decompositions_over_K_n_n (int n, int *all_perms,
-                                         struct sequence_store_t *seq)
+void K_n_n_1_factorizations (int n, int *all_perms, struct sequence_store_t *seq)
 {
     assert (seq != NULL);
     int num_perms = factorial (n);
@@ -2573,13 +2559,6 @@ void matching_decompositions_over_K_n_n (int n, int *all_perms,
     seq_timing_begin (seq);
     while (l>0) {
         if (l==n) {
-            //int edges [4*n];
-            //edges_from_permutation (all_perms, decomp[n-1], n, edges);
-            //edges_from_permutation (all_perms, decomp[n-2], n, edges+2*n);
-            //print_2_regular_cycle_count (edges, n);
-
-            //print_decomp (n, decomp, all_perms);
-            //array_print (decomp, n);
             goto backtrack;
         } else {
             // Compute S_l

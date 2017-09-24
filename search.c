@@ -904,9 +904,84 @@ void print_2_factors_for_each_A (int n)
     free (p);
 }
 
-SEQ_CALLBACK(seq_callback_print)
+enum format_1_factorization_t {
+    FACT_PERMS_SEQUENCE,
+    FACT_FULL_PERMS,
+    FACT_COMPL_CYCLE_CNT,
+    FACT_COMPL_MULTISET
+};
+
+struct K_n_n_1_factorizations_closure_t {
+    int n;
+    int *all_perms;
+};
+
+SEQ_CALLBACK(print_1_factorizations_full_perms)
 {
-    array_print (seq, len);
+    int n = ((struct K_n_n_1_factorizations_closure_t*)closure)->n;
+    int *all_perms = ((struct K_n_n_1_factorizations_closure_t*)closure)->all_perms;
+
+    int i;
+    for (i=0; i<n; i++) {
+        array_print (GET_PERM(seq[i]), n);
+    }
+    printf ("\n");
+}
+
+SEQ_CALLBACK(print_1_factorizations_compl_cycle_cnt)
+{
+    int n = ((struct K_n_n_1_factorizations_closure_t*)closure)->n;
+    int *all_perms = ((struct K_n_n_1_factorizations_closure_t*)closure)->all_perms;
+
+    int edges [4*n];
+    edges_from_permutation (all_perms, seq[n-1], n, edges);
+    edges_from_permutation (all_perms, seq[n-2], n, edges+2*n);
+
+    print_2_regular_cycle_count (edges, n);
+}
+
+SEQ_CALLBACK(print_1_factorizations_compl_multiset)
+{
+    int n = ((struct K_n_n_1_factorizations_closure_t*)closure)->n;
+    int *all_perms = ((struct K_n_n_1_factorizations_closure_t*)closure)->all_perms;
+
+    int edges [4*n];
+    edges_from_permutation (all_perms, seq[n-1], n, edges);
+    edges_from_permutation (all_perms, seq[n-2], n, edges+2*n);
+
+    int part[n], num_part;
+    partition_from_2_regular (edges, n, part, &num_part);
+    array_print_full (part, num_part, ", ", "{", "}\n");
+}
+
+void print_K_n_n_1_factorizations (int n, enum format_1_factorization_t fmt)
+{
+    mem_pool_t pool = {0};
+
+    struct K_n_n_1_factorizations_closure_t clsr;
+    clsr.n = n;
+    clsr.all_perms = mem_pool_push_array (&pool, factorial(n)*n, int);
+    compute_all_permutations (n, clsr.all_perms);
+
+    struct sequence_store_t seq = new_sequence_store_opts (NULL, &pool, SEQ_DRY_RUN);
+    switch (fmt) {
+        case FACT_PERMS_SEQUENCE:
+            seq_set_callback (&seq, seq_print_callback, NULL);
+            break;
+        case FACT_FULL_PERMS:
+            seq_set_callback (&seq, print_1_factorizations_full_perms, &clsr);
+            break;
+        case FACT_COMPL_CYCLE_CNT:
+            seq_set_callback (&seq, print_1_factorizations_compl_cycle_cnt, &clsr);
+            break;
+        case FACT_COMPL_MULTISET:
+            seq_set_callback (&seq, print_1_factorizations_compl_multiset, &clsr);
+            break;
+        default:
+            invalid_code_path;
+    }
+    K_n_n_1_factorizations (n, clsr.all_perms, &seq);
+    seq_tree_end (&seq);
 }
 
 int main ()
@@ -919,15 +994,7 @@ int main ()
     //generate_edge_disjoint_triangle_sets (10, 13);
     //fast_edge_disjoint_sets (9, 10);
 
-    mem_pool_t pool = {0};
-    struct sequence_store_t seq = new_sequence_store (NULL, &pool);
-    seq_set_callback (&seq, seq_callback_print, NULL);
-    matching_decompositions_over_K_n_n (4, NULL, &seq);
-    //seq_tree_end (&seq);
-    //seq_print_info (&seq);
-    backtrack_node_t *bt_root = seq_tree_end (&seq);
-    printf ("---------------\n");
-    seq_tree_print_all_sequences (bt_root, seq.final_max_len);
+    print_K_n_n_1_factorizations (6, FACT_COMPL_MULTISET);
 
     //int n = 10, k = 12;
     //order_type_t *ot = order_type_from_id (n, 403098);

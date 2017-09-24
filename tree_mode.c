@@ -416,7 +416,7 @@ bool tree_mode (struct app_state_t *st, app_graphics_t *gr)
 
         mem_pool_t bt_res_pool = {0};
         struct sequence_store_t seq = new_sequence_store (NULL, &bt_res_pool);
-        matching_decompositions_over_K_n_n (n, tree_mode->all_perms, &seq);
+        K_n_n_1_factorizations (n, tree_mode->all_perms, &seq);
         backtrack_node_t *bt_root = seq_tree_end (&seq);
 
         view_root = create_view_tree (&tree_mode->pool, bt_root);
