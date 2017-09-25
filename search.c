@@ -984,6 +984,117 @@ void print_K_n_n_1_factorizations (int n, enum format_1_factorization_t fmt)
     seq_tree_end (&seq);
 }
 
+struct K_n_n_1_factorizations_cnt_closure_t {
+    int n;
+    int *all_perms;
+    uint64_t *count;
+    void *p;
+};
+
+SEQ_CALLBACK(count_1_factorizations_compl_multiset)
+{
+    int n = ((struct K_n_n_1_factorizations_cnt_closure_t*)closure)->n;
+    int *all_perms = ((struct K_n_n_1_factorizations_cnt_closure_t*)closure)->all_perms;
+    uint64_t *count = ((struct K_n_n_1_factorizations_cnt_closure_t*)closure)->count;
+    int (*p)[n+1][n+1] = ((struct K_n_n_1_factorizations_cnt_closure_t*)closure)->p;
+
+    int edges [4*n];
+    edges_from_permutation (all_perms, seq[n-1], n, edges);
+    edges_from_permutation (all_perms, seq[n-2], n, edges+2*n);
+
+    int part[n], num_part;
+    partition_from_2_regular (edges, n, part, &num_part);
+
+    int part_id = partition_to_id (p, n, part);
+    count[part_id]++;
+}
+
+enum ascii_tbl_mode_t {
+    ASCII_TBL_RAW,
+    ASCII_TBL_NICE
+};
+
+// Prints a table of the number of 1-factorizations of K_n_n classified by the
+// characteristic multiset of the union of the last two factors (we call this
+// the complement). Then we compare it to the number of 2-factors of K_n_n
+// classified by it's characteristic multiset too, and divided by Binomial(n,2).
+// Here we can see the inequality relationship between these quantities, an that
+// one is always a multiple of the other one.
+//
+// If the relationship between these quantities could be determined exactly,
+// then we would have an analytic expression for the number of 1-factorizations
+// of K_n_n. Currently we only have a lower bound.
+void K_n_n_1_factorizations_vs_2_factors (int n, enum ascii_tbl_mode_t md)
+{
+    mem_pool_t pool = {0};
+    if (n == 7) {
+        printf ("This wil take 1.5 hours.");
+    } else if (n > 7) {
+        printf ("This will take way too long.");
+    }
+
+    // Column 0
+    int chars_cols[3];
+    // NOTE: (num_part) + 2*(num_part-1) + 2 = digits + comas_spaces + braces
+    //        max_num_part = n/2
+    chars_cols[0] = 3*(n/2);
+    int (*p)[n+1][n+1] = mem_pool_push_size (&pool, partition_restr_numbers_size(n));
+    partition_dbl_restr_numbers (p, n, 2);
+    struct K_n_n_1_factorizations_cnt_closure_t clsr;
+    clsr.n = n;
+    clsr.all_perms = mem_pool_push_array (&pool, factorial(n)*n, int);
+    compute_all_permutations (n, clsr.all_perms);
+    clsr.count = mem_pool_push_size_full (&pool, (*p)[n][n]*sizeof(uint64_t), POOL_ZERO_INIT);
+    clsr.p = p;
+    struct sequence_store_t seq = new_sequence_store_opts (NULL, &pool, SEQ_DRY_RUN);
+    seq_set_callback (&seq, count_1_factorizations_compl_multiset, &clsr);
+    K_n_n_1_factorizations (n, clsr.all_perms, &seq);
+    seq_tree_end (&seq);
+
+    // Column 1
+    int i;
+    chars_cols[1] = 0;
+    for (i=0; i<(*p)[n][n]; i++) {
+        chars_cols[1] = MAX(chars_cols[1], num_digits (clsr.count[i]));
+    }
+
+    // Column 2
+    int part[n], num_part;
+    uint64_t b_n_2 = binomial(n,2);
+    uint64_t *col_2 = mem_pool_push_size (&pool, (*p)[n][n]*sizeof(uint64_t));
+    chars_cols[2] = 0;
+    for (i=0; i<(*p)[n][n]; i++) {
+        partition_restr_from_id (p, n, 2, i, part, &num_part);
+        uint64_t L_A = cnt_2_factors_of_k_n_n_for_A (part, num_part);
+        col_2[i] = L_A/b_n_2;
+        assert (L_A%b_n_2 == 0);
+        chars_cols[2] = MAX(chars_cols[2], num_digits (col_2[i]));
+    }
+
+    // Print table
+    struct ascii_tbl_t tbl = {0};
+    char *titles[] = {"A", "D(A)", "L(A)/B(n,2)"};
+    if (md == ASCII_TBL_RAW) {
+        tbl.num_cols = ARRAY_SIZE(titles);
+        tbl.vert_sep = " ";
+    } else if (md == ASCII_TBL_NICE) {
+        ascii_tbl_header (&tbl, titles, chars_cols, ARRAY_SIZE(titles));
+    }
+    for (i=0; i<(*p)[n][n]; i++) {
+        partition_restr_from_id (p, n, 2, i, part, &num_part);
+        printf ("%*s", chars_cols[0] - 3*num_part, "");
+        array_print_full (part, num_part, ", ", "{", "}");
+        ascii_tbl_sep (&tbl);
+        printf ("%*"PRIu64, chars_cols[1], clsr.count[i]);
+        ascii_tbl_sep (&tbl);
+        printf ("%*"PRIu64, chars_cols[2], col_2[i]);
+        ascii_tbl_sep (&tbl);
+        assert (clsr.count[i]>=col_2[i] && clsr.count[i]%col_2[i] == 0);
+    }
+
+    mem_pool_destroy (&pool);
+}
+
 int main ()
 {
     ensure_full_database ();
@@ -994,7 +1105,8 @@ int main ()
     //generate_edge_disjoint_triangle_sets (10, 13);
     //fast_edge_disjoint_sets (9, 10);
 
-    print_K_n_n_1_factorizations (6, FACT_COMPL_MULTISET);
+    //print_K_n_n_1_factorizations (6, FACT_COMPL_MULTISET);
+    K_n_n_1_factorizations_vs_2_factors (7, ASCII_TBL_NICE);
 
     //int n = 10, k = 12;
     //order_type_t *ot = order_type_from_id (n, 403098);

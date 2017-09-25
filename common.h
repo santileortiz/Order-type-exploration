@@ -334,6 +334,73 @@ void print_u64_array (uint64_t *arr, int n)
     printf ("%"PRIu64"]\n", arr[i]);
 }
 
+void print_line (char *sep, int len)
+{
+    int w = strlen(sep);
+    char str[w*len+1];
+    int i;
+    for (i=0; i<len; i++) {
+        memcpy (str+i*w, sep, w);
+    }
+    str[w*len] = '\0';
+    printf ("%s", str);
+}
+
+struct ascii_tbl_t {
+    char* vert_sep;
+    char* hor_sep;
+    char* cross;
+    int curr_col;
+    int num_cols;
+};
+
+void print_table_bar (char *hor_sep, char* cross, int *lens, int num_cols)
+{
+    int i;
+    for (i=0; i<num_cols-1; i++) {
+        print_line (hor_sep, lens[i]);
+        printf ("%s", cross);
+    }
+    print_line (hor_sep, lens[i]);
+    printf ("\n");
+}
+
+void ascii_tbl_header (struct ascii_tbl_t *tbl, char **titles, int *widths, int num_cols)
+{
+    if (tbl->vert_sep == NULL) {
+        tbl->vert_sep = " | ";
+    }
+
+    if (tbl->hor_sep == NULL) {
+        tbl->hor_sep = "-";
+    }
+
+    if (tbl->cross == NULL) {
+        tbl->cross = "-|-";
+    }
+
+    tbl->num_cols = num_cols;
+    int i;
+    for (i=0; i<num_cols-1; i++) {
+        widths[i] = MAX(widths[i], (int)strlen(titles[i]));
+        printf ("%*s%s", widths[i], titles[i], tbl->vert_sep);
+    }
+    widths[i] = MAX(widths[i], (int)strlen(titles[i]));
+    printf ("%*s\n", widths[i], titles[i]);
+    print_table_bar (tbl->hor_sep, tbl->cross, widths, num_cols);
+}
+
+void ascii_tbl_sep (struct ascii_tbl_t *tbl)
+{
+    if (tbl->curr_col < tbl->num_cols-1) {
+        tbl->curr_col++;
+        printf ("%s", tbl->vert_sep);
+    } else {
+        tbl->curr_col = 0;
+        printf ("\n");
+    }
+}
+
 // Function that returns an integer in [min,max] with a uniform distribution.
 // NOTE: Remember to call srand() ONCE before using this.
 #define rand_int_max(max) rand_int_range(0,max)
