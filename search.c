@@ -181,7 +181,12 @@ void single_thrackle_random_order (int n, int k, uint64_t ot_id, int *nodes, int
     free (ot);
 }
 
-void search_full_tree_all_ot (int n)
+enum format_thrackle_count_t {
+    ONLY_STATS,
+    COUNT_PER_THRACKLE
+};
+
+void search_full_tree_all_ot (int n, enum format_thrackle_count_t fmt)
 {
     assert(n <= 10);
     mem_pool_t pool = {0};
@@ -200,15 +205,23 @@ void search_full_tree_all_ot (int n)
         thrackle_search_tree (n, ot, &seq);
         seq_tree_end (&seq);
 
+        if (fmt == COUNT_PER_THRACKLE) {
+            printf ("%"PRIu64" %"PRIu64"\n", id, seq.nodes_per_len[seq.final_max_len]);
+        }
+
         average += seq.num_nodes;
         max_size = MAX(seq.final_max_len, max_size);
 
-        progress_bar (id, __g_db_data.num_order_types);
+        if (fmt == ONLY_STATS) {
+            progress_bar (id, __g_db_data.num_order_types);
+        }
         db_next (ot);
         id++;
         mem_pool_end_temporary_memory (mrk);
     }
-    printf ("Max Size: %d, Average nodes: %f\n", max_size, average/(id));
+    if (fmt == ONLY_STATS) {
+        printf ("Max Size: %d, Average nodes: %f\n", max_size, average/(id));
+    }
 }
 
 uint32_t* load_uint32_from_text_file (char *filename, int *count)
@@ -510,17 +523,66 @@ void print_info_order (int n, uint64_t ot_id, int *triangle_order)
     mem_pool_destroy (&temp_pool);
 }
 
-void print_all_thrackles (int n, uint64_t ot_id, int *triangle_order)
+enum format_triangle_set_t {
+    TRIANGLE_SET_ARR,
+    TRIANGLE_SET_ID
+};
+
+struct thrackle_closure_t {
+    int n;
+    int max_len;
+};
+
+SEQ_CALLBACK(print_triangle_set_arr)
+{
+    int max_len = ((struct thrackle_closure_t*)closure)->max_len;
+    if (len == max_len)
+        sorted_array_print (seq, len);
+}
+
+SEQ_CALLBACK(print_triangle_set_id)
+{
+    int n = ((struct thrackle_closure_t*)closure)->n;
+    int max_len = ((struct thrackle_closure_t*)closure)->max_len;
+
+    if (len == max_len) {
+        int sorted[len];
+        memcpy (sorted, seq, len*sizeof(int));
+        int_sort (sorted, n);
+        printf ("%"PRIu64"\n", subset_it_id_for_idx (binomial(n,3), sorted, len));
+    }
+}
+
+void print_maximal_thrackles (int n, uint64_t ot_id, int *triangle_order, enum format_triangle_set_t fmt)
 {
     order_type_t *ot = order_type_from_id (n, ot_id);
     mem_pool_t temp_pool = {0};
     struct sequence_store_t seq;
-    seq = new_sequence_store (NULL, &temp_pool);
 
+    int thrackle_size;
+    pool_temp_marker_t mrk = mem_pool_begin_temporary_memory (&temp_pool);
+    seq = new_sequence_store_opts (NULL, &temp_pool, SEQ_DRY_RUN);
     thrackle_search_tree_full (n, ot, &seq, triangle_order);
-    backtrack_node_t *root = seq_tree_end (&seq);
+    thrackle_size = seq.final_max_len;
+    seq_tree_end (&seq);
+    mem_pool_end_temporary_memory (mrk);
 
-    seq_tree_print_sequences_full (root, seq.final_max_len, sorted_array_print, TREE_PRINT_LEN);
+    struct thrackle_closure_t cls;
+    cls.n = n;
+    cls.max_len = thrackle_size;
+    seq = new_sequence_store_opts (NULL, &temp_pool, SEQ_DRY_RUN);
+    switch (fmt) {
+        case TRIANGLE_SET_ARR:
+            seq_set_callback (&seq, print_triangle_set_arr, &cls);
+            break;
+        case TRIANGLE_SET_ID:
+            seq_set_callback (&seq, print_triangle_set_id, &cls);
+            break;
+        default:
+            invalid_code_path;
+    }
+    thrackle_search_tree_full (n, ot, &seq, triangle_order);
+    seq_tree_end (&seq);
 
     mem_pool_destroy (&temp_pool);
 }
@@ -1106,7 +1168,7 @@ int main ()
     //fast_edge_disjoint_sets (9, 10);
 
     //print_K_n_n_1_factorizations (6, FACT_COMPL_MULTISET);
-    K_n_n_1_factorizations_vs_2_factors (7, ASCII_TBL_NICE);
+    //K_n_n_1_factorizations_vs_2_factors (7, ASCII_TBL_NICE);
 
     //int n = 10, k = 12;
     //order_type_t *ot = order_type_from_id (n, 403098);
@@ -1135,15 +1197,16 @@ int main ()
     //partition_test_id (49);
 
     //average_search_nodes_lexicographic (8);
-    //print_info_random_order (6, 0);
+    //print_info_random_order (8, 3018);
     //max_thrackle_size_ot_file (10, "n_10_sin_thrackle_12.txt");
     
-    //int n = 8;
-    //int rand_arr[binomial(n,3)];
-    //init_random_array (rand_arr, ARRAY_SIZE(rand_arr));
-    //print_all_thrackles (n, 0, rand_arr);
+    int n = 8;
+    srand(time(NULL));
+    int rand_arr[binomial(n,3)];
+    init_random_array (rand_arr, ARRAY_SIZE(rand_arr));
+    print_maximal_thrackles (n, 3017, rand_arr, TRIANGLE_SET_ID);
 
-    //search_full_tree_all_ot (7);
+    //search_full_tree_all_ot (8, ONLY_STATS);
 
     //int count = count_2_regular_subgraphs_of_k_n_n (4, NULL);
     //printf ("Total: %d\n", count);

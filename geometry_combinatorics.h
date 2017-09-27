@@ -1159,6 +1159,7 @@ struct sequence_store_t;
 //  _closure_: Used to send data to the callback from seq_set_callback()'s call.
 //
 //  Use seq_set_callback() to enable one over a sequence_store_t.
+//  NOTE: DO NOT! mutate _seq_ will break everything.
 #define SEQ_CALLBACK(name) void name(struct sequence_store_t *stor, int *seq, int len, void* closure)
 typedef SEQ_CALLBACK(seq_callback_t);
 
