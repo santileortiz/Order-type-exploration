@@ -1052,6 +1052,21 @@ void print_K_n_n_1_factorizations (int n, enum format_1_factorization_t fmt)
     seq_tree_end (&seq);
 }
 
+void print_K_n_n_1_factorizations_info (int n)
+{
+    mem_pool_t pool = {0};
+
+    struct K_n_n_1_factorizations_closure_t clsr;
+    clsr.n = n;
+    clsr.all_perms = mem_pool_push_array (&pool, factorial(n)*n, int);
+    compute_all_permutations (n, clsr.all_perms);
+
+    struct sequence_store_t seq = new_sequence_store_opts (NULL, &pool, SEQ_DRY_RUN);
+    K_n_n_1_factorizations (n, clsr.all_perms, &seq);
+    seq_tree_end (&seq);
+    seq_print_info (&seq);
+}
+
 struct K_n_n_1_factorizations_cnt_closure_t {
     int n;
     int *all_perms;
@@ -1188,9 +1203,10 @@ int main ()
     //print_differing_triples (n, 0, 1);
     //print_edge_disjoint_sets (5, 2);
     //fast_edge_disjoint_sets (8, 8);
-    print_first_edge_disjoint_triangle_set (11, 17);
+    //print_first_edge_disjoint_triangle_set (11, 17);
 
     //print_K_n_n_1_factorizations (6, FACT_COMPL_MULTISET);
+    //print_K_n_n_1_factorizations_info (6);
     //K_n_n_1_factorizations_vs_2_factors (7, ASCII_TBL_NICE);
 
     //int n = 10, k = 12;
@@ -1209,7 +1225,7 @@ int main ()
 
     //compare_convex_thrackle_orderings (10, 12);
     //print_lex_edg_triangles (10);
-    //print_thrackle_info (9, 0);
+    print_thrackle_info (8, 3017);
     //get_2_factors_of_k_n_n_to_file (6);
     //cycle_sizes_2_factors_of_k_n_n_from_file (7);
     //print_2_factors_for_each_A (5);
@@ -1220,7 +1236,7 @@ int main ()
     //partition_test_id (49);
 
     //average_search_nodes_lexicographic (8);
-    //print_info_random_order (8, 3018);
+    //print_info_random_order (8, 3017);
     //max_thrackle_size_ot_file (10, "n_10_sin_thrackle_12.txt");
     
     //int n = 8;

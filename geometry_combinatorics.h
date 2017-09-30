@@ -1211,6 +1211,7 @@ struct sequence_store_t {
     uint32_t final_max_children;
     uint64_t expected_tree_size;
     uint64_t *nodes_per_len; // Allocated in sequence_store_t->pool
+    uint64_t *leaves_per_len; // Allocated in sequence_store_t->pool
     int *children_count_stack; // Used to compute expected_tree_size, allocated in sequence_store_t->temp_pool
     int num_children_count_stack;
     // TODO: Implement the following info:
@@ -1303,6 +1304,9 @@ void seq_dry_run_call_callback (struct sequence_store_t *stor, int val, int leve
 {
     if (stor->last_l >= level) {
         stor->num_sequences++;
+        if (stor->leaves_per_len != NULL) {
+            stor->leaves_per_len[stor->last_l+1]++;
+        }
     }
 
     if (stor->callback != NULL) {
@@ -1416,6 +1420,10 @@ void seq_tree_extents (struct sequence_store_t *stor,
                                          POOL_ZERO_INIT);
             if (stor->pool != NULL) {
                 stor->nodes_per_len =
+                    mem_pool_push_size_full (stor->pool,
+                                             (stor->max_len+1)*sizeof(*stor->nodes_per_len),
+                                             POOL_ZERO_INIT);
+                stor->leaves_per_len =
                     mem_pool_push_size_full (stor->pool,
                                              (stor->max_len+1)*sizeof(*stor->nodes_per_len),
                                              POOL_ZERO_INIT);
@@ -1779,6 +1787,10 @@ void seq_print_info (struct sequence_store_t *stor) {
         print_u64_array (stor->nodes_per_len, stor->final_max_len+1);
     }
     printf ("Sequences (leaves): %"PRIu32"\n", stor->num_sequences);
+    if (stor->leaves_per_len != NULL) {
+        printf ("Sequences per level: ");
+        print_u64_array (stor->leaves_per_len, stor->final_max_len+1);
+    }
     printf ("Tree size: %"PRIu64" bytes\n", stor->expected_tree_size);
     printf ("Max children: %u\n", stor->final_max_children);
 
