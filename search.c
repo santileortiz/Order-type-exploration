@@ -509,8 +509,14 @@ int* get_all_thrackles_cached (int n, int k, uint32_t ot_id)
     return res;
 }
 
-#define print_info(n,ot_id) print_info_order (n,ot_id,NULL)
-void print_info_order (int n, uint64_t ot_id, int *triangle_order)
+// Prints information of the search tree of the beacktracking search for
+// thrackles on the point set _ot_id_ of _n_ points, indexed by its position in
+// the database (_ot_id_ = 0 is convex position). _triangle_order_ is an
+// optional array of binomial(n,3) integers that specifies the order in which
+// triangles are to be explored, use NULL to use lexicographic ordering of the
+// indexes of the vertices.
+#define print_thrackle_info(n,ot_id) print_thrackle_info_order (n,ot_id,NULL)
+void print_thrackle_info_order (int n, uint64_t ot_id, int *triangle_order)
 {
     order_type_t *ot = order_type_from_id (n, ot_id);
     mem_pool_t temp_pool = {0};
@@ -592,7 +598,7 @@ void print_info_random_order (int n, uint64_t ot_id)
     int rand_arr[binomial(n,3)];
     srand (time(NULL));
     init_random_array (rand_arr, ARRAY_SIZE(rand_arr));
-    print_info_order (n, ot_id, rand_arr);
+    print_thrackle_info_order (n, ot_id, rand_arr);
 }
 
 #define average_search_nodes_lexicographic(n) average_search_nodes(n, NULL)
@@ -1157,15 +1163,32 @@ void K_n_n_1_factorizations_vs_2_factors (int n, enum ascii_tbl_mode_t md)
     mem_pool_destroy (&pool);
 }
 
+void print_first_edge_disjoint_triangle_set (int n, int k)
+{
+    mem_pool_t pool = {0};
+    struct sequence_store_t seq = new_sequence_store (NULL, &pool);
+    seq_set_seq_number (&seq, 1);
+    generate_edge_disjoint_triangle_sets (n, k, &seq);
+    int *res = seq_end (&seq);
+
+    int *all_triangles = mem_pool_push_size (&pool, subset_it_computed_size(n,3));
+    subset_it_compute_all (n, 3, all_triangles);
+    int i;
+    for (i=0; i<k; i++) {
+        array_print (&all_triangles[3*res[i]], 3);
+    }
+    mem_pool_destroy (&pool);
+}
+
 int main ()
 {
     ensure_full_database ();
     //get_thrackle_for_each_ot (10, 12);
     //count_thrackles (8);
     //print_differing_triples (n, 0, 1);
-    //print_edge_disjoint_sets (8, 8);
-    //generate_edge_disjoint_triangle_sets (10, 13);
-    //fast_edge_disjoint_sets (9, 10);
+    //print_edge_disjoint_sets (5, 2);
+    //fast_edge_disjoint_sets (8, 8);
+    print_first_edge_disjoint_triangle_set (11, 17);
 
     //print_K_n_n_1_factorizations (6, FACT_COMPL_MULTISET);
     //K_n_n_1_factorizations_vs_2_factors (7, ASCII_TBL_NICE);
@@ -1186,7 +1209,7 @@ int main ()
 
     //compare_convex_thrackle_orderings (10, 12);
     //print_lex_edg_triangles (10);
-    //print_info (10, 0);
+    //print_thrackle_info (9, 0);
     //get_2_factors_of_k_n_n_to_file (6);
     //cycle_sizes_2_factors_of_k_n_n_from_file (7);
     //print_2_factors_for_each_A (5);
@@ -1200,11 +1223,11 @@ int main ()
     //print_info_random_order (8, 3018);
     //max_thrackle_size_ot_file (10, "n_10_sin_thrackle_12.txt");
     
-    int n = 8;
-    srand(time(NULL));
-    int rand_arr[binomial(n,3)];
-    init_random_array (rand_arr, ARRAY_SIZE(rand_arr));
-    print_maximal_thrackles (n, 3017, rand_arr, TRIANGLE_SET_ID);
+    //int n = 8;
+    //srand(time(NULL));
+    //int rand_arr[binomial(n,3)];
+    //init_random_array (rand_arr, ARRAY_SIZE(rand_arr));
+    //print_maximal_thrackles (n, 3017, rand_arr, TRIANGLE_SET_ID);
 
     //search_full_tree_all_ot (8, ONLY_STATS);
 

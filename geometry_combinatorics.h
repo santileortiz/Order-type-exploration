@@ -1204,6 +1204,7 @@ struct sequence_store_t {
     int *sequence_values;
     void *closure;
     seq_callback_t *callback;
+    uint32_t callback_num_sequences;
 
     // Optional information about the search
     uint32_t final_max_len;
@@ -1224,6 +1225,23 @@ void seq_set_callback (struct sequence_store_t *stor,
 {
     stor->callback = callback;
     stor->closure = closure;
+}
+
+// Limits the number of sequences on which the previous callback is called, if
+// the algorithm wants it, it can use seq_finish() to maybe break earlier from
+// the algorithm.
+void seq_set_seq_number (struct sequence_store_t *stor,
+                         int num_sequences)
+{
+    //assert (stor->type & SEQ_FIXED_LEN);
+    stor->callback_num_sequences = num_sequences;
+}
+
+// Can be used by the algorithm after adding something to the store if the user
+// has configured some break condition (like the number of sequences above).
+bool seq_finish (struct sequence_store_t *stor)
+{
+    return (stor->callback_num_sequences != 0 && stor->num_sequences >= stor->callback_num_sequences);
 }
 
 backtrack_node_t* stack_element (struct sequence_store_t *stor, uint32_t i)
@@ -1283,6 +1301,10 @@ backtrack_node_t* complete_and_pop_node (struct sequence_store_t *stor, int64_t 
 
 void seq_dry_run_call_callback (struct sequence_store_t *stor, int val, int level)
 {
+    if (stor->last_l >= level) {
+        stor->num_sequences++;
+    }
+
     if (stor->callback != NULL) {
         if (stor->last_l >= level) {
             stor->callback (stor, stor->sequence_values, stor->last_l+1, stor->closure);
@@ -1296,14 +1318,17 @@ void seq_dry_run_call_callback (struct sequence_store_t *stor, int val, int leve
 
 void seq_normal_call_callback (struct sequence_store_t *stor, int level)
 {
-    if (stor->callback != NULL && stor->last_l >= level) {
-        int curr_sequence[stor->num_nodes_stack];
-        int i;
-        for (i=1; i<stor->num_nodes_stack; i++) {
-            backtrack_node_t *node = stack_element (stor, i);
-            curr_sequence[i-1] = node->val;
+    if (stor->last_l >= level) {
+        stor->num_sequences++;
+        if (stor->callback != NULL ) {
+            int curr_sequence[stor->num_nodes_stack];
+            int i;
+            for (i=1; i<stor->num_nodes_stack; i++) {
+                backtrack_node_t *node = stack_element (stor, i);
+                curr_sequence[i-1] = node->val;
+            }
+            stor->callback (stor, curr_sequence, stor->num_nodes_stack-1, stor->closure);
         }
-        stor->callback (stor, curr_sequence, stor->num_nodes_stack-1, stor->closure);
     }
 }
 
@@ -1709,6 +1734,10 @@ void seq_push_sequence_size (struct sequence_store_t *stor, int *seq, uint32_t s
     } else {
         //TODO: Implement tree behavior here.
     }
+
+    if (stor->callback != NULL) {
+        stor->callback (stor, seq, size, stor->closure);
+    }
 }
 
 int* seq_end (struct sequence_store_t *stor)
@@ -1749,6 +1778,7 @@ void seq_print_info (struct sequence_store_t *stor) {
         printf ("Nodes per level: ");
         print_u64_array (stor->nodes_per_len, stor->final_max_len+1);
     }
+    printf ("Sequences (leaves): %"PRIu32"\n", stor->num_sequences);
     printf ("Tree size: %"PRIu64" bytes\n", stor->expected_tree_size);
     printf ("Max children: %u\n", stor->final_max_children);
 
@@ -1759,30 +1789,6 @@ void seq_print_info (struct sequence_store_t *stor) {
 
 // Walker's backtracking algorithm used to generate only
 // edge disjoint triangle sets.
-
-// TODO: This backtracking procedure is not generic, maybe put backtrack
-// specific data in some struct and receive a pointer to a function that
-// updates this data.
-bool backtrack (int *l, int *curr_seq, int domain_size, int *S_l,
-        int *num_invalid, int *invalid_restore_indx, int *invalid_triangles)
-{
-    int lev = *l;
-    lev--;
-    if (lev>=0) {
-        int i;
-        for (i=curr_seq[lev]+1; i<domain_size; i++) {
-            S_l[i] = 1;
-        }
-
-        *num_invalid = invalid_restore_indx[lev];
-        for (i=0; i<*num_invalid; i++) {
-            S_l[invalid_triangles[i]] = 0;
-        }
-        return true;
-    } else {
-        return false;
-    }
-}
 
 void generate_edge_disjoint_triangle_sets (int n, int k, struct sequence_store_t *seq)
 {
@@ -1815,12 +1821,11 @@ void generate_edge_disjoint_triangle_sets (int n, int k, struct sequence_store_t
 
     while (l > 0) {
         if (l>=k) {
-            //array_print (choosen_triangles, k);
             seq_push_sequence (seq, choosen_triangles);
-            if (!backtrack (&l, choosen_triangles, total_triangles, S_l,
-                       &num_invalid, invalid_restore_indx, invalid_triangles)) {
+            if (seq_finish (seq)) {
                 break;
             }
+            goto backtrack;
         } else {
             // Compute S_l
             subset_it_seek (triangle_it, triangle_id);
@@ -1881,8 +1886,19 @@ void generate_edge_disjoint_triangle_sets (int n, int k, struct sequence_store_t
                 break;
             }
 
-            if (!backtrack (&l, choosen_triangles, total_triangles, S_l,
-                       &num_invalid, invalid_restore_indx, invalid_triangles)) {
+backtrack:
+            l--;
+            if (l>=0) {
+                int i;
+                for (i=choosen_triangles[l]+1; i<total_triangles; i++) {
+                    S_l[i] = 1;
+                }
+
+                num_invalid = invalid_restore_indx[l];
+                for (i=0; i<num_invalid; i++) {
+                    S_l[invalid_triangles[i]] = 0;
+                }
+            } else {
                 break;
             }
         }
