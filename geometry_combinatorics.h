@@ -2449,6 +2449,9 @@ void thrackle_search_tree_full (int n, order_type_t *ot, struct sequence_store_t
 
     seq_timing_begin (seq);
     while (l > 0) {
+        if (seq_finish (seq)) {
+            break;
+        }
         // Compute S
         if (t != NULL) {
             int *triangle = all_triangles + 3*lb_idx(S, t);

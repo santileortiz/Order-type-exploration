@@ -20,6 +20,56 @@
 #define OT_DB_IMPLEMENTATION
 #include "ot_db.h"
 
+// Function to define functions that read binary arrays of elements of type
+// _type_ to files.
+//
+// On the created function _count_ is the number of elements in the array.
+// _pool_ is either a memory pool or NULL, if null then malloc will be used to
+// allocate the array.
+// TODO: Check this works for big endian and little endian.
+#define templ_load_bin_file(funcname,type) \
+type* funcname (char *filename, uint64_t *count, mem_pool_t *pool) \
+{                                                                  \
+    assert (count != NULL);                                        \
+    struct stat info;                                              \
+    if (stat (filename, &info) != 0) {                             \
+        printf ("Could not get file info.\n");                     \
+        return NULL;                                               \
+    }                                                              \
+                                                                   \
+    type *res = pom_push_size (pool, info.st_size);                \
+    *count = info.st_size/sizeof(type);                            \
+                                                                   \
+    int file = open (filename, O_RDONLY);                          \
+    int bytes_read = 0;                                            \
+    while (bytes_read != info.st_size) {                           \
+        bytes_read += read (file, res, info.st_size);              \
+    }                                                              \
+    return res;                                                    \
+}
+templ_load_bin_file(load_uint64_from_bin_file, uint64_t)
+templ_load_bin_file(load_uint32_from_bin_file, uint32_t)
+templ_load_bin_file(load_uint8_from_bin_file, uint8_t)
+
+// Function to define functions that write binary arrays of elements of type
+// _type_ to files.
+//
+// On the created function _count_ is the number of elements in the array, _arr_
+// is the array to be saved.
+// TODO: Check this works for big endian and little endian.
+#define templ_write_bin_file(funcname,to_type) \
+void funcname (char *filename, uint64_t *arr, uint64_t count) \
+{                                                             \
+    int file = open (filename, O_RDWR|O_CREAT, 0666);         \
+                                                              \
+    int i;                                                    \
+    for (i=0; i<count; i++) {                                 \
+        to_type n = (to_type)arr[i];                          \
+        file_write (file, &n, sizeof(n));                     \
+    }                                                         \
+}
+templ_write_bin_file(write_uint64_to_uint32_bin_file, uint32_t)
+
 // TODO: Add timing:
 //   - Compute ETA.
 //   - If ETA is too short, do not print anything.
@@ -182,10 +232,13 @@ void single_thrackle_random_order (int n, int k, uint64_t ot_id, int *nodes, int
 }
 
 enum format_thrackle_count_t {
-    ONLY_STATS,
-    COUNT_PER_THRACKLE
+    STATS_PRINT              = 1L<<0,
+    COUNT_PER_THRACKLE_PRINT = 1L<<1,
+    COUNT_PER_THRACKLE_FILE  = 1L<<2
 };
 
+// Counts how many thrackles each order type has. _fmt_ chooses how to output
+// the result.
 void search_full_tree_all_ot (int n, enum format_thrackle_count_t fmt)
 {
     assert(n <= 10);
@@ -198,6 +251,12 @@ void search_full_tree_all_ot (int n, enum format_thrackle_count_t fmt)
 
     float average = 0;
     int max_size = 0;
+    int max_count = 0;
+
+    uint64_t *count;
+    if (fmt & COUNT_PER_THRACKLE_FILE) {
+        count = mem_pool_push_array (&pool, db_num_order_types (n), uint64_t);
+    }
 
     while (!db_is_eof ()) {
         pool_temp_marker_t mrk = mem_pool_begin_temporary_memory (&pool);
@@ -205,21 +264,35 @@ void search_full_tree_all_ot (int n, enum format_thrackle_count_t fmt)
         thrackle_search_tree (n, ot, &seq);
         seq_tree_end (&seq);
 
-        if (fmt == COUNT_PER_THRACKLE) {
+        if (fmt & COUNT_PER_THRACKLE_PRINT) {
             printf ("%"PRIu64" %"PRIu64"\n", id, seq.nodes_per_len[seq.final_max_len]);
+        }
+
+        if (fmt & COUNT_PER_THRACKLE_FILE) {
+            count[id] = seq.nodes_per_len[seq.final_max_len];
         }
 
         average += seq.num_nodes;
         max_size = MAX(seq.final_max_len, max_size);
+        max_count = MAX(seq.nodes_per_len[seq.final_max_len], max_count);
 
-        if (fmt == ONLY_STATS) {
-            progress_bar (id, __g_db_data.num_order_types);
+        if (!(fmt & COUNT_PER_THRACKLE_PRINT)) {
+            progress_bar (id, db_num_order_types (n));
         }
         db_next (ot);
         id++;
         mem_pool_end_temporary_memory (mrk);
     }
-    if (fmt == ONLY_STATS) {
+
+    if (fmt & COUNT_PER_THRACKLE_FILE) {
+        if (max_count <= UINT32_MAX) {
+            char filename[40];
+            snprintf (filename, ARRAY_SIZE(filename), ".cache/n_%d_thrackle_count.bin", n);
+            write_uint64_to_uint32_bin_file (filename, count, db_num_order_types(n));
+        }
+    }
+
+    if (fmt & STATS_PRINT) {
         printf ("Max Size: %d, Average nodes: %f\n", max_size, average/(id));
     }
 }
@@ -258,37 +331,6 @@ uint32_t* load_uint32_from_text_file (char *filename, int *count)
         printf ("malloc() failed reading file '%s'\n", filename);
     }
     return res;
-}
-
-// TODO: Check this works for big endian and little endian.
-uint64_t* load_uint64_from_bin_file (char *filename, uint64_t *count, mem_pool_t *pool)
-{
-    assert (count != NULL);
-    struct stat info;
-    if (stat (filename, &info) != 0) {
-        printf ("Could not get file info.\n");
-        return NULL;
-    }
-
-    uint64_t *res = pom_push_size (pool, info.st_size);
-    *count = info.st_size/sizeof(uint64_t);
-
-    int file = open (filename, O_RDONLY);
-    int bytes_read = 0;
-    while (bytes_read != info.st_size) {
-        bytes_read += read (file, res, info.st_size);
-    }
-    return res;
-}
-
-void write_uint64_to_bin_file (char *filename, uint64_t *arr, uint32_t count)
-{
-    int file = open (filename, O_RDWR|O_CREAT, 0666);
-
-    int i;
-    for (i=0; i<count; i++) {
-        file_write (file, &arr[i], sizeof(*arr));
-    }
 }
 
 void max_thrackle_size_ot_file (int n, char *filename)
@@ -1195,6 +1237,50 @@ void print_first_edge_disjoint_triangle_set (int n, int k)
     mem_pool_destroy (&pool);
 }
 
+void print_tree_to_first_thrackle (int n, uint64_t k, uint64_t ot_id)
+{
+    order_type_t *ot = order_type_from_id (n, ot_id);
+    mem_pool_t temp_pool = {0};
+    struct sequence_store_t seq = new_sequence_store_opts (NULL, &temp_pool, SEQ_DRY_RUN);
+
+    seq_set_callback (&seq, seq_print_callback, NULL);
+    thrackle_search_tree_full (n, ot, &seq, NULL);
+    seq_tree_end (&seq);
+
+    mem_pool_destroy (&temp_pool);
+}
+
+// TODO: Make something like this for information about order types stored in
+// the database.
+void print_arr_min_max (char *filename)
+{
+    mem_pool_t pool = {0};
+    uint64_t num_v;
+    uint32_t *arr = load_uint32_from_bin_file(filename, &num_v, &pool);
+    uint32_t max_v = 0, min_v = UINT32_MAX;
+    uint64_t i;
+    for (i=0; i<num_v; i++) {
+        max_v = MAX(arr[i], max_v);
+        min_v = MIN(arr[i], min_v);
+    }
+
+    printf ("max = %d:\n", max_v);
+    for (i=0; i<num_v; i++) {
+        if (arr[i] == max_v) {
+            printf ("%"PRIu64"\n", i);
+        }
+        min_v = MIN(arr[i], min_v);
+    }
+
+    printf ("\n");
+    printf ("min = %d:\n", min_v);
+    for (i=0; i<num_v; i++) {
+        if (arr[i] == min_v) {
+            printf ("%"PRIu64"\n", i);
+        }
+    }
+}
+
 int main ()
 {
     ensure_full_database ();
@@ -1225,7 +1311,8 @@ int main ()
 
     //compare_convex_thrackle_orderings (10, 12);
     //print_lex_edg_triangles (10);
-    print_thrackle_info (8, 3017);
+    //print_thrackle_info (8, 3017);
+    //print_tree_to_first_thrackle (7, 7, 0);
     //get_2_factors_of_k_n_n_to_file (6);
     //cycle_sizes_2_factors_of_k_n_n_from_file (7);
     //print_2_factors_for_each_A (5);
@@ -1245,7 +1332,8 @@ int main ()
     //init_random_array (rand_arr, ARRAY_SIZE(rand_arr));
     //print_maximal_thrackles (n, 3017, rand_arr, TRIANGLE_SET_ID);
 
-    //search_full_tree_all_ot (8, ONLY_STATS);
+    //search_full_tree_all_ot (8, COUNT_PER_THRACKLE_FILE);
+    print_arr_min_max ("./.cache/n_8_thrackle_count.bin");
 
     //int count = count_2_regular_subgraphs_of_k_n_n (4, NULL);
     //printf ("Total: %d\n", count);
