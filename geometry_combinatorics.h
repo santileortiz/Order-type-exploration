@@ -314,8 +314,6 @@ int thrackle_size (int n)
             return 8;
         case 9:
             return 10;
-        case 10:
-            return 12;
         default:
             printf ("Tn is unknown\n");
             return -1;
@@ -1204,7 +1202,9 @@ struct sequence_store_t {
     int *sequence_values;
     void *closure;
     seq_callback_t *callback;
-    uint32_t callback_num_sequences;
+    uint32_t callback_max_num_sequences;
+    uint32_t callback_sequence_len;
+    uint32_t callback_num_sequences; // Number of sequences of length callback_sequence_len
 
     // Optional information about the search
     uint32_t final_max_len;
@@ -1234,15 +1234,24 @@ void seq_set_callback (struct sequence_store_t *stor,
 void seq_set_seq_number (struct sequence_store_t *stor,
                          int num_sequences)
 {
-    //assert (stor->type & SEQ_FIXED_LEN);
-    stor->callback_num_sequences = num_sequences;
+    stor->callback_max_num_sequences = num_sequences;
+}
+
+void seq_set_seq_len (struct sequence_store_t *stor,
+                           int len)
+{
+    stor->callback_sequence_len = len;
 }
 
 // Can be used by the algorithm after adding something to the store if the user
 // has configured some break condition (like the number of sequences above).
 bool seq_finish (struct sequence_store_t *stor)
 {
-    return (stor->callback_num_sequences != 0 && stor->num_sequences >= stor->callback_num_sequences);
+    if (stor->callback_max_num_sequences != 0 &&
+        stor->callback_num_sequences >= stor->callback_max_num_sequences) {
+        return true;
+    }
+    return false;
 }
 
 backtrack_node_t* stack_element (struct sequence_store_t *stor, uint32_t i)
@@ -1304,18 +1313,22 @@ void seq_dry_run_call_callback (struct sequence_store_t *stor, int val, int leve
 {
     if (stor->last_l >= level) {
         stor->num_sequences++;
+        if (stor->callback_max_num_sequences == 0 ||
+            stor->callback_num_sequences < stor->callback_max_num_sequences) {
+            if (stor->callback_sequence_len == 0 ||
+                stor->last_l+1 == stor->callback_sequence_len) {
+                stor->callback_num_sequences++;
+
+                if (stor->callback != NULL) {
+                    stor->callback (stor, stor->sequence_values, stor->last_l+1, stor->closure);
+                    if (level > -1) {
+                        stor->sequence_values[level] = val;
+                    }
+                }
+            }
+        }
         if (stor->leaves_per_len != NULL) {
             stor->leaves_per_len[stor->last_l+1]++;
-        }
-    }
-
-    if (stor->callback != NULL) {
-        if (stor->last_l >= level) {
-            stor->callback (stor, stor->sequence_values, stor->last_l+1, stor->closure);
-        }
-
-        if (level > -1) {
-            stor->sequence_values[level] = val;
         }
     }
 }
@@ -1325,13 +1338,17 @@ void seq_normal_call_callback (struct sequence_store_t *stor, int level)
     if (stor->last_l >= level) {
         stor->num_sequences++;
         if (stor->callback != NULL ) {
-            int curr_sequence[stor->num_nodes_stack];
-            int i;
-            for (i=1; i<stor->num_nodes_stack; i++) {
-                backtrack_node_t *node = stack_element (stor, i);
-                curr_sequence[i-1] = node->val;
+            if (stor->callback_max_num_sequences == 0 ||
+                stor->callback_num_sequences <= stor->callback_max_num_sequences) {
+                int curr_sequence[stor->num_nodes_stack];
+                int i;
+                for (i=1; i<stor->num_nodes_stack; i++) {
+                    backtrack_node_t *node = stack_element (stor, i);
+                    curr_sequence[i-1] = node->val;
+                }
+                stor->callback_num_sequences++;
+                stor->callback (stor, curr_sequence, stor->num_nodes_stack-1, stor->closure);
             }
-            stor->callback (stor, curr_sequence, stor->num_nodes_stack-1, stor->closure);
         }
     }
 }
@@ -2430,7 +2447,7 @@ void thrackle_search_tree_full (int n, order_type_t *ot, struct sequence_store_t
     int num_invalid = 0;
 
     int k;
-    if (n <= 10) {
+    if (n <= 9) {
         k = thrackle_size (n);
     } else {
         k = thrackle_size_upper_bound (n);

@@ -234,14 +234,15 @@ void single_thrackle_random_order (int n, int k, uint64_t ot_id, int *nodes, int
 enum format_thrackle_count_t {
     STATS_PRINT              = 1L<<0,
     COUNT_PER_THRACKLE_PRINT = 1L<<1,
-    COUNT_PER_THRACKLE_FILE  = 1L<<2
+    COUNT_PER_THRACKLE_FILE  = 1L<<2,
+    FIRST_THRACKLE           = 1L<<3
 };
 
 // Counts how many thrackles each order type has. _fmt_ chooses how to output
 // the result.
 void search_full_tree_all_ot (int n, enum format_thrackle_count_t fmt)
 {
-    assert(n <= 10);
+    assert(n <= 9);
     mem_pool_t pool = {0};
     uint64_t id = 0;
     order_type_t *ot = order_type_new (n, NULL);
@@ -253,7 +254,7 @@ void search_full_tree_all_ot (int n, enum format_thrackle_count_t fmt)
     int max_size = 0;
     int max_count = 0;
 
-    uint64_t *count;
+    uint64_t *count = NULL;
     if (fmt & COUNT_PER_THRACKLE_FILE) {
         count = mem_pool_push_array (&pool, db_num_order_types (n), uint64_t);
     }
@@ -261,6 +262,10 @@ void search_full_tree_all_ot (int n, enum format_thrackle_count_t fmt)
     while (!db_is_eof ()) {
         pool_temp_marker_t mrk = mem_pool_begin_temporary_memory (&pool);
         struct sequence_store_t seq = new_sequence_store_opts (NULL, &pool, SEQ_DRY_RUN);
+        if (fmt & FIRST_THRACKLE) {
+            seq_set_seq_number (&seq, 1);
+            seq_set_seq_len (&seq, thrackle_size(n));
+        }
         thrackle_search_tree (n, ot, &seq);
         seq_tree_end (&seq);
 
@@ -603,21 +608,18 @@ SEQ_CALLBACK(print_triangle_set_id)
 
 void print_maximal_thrackles (int n, uint64_t ot_id, int *triangle_order, enum format_triangle_set_t fmt)
 {
+    if (n > 9) {
+        printf ("We don't know the size of maximal thrackles for n=%d\n", n);
+        return;
+    }
+
     order_type_t *ot = order_type_from_id (n, ot_id);
     mem_pool_t temp_pool = {0};
     struct sequence_store_t seq;
 
-    int thrackle_size;
-    pool_temp_marker_t mrk = mem_pool_begin_temporary_memory (&temp_pool);
-    seq = new_sequence_store_opts (NULL, &temp_pool, SEQ_DRY_RUN);
-    thrackle_search_tree_full (n, ot, &seq, triangle_order);
-    thrackle_size = seq.final_max_len;
-    seq_tree_end (&seq);
-    mem_pool_end_temporary_memory (mrk);
-
     struct thrackle_closure_t cls;
     cls.n = n;
-    cls.max_len = thrackle_size;
+    cls.max_len = thrackle_size (n);
     seq = new_sequence_store_opts (NULL, &temp_pool, SEQ_DRY_RUN);
     switch (fmt) {
         case TRIANGLE_SET_ARR:
@@ -1237,8 +1239,9 @@ void print_first_edge_disjoint_triangle_set (int n, int k)
     mem_pool_destroy (&pool);
 }
 
-void print_tree_to_first_thrackle (int n, uint64_t k, uint64_t ot_id)
+void print_tree_to_first_maximal_thrackle (int n, uint64_t k, uint64_t ot_id)
 {
+    assert (n <= 9);
     order_type_t *ot = order_type_from_id (n, ot_id);
     mem_pool_t temp_pool = {0};
     struct sequence_store_t seq = new_sequence_store_opts (NULL, &temp_pool, SEQ_DRY_RUN);
@@ -1311,7 +1314,7 @@ int main ()
 
     //compare_convex_thrackle_orderings (10, 12);
     //print_lex_edg_triangles (10);
-    //print_thrackle_info (8, 3017);
+    //print_thrackle_info (8, 0);
     //print_tree_to_first_thrackle (7, 7, 0);
     //get_2_factors_of_k_n_n_to_file (6);
     //cycle_sizes_2_factors_of_k_n_n_from_file (7);
@@ -1332,8 +1335,8 @@ int main ()
     //init_random_array (rand_arr, ARRAY_SIZE(rand_arr));
     //print_maximal_thrackles (n, 3017, rand_arr, TRIANGLE_SET_ID);
 
-    //search_full_tree_all_ot (8, COUNT_PER_THRACKLE_FILE);
-    print_arr_min_max ("./.cache/n_8_thrackle_count.bin");
+    search_full_tree_all_ot (8, STATS_PRINT|FIRST_THRACKLE);
+    //print_arr_min_max ("./.cache/n_8_thrackle_count.bin");
 
     //int count = count_2_regular_subgraphs_of_k_n_n (4, NULL);
     //printf ("Total: %d\n", count);
