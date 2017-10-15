@@ -1321,14 +1321,17 @@ void seq_dry_run_call_callback (struct sequence_store_t *stor, int val, int leve
 
                 if (stor->callback != NULL) {
                     stor->callback (stor, stor->sequence_values, stor->last_l+1, stor->closure);
-                    if (level > -1) {
-                        stor->sequence_values[level] = val;
-                    }
                 }
             }
         }
         if (stor->leaves_per_len != NULL) {
             stor->leaves_per_len[stor->last_l+1]++;
+        }
+    }
+
+    if (stor->callback != NULL) {
+        if (level > -1) {
+            stor->sequence_values[level] = val;
         }
     }
 }
