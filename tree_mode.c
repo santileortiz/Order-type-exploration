@@ -239,7 +239,7 @@ void tree_layout_apportion (layout_tree_node_t *v, layout_tree_node_t **default_
         }
 
         if (tree_layout_next_left (v_i_p) != NULL && tree_layout_next_left (v_o_m) == NULL) {
-            v_o_m->thread = tree_layout_next_left (v_o_m);
+            v_o_m->thread = tree_layout_next_left (v_i_p);
             v_o_m->mod += s_i_p - s_o_m;
             *default_ancestor = v;
         }

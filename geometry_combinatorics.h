@@ -1337,17 +1337,20 @@ void seq_normal_call_callback (struct sequence_store_t *stor, int level)
 {
     if (stor->last_l >= level) {
         stor->num_sequences++;
-        if (stor->callback != NULL ) {
-            if (stor->callback_max_num_sequences == 0 ||
-                stor->callback_num_sequences <= stor->callback_max_num_sequences) {
-                int curr_sequence[stor->num_nodes_stack];
-                int i;
-                for (i=1; i<stor->num_nodes_stack; i++) {
-                    backtrack_node_t *node = stack_element (stor, i);
-                    curr_sequence[i-1] = node->val;
-                }
+        if (stor->callback_max_num_sequences == 0 ||
+            stor->callback_num_sequences <= stor->callback_max_num_sequences) {
+            if (stor->callback_sequence_len == 0 ||
+                stor->last_l+1 == stor->callback_sequence_len) {
                 stor->callback_num_sequences++;
-                stor->callback (stor, curr_sequence, stor->num_nodes_stack-1, stor->closure);
+                if (stor->callback != NULL ) {
+                    int curr_sequence[stor->num_nodes_stack];
+                    int i;
+                    for (i=1; i<stor->num_nodes_stack; i++) {
+                        backtrack_node_t *node = stack_element (stor, i);
+                        curr_sequence[i-1] = node->val;
+                    }
+                    stor->callback (stor, curr_sequence, stor->num_nodes_stack-1, stor->closure);
+                }
             }
         }
     }

@@ -36,6 +36,10 @@ def search ():
     ex ('gcc {FLAGS} -o bin/search search.c -lm -lcurl')
     return
 
+def render_seq ():
+    ex ('gcc {FLAGS} -o bin/render_seq render_seq.c -lcurl -lcairo -lm')
+    return
+
 def save_file_to_pdf ():
     ex ('gcc {FLAGS} -o bin/save_file_to_pdf save_file_to_pdf.c -lcairo -lm')
 
