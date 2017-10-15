@@ -484,6 +484,7 @@ void print_edge_disjoint_sets (int n, int k)
 
 void fast_edge_disjoint_sets (int n, int k)
 {
+    open_database (n);
     triangle_set_t *curr_set = malloc (triangle_set_size (k));
     curr_set->k = k;
 
@@ -501,25 +502,34 @@ void fast_edge_disjoint_sets (int n, int k)
     printf ("Sets found: %d\n", seq.num_sequences);
 
     int i;
-    while (!db_is_eof()) {
-        int found_th = 0;
-        for (i=0; i<seq.num_sequences*k; i+=k) {
-            int j;
-            for (j=0; j<k; j++) {
-                subset_it_seek (triangle_it, all_edj_sets[i+j]);
-                curr_set->e[j].v[0] = ot->pts[triangle_it->idx[0]];
-                curr_set->e[j].v[1] = ot->pts[triangle_it->idx[1]];
-                curr_set->e[j].v[2] = ot->pts[triangle_it->idx[2]];
-            }
-            if (is_thrackle(curr_set)) {
-                found_th++;
-                //printf ("%"PRIu64": ", subset_it_id_for_idx (binomial(n,3), &all_edj_sets[i], k));
-                //array_print (&all_edj_sets[i], k);
-            }
-        }
-        printf ("%d %d\n", ot->id, found_th);
-        db_next (ot);
+    for (i=0; i<seq.num_sequences*k; i+=k) {
+        array_print (&all_edj_sets[i], k);
     }
+
+    // NOTE: This was an old way of finding thrackles, changed for
+    // search_full_tree_all_ot().
+    //int i;
+    //while (!db_is_eof()) {
+    //    int found_th = 0;
+    //    for (i=0; i<seq.num_sequences*k; i+=k) {
+    //        int j;
+    //        for (j=0; j<k; j++) {
+    //            subset_it_seek (triangle_it, all_edj_sets[i+j]);
+    //            curr_set->e[j].v[0] = ot->pts[triangle_it->idx[0]];
+    //            curr_set->e[j].v[1] = ot->pts[triangle_it->idx[1]];
+    //            curr_set->e[j].v[2] = ot->pts[triangle_it->idx[2]];
+    //        }
+
+    //        if (is_thrackle(curr_set)) {
+    //            found_th++;
+    //            printf ("%"PRIu64": ", subset_it_id_for_idx (binomial(n,3), &all_edj_sets[i], k));
+    //            array_print (&all_edj_sets[i], k);
+    //        }
+    //        array_print (&all_edj_sets[i], k);
+    //    }
+    //    printf ("%d %d\n", ot->id, found_th);
+    //    db_next (ot);
+    //}
 
     free (triangle_it);
     mem_pool_destroy (&pool);
@@ -1291,7 +1301,7 @@ int main ()
     //count_thrackles (8);
     //print_differing_triples (n, 0, 1);
     //print_edge_disjoint_sets (5, 2);
-    //fast_edge_disjoint_sets (8, 8);
+    fast_edge_disjoint_sets (9, 12);
     //print_first_edge_disjoint_triangle_set (11, 17);
 
     //print_K_n_n_1_factorizations (6, FACT_COMPL_MULTISET);
@@ -1335,7 +1345,7 @@ int main ()
     //init_random_array (rand_arr, ARRAY_SIZE(rand_arr));
     //print_maximal_thrackles (n, 3017, rand_arr, TRIANGLE_SET_ID);
 
-    search_full_tree_all_ot (8, STATS_PRINT|FIRST_THRACKLE);
+    //search_full_tree_all_ot (8, STATS_PRINT|FIRST_THRACKLE);
     //print_arr_min_max ("./.cache/n_8_thrackle_count.bin");
 
     //int count = count_2_regular_subgraphs_of_k_n_n (4, NULL);
