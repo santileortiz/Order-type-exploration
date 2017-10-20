@@ -1186,6 +1186,7 @@ struct sequence_store_t {
     int *seq;
 
     // Tree data
+    backtrack_node_t *tree_root;
     uint32_t max_len; // Height of the tree
     uint32_t max_children;
     uint32_t max_node_size;
@@ -1463,7 +1464,6 @@ void seq_tree_extents (struct sequence_store_t *stor,
 
 backtrack_node_t* seq_tree_end (struct sequence_store_t *stor)
 {
-    backtrack_node_t* ret = NULL;
     if (!(stor->opts & SEQ_DRY_RUN)) {
         seq_normal_call_callback (stor, -1);
 
@@ -1471,7 +1471,7 @@ backtrack_node_t* seq_tree_end (struct sequence_store_t *stor)
             complete_and_pop_node (stor, stor->last_l);
             stor->last_l--;
         }
-        ret = complete_and_pop_node (stor, stor->last_l);
+        stor->tree_root = complete_and_pop_node (stor, stor->last_l);
     } else {
         seq_dry_run_call_callback (stor, 0, -1);
 
@@ -1485,10 +1485,11 @@ backtrack_node_t* seq_tree_end (struct sequence_store_t *stor)
             }
             stor->last_l--;
         }
+        stor->tree_root = NULL;
     }
 
     mem_pool_destroy (&stor->temp_pool);
-    return ret;
+    return stor->tree_root;
 }
 
 /* Prints all sequences on a backtrack tree of length len. A sequence
@@ -1592,6 +1593,26 @@ void seq_tree_print_sequences_full (backtrack_node_t *root, int len, int_arr_pri
             }
         }
     }
+}
+
+void get_nodes_per_len_helper (backtrack_node_t *n, uint64_t *res, int l)
+{
+    res[l]++;
+
+    int ch_id;
+    for (ch_id=0; ch_id<n->num_children; ch_id++) {
+        get_nodes_per_len_helper (n->children[ch_id], res, l+1);
+    }
+}
+
+// NOTE: len must be equal to seq.final_max_len, there is no check for this in
+// the code.
+// TODO: Make the above not a necessary condition.
+uint64_t* get_nodes_per_len (backtrack_node_t *n, mem_pool_t *pool, int len)
+{
+    uint64_t *res = mem_pool_push_size_full (pool, sizeof(uint64_t)*len, POOL_ZERO_INIT);
+    get_nodes_per_len_helper (n, res, 0);
+    return res;
 }
 
 void seq_timing_begin (struct sequence_store_t *stor)

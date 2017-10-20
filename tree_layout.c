@@ -238,25 +238,26 @@ void backtrack_tree_preorder_print_helper (backtrack_node_t *v, int l)
     }
 }
 
-#define draw_view_tree_preorder(cr,n,x,y,node_r) \
-    draw_view_tree_preorder_helper(cr,n,x,y,node_r,NULL)
+#define draw_view_tree_preorder(cr,n,x,x_sc,y,node_r) \
+    draw_view_tree_preorder_helper(cr,n,x,x_sc,y,node_r,NULL)
 void draw_view_tree_preorder_helper (cairo_t *cr, layout_tree_node_t *n, double
-                                     x, double y, double node_r,
+                                     x, double x_scale, double y, double node_r,
                                      layout_tree_node_t *parent)
 {
     if (node_r != 0) {
-        cairo_arc (cr, x+n->pos.x, y+n->pos.y, node_r, 0, 2*M_PI);
+        cairo_arc (cr, x+n->pos.x*x_scale, y+n->pos.y, node_r, 0, 2*M_PI);
         cairo_fill (cr);
     }
 
     if (parent != NULL) {
-        cairo_move_to (cr, x+parent->pos.x, y+parent->pos.y);
-        cairo_line_to (cr, x+n->pos.x, y+n->pos.y);
+        cairo_move_to (cr, x+parent->pos.x*x_scale, y+parent->pos.y);
+        cairo_line_to (cr, x+n->pos.x*x_scale, y+n->pos.y);
         cairo_stroke (cr);
     }
 
     int ch_id;
     for (ch_id=0; ch_id<n->num_children; ch_id++) {
-        draw_view_tree_preorder_helper (cr, n->children[ch_id], x, y, node_r, n);
+        draw_view_tree_preorder_helper (cr, n->children[ch_id], x, x_scale, y, node_r, n);
     }
 }
+

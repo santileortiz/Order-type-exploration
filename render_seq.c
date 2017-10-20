@@ -32,6 +32,75 @@ order_type_t* order_type_from_id (int n, uint64_t ot_id)
     return res;
 }
 
+char* change_extension (mem_pool_t *pool, char *path, char *new_ext)
+{
+    size_t path_len = strlen(path);
+    int i=path_len;
+    while (i>0 && path[i-1] != '.') {
+        i--;
+    }
+    char *res = mem_pool_push_size (pool, path_len+strlen(new_ext)+1);
+    strcpy (res, path);
+    strcpy (&res[i], new_ext);
+    return res;
+}
+
+void seq_tree_draw (char* fname, struct sequence_store_t *stor, double width,
+                    double ar, double line_width, double node_r)
+{
+    mem_pool_t pool = {0};
+    if (stor->tree_root == NULL) {
+        seq_tree_end (stor);
+        if (stor->tree_root == NULL) {
+            printf ("Do not use SEQ_DRY_RUN to draw tree. Aborting.\n");
+            return;
+        }
+    }
+
+    double heigh = width/ar;
+    double h_margin = width*0.05;
+    double v_margin = heigh*0.05;
+    double h_separation = 0.5, v_separation = (heigh-v_margin)/stor->final_max_len;
+
+    box_t bnd_box;
+    BOX_X_Y_W_H(bnd_box,0,0,0,0);
+
+    layout_tree_node_t *root = create_layout_tree (&pool, h_separation, stor->tree_root);
+
+    tree_layout_first_walk (root);
+    tree_layout_second_walk (root, v_separation, &bnd_box);
+    //layout_tree_preorder_print (root);
+    //printf ("\n");
+    
+    cairo_surface_t *surface = cairo_pdf_surface_create (fname,
+                                                         width, heigh);
+    cairo_t *cr = cairo_create (surface);
+    cairo_set_source_rgb (cr,1,1,1);
+    cairo_paint (cr);
+    cairo_set_source_rgb (cr,0,0,0);
+    cairo_set_line_width (cr, line_width);
+
+    //TODO: SHAME!! Should be using transforms instead.
+    draw_view_tree_preorder (cr, root,
+                             -bnd_box.min.x*(width-h_margin)/BOX_WIDTH(bnd_box)
+                             + h_margin/2, (width-h_margin)/BOX_WIDTH(bnd_box),
+                             v_margin/2, node_r);
+
+    cairo_surface_flush (surface);
+
+#if 1
+    char *png_fname = change_extension (&pool, fname, "png");
+    cairo_status_t retval = cairo_surface_write_to_png (surface, png_fname);
+    if (retval != CAIRO_STATUS_SUCCESS) {
+        printf ("Error: %s\n", cairo_status_to_string (retval));
+    }
+#endif
+
+    cairo_surface_destroy (surface);
+    cairo_destroy (cr);
+    mem_pool_destroy (&pool);
+}
+
 int main ()
 {
     mem_pool_t pool = {0};
@@ -43,39 +112,9 @@ int main ()
     seq_set_seq_number (&seq, 1);
     seq_set_seq_len (&seq, 8);
     thrackle_search_tree (n, ot, &seq);
-    backtrack_node_t *bt_root = seq_tree_end (&seq);
     //backtrack_tree_preorder_print(bt_root);
 
-    double h_separation = 1.2, v_separation = 400;
-    box_t bnd_box;
-    layout_tree_node_t *root = create_layout_tree (&pool, h_separation, bt_root);
-
-    tree_layout_first_walk (root);
-    tree_layout_second_walk (root, v_separation, &bnd_box);
-    //layout_tree_preorder_print (root);
-    //printf ("\n");
-    
-    bnd_box.min.x -= 10;
-    bnd_box.min.y -= 10;
-    bnd_box.max.x += 10;
-    bnd_box.max.y += 10;
-    cairo_surface_t *surface = cairo_pdf_surface_create ("./out/n_8_thr_full.pdf",
-                                                         BOX_WIDTH(bnd_box), BOX_HEIGHT(bnd_box));
-    cairo_t *cr = cairo_create (surface);
-    cairo_set_source_rgb (cr,1,1,1);
-    cairo_paint (cr);
-    cairo_set_source_rgb (cr,0,0,0);
-    cairo_set_line_width (cr, 6);
-    draw_view_tree_preorder (cr, root, -bnd_box.min.x, 5, 0.0);
-
-    cairo_surface_flush (surface);
-    cairo_status_t retval = cairo_surface_write_to_png (surface, "./out/n_8_thr_full.png");
-    if (retval != CAIRO_STATUS_SUCCESS) {
-        printf ("Error: %s\n", cairo_status_to_string (retval));
-    }
-
-    cairo_surface_destroy (surface);
-    cairo_destroy (cr);
+    seq_tree_draw ("./out/tree.pdf", &seq, 1000, 1.681, 1, 0);
 
     mem_pool_destroy (&pool);
     return 0;
