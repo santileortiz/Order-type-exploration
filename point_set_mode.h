@@ -39,15 +39,11 @@ struct point_set_mode_t {
     order_type_t *ot;
     uint64_string_t k;
     uint64_string_t ts_id;
-    uint64_string_t edj_id;
-    uint64_string_t th_id;
 
     bool rebuild_panel; // Computes the state of all layout boxes
     bool redraw_panel;  // Renders available layout boxes to screen
     bool redraw_canvas;
     bool editing_entry;
-    bool edg_dsj_computed;
-    int *edg_dsj_sets;
     uint64_string_t temp_number;
 
     int db;

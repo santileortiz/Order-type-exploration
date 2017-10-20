@@ -63,7 +63,6 @@ void draw_segment (cairo_t *cr, vect2_t p1, vect2_t p2, double line_width, trans
 
     cairo_move_to (cr, (double)p1.x, (double)p1.y);
     cairo_line_to (cr, (double)p2.x, (double)p2.y);
-    cairo_stroke (cr);
 }
 
 void draw_triangle (cairo_t *cr, vect2_t p1, vect2_t p2, vect2_t p3, transf_t *T)
@@ -71,6 +70,7 @@ void draw_triangle (cairo_t *cr, vect2_t p1, vect2_t p2, vect2_t p3, transf_t *T
     draw_segment (cr, p1, p2, 3, T);
     draw_segment (cr, p2, p3, 3, T);
     draw_segment (cr, p3, p1, 3, T);
+    cairo_stroke (cr);
 }
 
 void draw_entities (struct point_set_mode_t *st, app_graphics_t *graphics)
@@ -90,6 +90,7 @@ void draw_entities (struct point_set_mode_t *st, app_graphics_t *graphics)
         vect2_t p2 = pts[idx[1]];
         draw_segment (cr, p1, p2, 1, T);
     }
+    cairo_stroke (cr);
 
     for (i=0; i<st->num_entities; i++) {
         entity_t *entity = &st->entities[i];
@@ -100,6 +101,7 @@ void draw_entities (struct point_set_mode_t *st, app_graphics_t *graphics)
                 vect2_t p1 = pts[idx[0]];
                 vect2_t p2 = pts[idx[1]];
                 draw_segment (cr, p1, p2, 1, T);
+                cairo_stroke (cr);
                 } break;
             case triangle: {
                 subset_it_idx_for_id (entity->id, n, idx, 3);
@@ -496,6 +498,9 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
         if (!ps_mode->editing_entry) {
             ps_mode->temp_number.i = 0;
             ps_mode->editing_entry = true;
+
+            layout_box_t *focused_box = &st->layout_boxes[st->focused_layout_box];
+            focused_box->str.s = ps_mode->temp_number.str;
         }
 
         int digit = (input.keycode+1)%10;
@@ -507,8 +512,18 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
 
     switch (input.keycode) {
         case 9: //KEY_ESC
-            if (ps_mode->temp_number.i != -1) {
-                ps_mode->temp_number.i = -1;
+            if (ps_mode->editing_entry == true) {
+                ps_mode->temp_number.i = 0;
+                ps_mode->editing_entry = false;
+
+                layout_box_t *focused_box = &st->layout_boxes[st->focused_layout_box];
+                if (ps_mode->foc_st == foc_ot) {
+                    focused_box->str.s = ps_mode->ot_id.str;
+                } else if (ps_mode->foc_st == foc_n) {
+                    focused_box->str.s = ps_mode->n.str;
+                } else if (ps_mode->foc_st == foc_ts) {
+                    focused_box->str.s = ps_mode->ts_id.str;
+                }
             } else {
                 ps_mode->foc_st = foc_none;
                 ps_mode->rebuild_panel = true;
@@ -538,7 +553,7 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
         case 114://KEY_RIGHT_ARROW
             if (ps_mode->foc_st == foc_ot) {
                 if (XCB_KEY_BUT_MASK_SHIFT & input.modifiers
-                        || input.keycode == 113) {
+                    || input.keycode == 113) {
                     db_prev (ps_mode->ot);
 
                 } else {
@@ -608,7 +623,6 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
     }
 
     // Build layout
-    static layout_box_t *thrackle_box, *edg_dsj_box;
     static layout_box_t *panel;
     if (ps_mode->rebuild_panel) {
         st->num_layout_boxes = 0;
@@ -624,9 +638,7 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
         char *entry_labels[] = {"n:",
                                 "Order Type:",
                                 "k:",
-                                "Triangle Set:",
-                                "Edge Disj. Set:",
-                                "Thrackle:"};
+                                "Triangle Set:"};
         labeled_entries_layout_t lay;
         init_labeled_layout (&lay, graphics, x_step, y_step,
                              bg_pos.x+x_margin, bg_pos.y+y_margin, bg_min_size.x,
@@ -644,19 +656,10 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
         title ("Triangle Sets", &lay, st, graphics);
         labeled_text_entry (ps_mode->k.str, &lay, st, ps_mode->foc_st==foc_k);
         labeled_text_entry ("0", &lay, st, ps_mode->foc_st==foc_ts);
-        labeled_button ("Compute", &lay, st, graphics, &input.force_redraw, ps_mode->foc_st==foc_edj);
-        edg_dsj_box = &st->layout_boxes[st->num_layout_boxes-1];
-
-        labeled_button ("Compute", &lay, st, graphics, &input.force_redraw, ps_mode->foc_st==foc_th);
-        thrackle_box = &st->layout_boxes[st->num_layout_boxes-1];
 
         st->layout_boxes[0].box.max.x = st->layout_boxes[0].box.min.x + bg_min_size.x;
         st->layout_boxes[0].box.max.y = lay.y_pos;
 
-        if (ps_mode->editing_entry) {
-            layout_box_t *focused_box = &st->layout_boxes[st->focused_layout_box];
-            focused_box->str.s = ps_mode->temp_number.str;
-        }
         ps_mode->redraw_panel = true;
     }
 
@@ -673,28 +676,6 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
     if (st->mouse_double_clicked[0]) {
         focus_order_type (graphics, ps_mode);
         ps_mode->redraw_canvas = true;
-    }
-
-    //char filename[60];
-    //edg_dsj_filename (filename, n, k);
-    //if (!file_exists (filename)) {
-    if (!ps_mode->edg_dsj_computed) {
-        if (update_button_state (st, edg_dsj_box, &input.force_redraw)) {
-            printf ("Should compute edge disjoint triengle sets.\n");
-            struct sequence_store_t sequence = new_sequence_store (NULL, &ps_mode->pool);
-            generate_edge_disjoint_triangle_sets (ps_mode->n.i, ps_mode->k.i, &sequence);
-            ps_mode->edg_dsj_sets = seq_end (&sequence);
-
-            //ps_mode->edg_dsj_sets = load_sequence_to_memory (file_name, ps_mode->memory);
-        }
-    } else {
-        //update_entry_state (st, edg_dsj_box, ps_mode->edj_id.str)
-    }
-
-    //th_filename (filename, n, k);
-    //if (!file_exists (filename)) {
-    if (update_button_state (st, thrackle_box, &input.force_redraw)) {
-        printf ("Should compute thrackles.\n");
     }
 
     bool blit_needed = false;
@@ -719,6 +700,16 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
         for (i=0; i<ps_mode->k.i; i++) {
             vect3_t color;
             get_next_color (&color);
+        if (ps_mode->editing_entry) {
+            layout_box_t *focused_box = &st->layout_boxes[st->focused_layout_box];
+            focused_box->str.s = ps_mode->temp_number.str;
+        }
+
+        if (ps_mode->editing_entry) {
+            layout_box_t *focused_box = &st->layout_boxes[st->focused_layout_box];
+            focused_box->str.s = ps_mode->temp_number.str;
+        }
+
             triangle_entity_add (ps_mode, ps_mode->triangle_set_it->idx[i], color);
         }
 
