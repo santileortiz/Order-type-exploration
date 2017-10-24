@@ -1610,7 +1610,7 @@ void get_nodes_per_len_helper (backtrack_node_t *n, uint64_t *res, int l)
 // TODO: Make the above not a necessary condition.
 uint64_t* get_nodes_per_len (backtrack_node_t *n, mem_pool_t *pool, int len)
 {
-    uint64_t *res = mem_pool_push_size_full (pool, sizeof(uint64_t)*len, POOL_ZERO_INIT);
+    uint64_t *res = mem_pool_push_size_full (pool, sizeof(uint64_t)*(len+1), POOL_ZERO_INIT);
     get_nodes_per_len_helper (n, res, 0);
     return res;
 }
@@ -2048,63 +2048,76 @@ int *get_all_triangles_array (int n, mem_pool_t *pool, int *triangle_order)
 
 // This is for demonstration purposes only, shows what happens when we don't
 // enforce the condition of sequences being in ascending order.
-bool single_thrackle_slow (int n, int k, order_type_t *ot, int *res, int *count,
+void thrackle_search_slow (int n, order_type_t *ot, struct sequence_store_t *seq,
                            int *triangle_order)
 {
     assert (n==ot->n);
     int l = 1; // Tree level
 
     int total_triangles = binomial (n,3);
-
     struct linked_bool S[total_triangles];
     int i;
     for (i=0; i<total_triangles-1; i++) {
         S[i].next = &S[i+1];
     }
     S[i].next = NULL;
+
     struct linked_bool *t = &S[0];
     struct linked_bool *S_start = &S[0];
 
     int invalid_triangles[total_triangles];
     int num_invalid = 0;
 
+    int k;
+    if (n <= 9) {
+        k = thrackle_size (n);
+    } else {
+        k = thrackle_size_upper_bound (n);
+    }
+
     mem_pool_t temp_pool = {0};
     int *all_triangles = get_all_triangles_array (n, &temp_pool, triangle_order);
 
+    seq_tree_extents (seq, total_triangles, k);
+    seq_push_element (seq, LEX_TRIANG_ID(triangle_order,0), 0);
+
+    int res[k];
     res[0] = 0;
-    (*count)++;
     int invalid_restore_indx[k];
     invalid_restore_indx[0] = 0;
 
+    seq_timing_begin (seq);
     while (l > 0) {
-        if (l>=k) {
-            // Convert resulting thrackle to lexicographic ids of triangles, not
-            // position in all_triangles array.
-            for (i=0; i<k; i++) {
-                res[i] = LEX_TRIANG_ID (triangle_order, res[i]);
-            }
-
-            if (triangle_order) {
-                int_sort (res, k);
-            }
-
-            return true;
-        } else {
-            // Compute S
+        if (seq_finish (seq)) {
+            break;
+        }
+        // Compute S
+        if (t != NULL) {
             int *triangle = all_triangles + 3*lb_idx (S, t);
             triangle_t choosen_tr = TRIANGLE_IDXS (ot, triangle);
 
-            if (t != NULL) {
-                // NOTE: S_curr=t->next enforces res[] to be an ordered sequence.
-                struct linked_bool *S_prev = NULL;
-                struct linked_bool *S_curr = S_start;
-                while (S_curr != NULL) {
-                    int i = lb_idx (S, S_curr);
-                    int *candidate_tr_ids = all_triangles + 3*i;
+            struct linked_bool *S_prev = NULL;
+            struct linked_bool *S_curr = S_start;
+            while (S_curr != NULL) {
+                int i = lb_idx (S, S_curr);
+                int *candidate_tr_ids = all_triangles + 3*i;
+                int test = count_common_vertices_int (triangle, candidate_tr_ids);
+                if (test == 2) {
+                    // NOTE: Triangles share an edge or are the same.
+                    invalid_triangles[num_invalid++] = i;
 
-                    int test = count_common_vertices_int (triangle, candidate_tr_ids);
-                    if (test == 2) {
-                        // NOTE: Triangles share an edge or are the same.
+                    if (S_prev == NULL) {
+                        S_start = S_curr->next;
+                    } else {
+                        S_prev->next = S_curr->next;
+                    }
+                    S_curr = S_curr->next;
+                    continue;
+                } else if (test == 0) {
+                    // NOTE: Triangles have no comon vertices, check if
+                    // edges intersect.
+                    triangle_t candidate_tr = TRIANGLE_IDXS (ot, candidate_tr_ids);
+                    if (!have_intersecting_segments (&choosen_tr, &candidate_tr)) {
                         invalid_triangles[num_invalid++] = i;
 
                         if (S_prev == NULL) {
@@ -2114,27 +2127,12 @@ bool single_thrackle_slow (int n, int k, order_type_t *ot, int *res, int *count,
                         }
                         S_curr = S_curr->next;
                         continue;
-                    } else if (test == 0) {
-                        // NOTE: Triangles have no comon vertices, check if
-                        // edges intersect.
-                        triangle_t candidate_tr = TRIANGLE_IDXS (ot, candidate_tr_ids);
-                        if (!have_intersecting_segments (&choosen_tr, &candidate_tr)) {
-                            invalid_triangles[num_invalid++] = i;
-
-                            if (S_prev == NULL) {
-                                S_start = S_curr->next;
-                            } else {
-                                S_prev->next = S_curr->next;
-                            }
-                            S_curr = S_curr->next;
-                            continue;
-                        }
                     }
-                    S_prev = S_curr;
-                    S_curr = S_curr->next;
                 }
-                t = S_start;
+                S_prev = S_curr;
+                S_curr = S_curr->next;
             }
+            t = S_start;
         }
 
         while (1) {
@@ -2142,8 +2140,8 @@ bool single_thrackle_slow (int n, int k, order_type_t *ot, int *res, int *count,
             if (t != NULL) {
                 invalid_restore_indx[l] = num_invalid;
                 res[l] = lb_idx(S, t);
+                seq_push_element (seq, LEX_TRIANG_ID(triangle_order, res[l]), l);
                 l++;
-                (*count)++;
                 break;
             }
 
@@ -2188,7 +2186,8 @@ bool single_thrackle_slow (int n, int k, order_type_t *ot, int *res, int *count,
             }
         }
     }
-    return false;
+    seq_timing_end (seq);
+    mem_pool_destroy (&temp_pool);
 }
 
 bool single_thrackle (int n, int k, order_type_t *ot, int *res, int *count,
@@ -2543,6 +2542,7 @@ void thrackle_search_tree_full (int n, order_type_t *ot, struct sequence_store_t
                 break;
             }
 
+            // Backtrack
             l--;
             if (l>=0) {
                 t = &S[res[l]];
