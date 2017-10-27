@@ -173,7 +173,7 @@ void seq_tree_draw (char* fname, struct sequence_store_t *stor, double width,
 int main ()
 {
     mem_pool_t pool = {0};
-    int n = 9, ot_id = 0, k=10;
+    int n = 6, ot_id = 0, k=10;
 
     int total_triangles = binomial(n,3);
     int *triangle_order = NULL;
@@ -205,12 +205,12 @@ int main ()
     order_type_t *ot = order_type_from_id (n, ot_id);
     struct sequence_store_t seq = new_sequence_store (NULL, &pool);
 
-    seq_set_seq_number (&seq, 1);
-    seq_set_seq_len (&seq, k);
-    thrackle_search_tree_full (n, ot, &seq, triangle_order);
+    seq_set_seq_number (&seq, 100);
+    //seq_set_seq_len (&seq, k);
+    K_n_n_1_factorizations (n, NULL, &seq);
     //backtrack_tree_preorder_print(bt_root);
 
-    seq_tree_draw ("./out/n_9_inv_lex.png", &seq, 2000, 1.681, 2, 0, 3);
+    seq_tree_draw ("./out/K_5_5_1-factorizations.png", &seq, 2000, 1.681, 2, 0, 3);
 
     mem_pool_destroy (&pool);
     return 0;

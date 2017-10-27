@@ -1363,6 +1363,10 @@ void seq_normal_call_callback (struct sequence_store_t *stor, int level)
 void seq_push_element (struct sequence_store_t *stor,
                        int val, int64_t level)
 {
+    if (stor->num_sequences > stor->callback_max_num_sequences) {
+        return;
+    }
+
     stor->final_max_len = MAX (stor->final_max_len, level+1);
 
     if (stor->opts & SEQ_DRY_RUN) {
