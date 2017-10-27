@@ -173,7 +173,7 @@ void tree_layout_first_walk (layout_tree_node_t *v)
         }
 
         tree_layout_execute_shifts (v);
-        int midpoint = (leftmost(v)->prelim + rightmost(v)->prelim)/2;
+        double midpoint = (leftmost(v)->prelim + rightmost(v)->prelim)/2;
         if (v->child_id > 0) {
             layout_tree_node_t *w = left_sibling(v);
             v->prelim = w->prelim + w->width;
