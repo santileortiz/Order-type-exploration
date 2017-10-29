@@ -1363,7 +1363,8 @@ void seq_normal_call_callback (struct sequence_store_t *stor, int level)
 void seq_push_element (struct sequence_store_t *stor,
                        int val, int64_t level)
 {
-    if (stor->callback_max_num_sequences != 0 && stor->num_sequences > stor->callback_max_num_sequences) {
+    if (stor->callback_max_num_sequences != 0 &&
+        stor->callback_num_sequences > stor->callback_max_num_sequences) {
         return;
     }
 
@@ -1377,23 +1378,25 @@ void seq_push_element (struct sequence_store_t *stor,
 
         seq_dry_run_call_callback (stor, val, level);
 
-        while (stor->last_l >= level) {
-            assert (stor->last_l >= 0);
-            uint32_t final_children_count = stor->children_count_stack[stor->last_l+1];
-            stor->final_max_children = MAX (stor->final_max_children, final_children_count);
-            stor->expected_tree_size += backtrack_node_size (final_children_count);
-            stor->num_children_count_stack--;
-            if (stor->last_l >= 0) {
-                stor->children_count_stack[stor->last_l]++;
+        if (!seq_finish (stor)) {
+            while (stor->last_l >= level) {
+                assert (stor->last_l >= 0);
+                uint32_t final_children_count = stor->children_count_stack[stor->last_l+1];
+                stor->final_max_children = MAX (stor->final_max_children, final_children_count);
+                stor->expected_tree_size += backtrack_node_size (final_children_count);
+                stor->num_children_count_stack--;
+                if (stor->last_l >= 0) {
+                    stor->children_count_stack[stor->last_l]++;
+                }
+                stor->last_l--;
             }
-            stor->last_l--;
-        }
 
-        assert (stor->last_l + 1 == level
-                && "Nodes should be pushed with level increasing by 1");
-        stor->last_l = level;
-        stor->children_count_stack[stor->num_children_count_stack] = 0;
-        stor->num_children_count_stack++;
+            assert (stor->last_l + 1 == level
+                    && "Nodes should be pushed with level increasing by 1");
+            stor->last_l = level;
+            stor->children_count_stack[stor->num_children_count_stack] = 0;
+            stor->num_children_count_stack++;
+        }
 
         // NOTE: Why would someone want to compute tree information while also
         // computing the full tree?, if this is an actual usecase, then we don't
@@ -1404,15 +1407,17 @@ void seq_push_element (struct sequence_store_t *stor,
 
     seq_normal_call_callback (stor, level);
 
-    while (stor->last_l >= level) {
-        assert (stor->last_l >= 0);
-        complete_and_pop_node (stor, stor->last_l);
-        stor->last_l--;
+    if (!seq_finish (stor)) {
+        while (stor->last_l >= level) {
+            assert (stor->last_l >= 0);
+            complete_and_pop_node (stor, stor->last_l);
+            stor->last_l--;
+        }
+        assert (stor->last_l + 1 == level
+                && "Nodes should be pushed with level increasing by 1");
+        stor->last_l = level;
+        push_partial_node (stor, val);
     }
-    assert (stor->last_l + 1 == level
-            && "Nodes should be pushed with level increasing by 1");
-    stor->last_l = level;
-    push_partial_node (stor, val);
 }
 
 void seq_tree_extents (struct sequence_store_t *stor,

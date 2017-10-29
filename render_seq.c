@@ -126,7 +126,7 @@ void seq_tree_draw (char* fname, struct sequence_store_t *stor, double width,
     double heigh = width/ar;
     double h_margin = width*0.05;
     double v_margin = heigh*0.05;
-    double h_separation = 0.5, v_separation = (heigh-v_margin)/stor->final_max_len;
+    double h_separation = 1, v_separation = (heigh-v_margin)/stor->final_max_len;
 
     box_t bnd_box;
     BOX_X_Y_W_H(bnd_box,0,0,0,0);
@@ -173,7 +173,7 @@ void seq_tree_draw (char* fname, struct sequence_store_t *stor, double width,
 int main ()
 {
     mem_pool_t pool = {0};
-    int n = 6, ot_id = 0, k=10;
+    int n = 9, ot_id = 0, k=10;
 
     int total_triangles = binomial(n,3);
     int *triangle_order = NULL;
@@ -187,8 +187,8 @@ int main ()
     //        lex_size_triangle_sort_user_data (triangle_order, total_triangles, &n);
     //        break;
     //    case TR_SIZE:
-    //        triangle_order = malloc (sizeof(int) * total_triangles);
-    //        order_triangles_size (n, triangle_order);
+            triangle_order = malloc (sizeof(int) * total_triangles);
+            order_triangles_size (n, triangle_order);
     //        break;
     //    default:
     //        triangle_order = NULL;
@@ -205,12 +205,12 @@ int main ()
     order_type_t *ot = order_type_from_id (n, ot_id);
     struct sequence_store_t seq = new_sequence_store (NULL, &pool);
 
-    seq_set_seq_number (&seq, 100);
+    //seq_set_seq_number (&seq, 1);
     //seq_set_seq_len (&seq, k);
-    K_n_n_1_factorizations (n, NULL, &seq);
+    thrackle_search_tree_full (n, ot, &seq, triangle_order);
     //backtrack_tree_preorder_print(bt_root);
 
-    seq_tree_draw ("./out/K_5_5_1-factorizations.png", &seq, 2000, 1.681, 2, 0, 3);
+    seq_tree_draw ("./out/n_9_thr_full.png", &seq, 2000, 1.681, 1, 0.09, 0);
 
     mem_pool_destroy (&pool);
     return 0;
