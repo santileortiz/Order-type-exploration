@@ -21,6 +21,7 @@
 #include "common.h"
 #include "slo_timers.h"
 #include "ot_db.h"
+
 #include "geometry_combinatorics.h"
 #include "app_api.h"
 #include "tree_mode.h"
@@ -28,6 +29,8 @@
 #include "point_set_mode.h"
 
 // We do a unity build for now
+#define SEQUENCE_STORE_IMPL
+#include "sequence_store.h"
 #include "tree_mode.c"
 #include "grid_mode.c"
 #include "point_set_mode.c"

@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <wordexp.h>
+#include <math.h>
 typedef enum {false, true} bool;
 
 #define ARRAY_SIZE(arr) (sizeof(arr)/sizeof((arr)[0]))
@@ -777,6 +778,67 @@ char* sh_expand (char *str, mem_pool_t *pool)
     char *res = collapse_str_arr (out.we_wordv, out.we_wordc, pool);
     wordfree (&out);
     return res;
+}
+
+void file_write (int file, void *pos,  size_t size)
+{
+    if (write (file, pos, size) < size) {
+        printf ("Write interrupted\n");
+    }
+}
+
+void file_read (int file, void *pos,  size_t size)
+{
+    int bytes_read = read (file, pos, size);
+    if (bytes_read < size) {
+        printf ("Did not read full file\n"
+                "asked for: %ld\n"
+                "received: %d\n", size, bytes_read);
+    }
+}
+
+//////////////////////////////
+//
+// PATH/FILENAME MANIPULATIONS
+//
+char* change_extension (mem_pool_t *pool, char *path, char *new_ext)
+{
+    size_t path_len = strlen(path);
+    int i=path_len;
+    while (i>0 && path[i-1] != '.') {
+        i--;
+    }
+    char *res = mem_pool_push_size (pool, path_len+strlen(new_ext)+1);
+    strcpy (res, path);
+    strcpy (&res[i], new_ext);
+    return res;
+}
+
+char* add_extension (mem_pool_t *pool, char *path, char *new_ext)
+{
+    size_t path_len = strlen(path);
+    char *res = mem_pool_push_size (pool, path_len+strlen(new_ext)+2);
+    strcpy (res, path);
+    res[path_len++] = '.';
+    strcpy (&res[path_len], new_ext);
+    return res;
+}
+
+// NOTE: Returns a pointer INTO _path_ after the last '.' or NULL if it does not
+// have an extension. Hidden files are NOT extensions (/home/.bashrc returns NULL).
+char* get_extension (char *path)
+{
+    size_t path_len = strlen(path);
+    int i=path_len-1;
+    while (i>=0 && path[i] != '.' && path[i] != '/') {
+        i--;
+    }
+
+    if (i == -1 || path[i] == '/' || (path[i] == '.' && (i==0 || path[i-1] == '/'))) {
+        return NULL;
+    }
+
+    return &path[i+1];
 }
 
 #define COMMON_H

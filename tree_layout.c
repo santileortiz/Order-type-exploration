@@ -33,7 +33,7 @@ typedef struct _layout_tree_node_t layout_tree_node_t;
     create_layout_tree_helper(pool,sep,node,NULL,0)
 layout_tree_node_t* create_layout_tree_helper (mem_pool_t *pool,
                                                double h_separation,
-                                               backtrack_node_t *node,
+                                               struct backtrack_node_t *node,
                                                layout_tree_node_t *parent, uint32_t child_id)
 {
     layout_tree_node_t *lay_node = push_layout_node (pool, node->num_children);
@@ -223,7 +223,7 @@ void layout_tree_preorder_print_helper (layout_tree_node_t *v, int l)
 }
 
 #define backtrack_tree_preorder_print(r) backtrack_tree_preorder_print_helper(r,0)
-void backtrack_tree_preorder_print_helper (backtrack_node_t *v, int l)
+void backtrack_tree_preorder_print_helper (struct backtrack_node_t *v, int l)
 {
     int i = l;
     while (i>0) {

@@ -24,7 +24,7 @@ typedef struct _view_tree_node_t view_tree_node_t;
                        mem_pool_push_size((pool), sizeof(view_tree_node_t) + \
                        (num_children-1)*sizeof(view_tree_node_t*)) : \
                        mem_pool_push_size((pool), sizeof(view_tree_node_t))
-view_tree_node_t* create_view_tree (mem_pool_t *pool, backtrack_node_t *node)
+view_tree_node_t* create_view_tree (mem_pool_t *pool, struct backtrack_node_t *node)
 {
     view_tree_node_t *view_node = push_view_node (pool, node->num_children);
     *view_node = (view_tree_node_t){0};
@@ -306,7 +306,7 @@ void layout_tree_preorder_print_helper (layout_tree_node_t *v, int l)
 }
 
 #define backtrack_tree_preorder_print(r) backtrack_tree_preorder_print_helper(r,0)
-void backtrack_tree_preorder_print_helper (backtrack_node_t *v, int l)
+void backtrack_tree_preorder_print_helper (struct backtrack_node_t *v, int l)
 {
     int i = l;
     while (i>0) {
@@ -417,7 +417,7 @@ bool tree_mode (struct app_state_t *st, app_graphics_t *gr)
         mem_pool_t bt_res_pool = {0};
         struct sequence_store_t seq = new_sequence_store (NULL, &bt_res_pool);
         K_n_n_1_factorizations (n, tree_mode->all_perms, &seq);
-        backtrack_node_t *bt_root = seq_tree_end (&seq);
+        struct backtrack_node_t *bt_root = seq_tree_end (&seq);
 
         view_root = create_view_tree (&tree_mode->pool, bt_root);
         view_tree_ignore (view_root, n, 0);

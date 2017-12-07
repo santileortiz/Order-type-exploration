@@ -15,6 +15,11 @@
 #include <assert.h>
 
 #include "slo_timers.h"
+#include "common.h"
+
+#define SEQUENCE_STORE_IMPL
+#include "sequence_store.h"
+
 #include "geometry_combinatorics.h"
 
 #define OT_DB_IMPLEMENTATION
