@@ -3,61 +3,16 @@
  */
 
 #if !defined(GEOMETRY_COMBINATORICS_H)
+#define GEOMETRY_COMBINATORICS_H
 #include <math.h>
 #include <time.h>
 #include <string.h>
-#include "common.h"
 #include "sequence_store.h"
-
-// TODO: These are 128 bit structs, they may take up a lot of space, maybe have
-// another one of 32 bits for small coordinates.
-// TODO: Also, how does this affect performance?
-typedef union {
-    struct {
-        int64_t x;
-        int64_t y;
-    };
-    int64_t E[2];
-} vect2i_t;
-#define VECT2i(x,y) ((vect2i_t){{x,y}})
 
 typedef struct {
     int n;
     vect2_t pts [1];
 } real_point_set_t;
-
-typedef struct {
-    int n;
-    uint32_t id;
-    vect2i_t pts [1];
-} order_type_t;
-
-#define order_type_size(n) (sizeof(order_type_t)+(n-1)*sizeof(vect2i_t))
-order_type_t *order_type_new (int n, memory_stack_t *stack)
-{
-    order_type_t *ret;
-    if (stack) {
-         ret = push_size (stack, order_type_size(n));
-    } else {
-        ret = malloc(order_type_size(n));
-    }
-    ret->n = n;
-    ret->id = -1;
-    return ret;
-}
-
-#define convex_ot(ot) convex_ot_scale (ot, 255/2)
-void convex_ot_scale (order_type_t *ot, int radius)
-{
-    assert (ot->n >= 3);
-    double theta = (2*M_PI)/ot->n;
-    ot->id = 0;
-    int i;
-    for (i=1; i<=ot->n; i++) {
-        ot->pts[i-1].x = (int)((double)radius*(1+cos(i*theta)));
-        ot->pts[i-1].y = (int)((double)radius*(1+sin(i*theta)));
-    }
-}
 
 void bipartite_points (int n, vect2_t *points, box_t *bounding_box, double bb_ar)
 {
@@ -83,60 +38,6 @@ void bipartite_points (int n, vect2_t *points, box_t *bounding_box, double bb_ar
     if (bounding_box) {
         BOX_X_Y_W_H (*bounding_box, 0, 0, x_step, UINT8_MAX);
     }
-}
-
-typedef struct {
-    int origin;
-    int key;
-} int_key_t;
-
-void int_key_print (int_key_t k)
-{
-    printf ("origin: %d, key: %d\n", k.origin, k.key);
-}
-
-templ_sort (sort_int_keys, int_key_t, a->key < b->key)
-
-void increase_duplicated_coords (order_type_t *ot, int_key_t *key_array, int coord)
-{
-    int i;
-    for (i=0; i<ot->n; i++) {
-        key_array[i].key = ot->pts[i].E[coord];
-        key_array[i].origin = i;
-    }
-    sort_int_keys (key_array, ot->n);
-
-    int last_val = key_array[0].key;
-    for (i=1; i<ot->n; i++) {
-        if (last_val == key_array[i].key) {
-            ot->pts[key_array[i].origin].E[coord]++;
-        }
-        last_val = key_array[i].key;
-    }
-}
-
-void convex_ot_searchable (order_type_t *ot)
-{
-    convex_ot_scale (ot, 65535/2);
-
-    int_key_t key_array[ot->n];
-    increase_duplicated_coords (ot, key_array, VECT_X);
-    increase_duplicated_coords (ot, key_array, VECT_Y);
-}
-
-void print_order_type (order_type_t *ot)
-{
-    int i = 0;
-    if (ot->id != -1) {
-        printf ("id: %"PRIu32"\n", ot->id);
-    } else {
-        printf ("id: unknown\n");
-    }
-    while (i < ot->n) {
-        printf ("(%"PRIi64",%"PRIi64")\n", ot->pts[i].x, ot->pts[i].y);
-        i++;
-    }
-    printf ("\n");
 }
 
 typedef struct {
@@ -181,76 +82,6 @@ int segments_intersect  (vect2i_t s1p1, vect2i_t s1p2, vect2i_t s2p1, vect2i_t s
     return
         (!left (s1p1, s1p2, s2p1) ^ !left (s1p1, s1p2, s2p2)) &&
         (!left (s2p1, s2p2, s1p1) ^ !left (s2p1, s2p2, s1p2));
-}
-
-typedef struct {
-    int n;
-    int size;
-    int8_t triples [1];
-} ot_triples_t;
-
-ot_triples_t *ot_triples_new (order_type_t *ot, memory_stack_t *stack)
-{
-    ot_triples_t *ret;
-    uint32_t size = ot->n*(ot->n-1)*(ot->n-2);
-    if (stack) {
-         ret = push_size (stack, sizeof(ot_triples_t)+(ot->n-1)*sizeof(int8_t));
-    } else {
-        ret = malloc(sizeof(ot_triples_t)+(ot->n-1)*sizeof(int8_t));
-    }
-    ret->n = ot->n;
-    ret->size = size;
-
-    uint32_t trip_id = 0;
-    int i, j, k;
-    for (i=0; i<ot->n; i++) {
-        for (j=0; j<ot->n; j++) {
-            if (j==i) {
-                continue;
-            }
-            for (k=0; k<ot->n; k++) {
-                if (k==j || k==i) {
-                    continue;
-                }
-                ret->triples[trip_id] = left(ot->pts[i], ot->pts[j], ot->pts[k]) ? 1 : -1;
-                printf ("id:%d (%d, %d, %d) = %d\n", trip_id, i, j, k, ret->triples[trip_id]);
-                trip_id ++;
-            }
-        }
-    }
-    printf ("\n");
-    return ret;
-}
-
-// TODO: This is very slow.
-void triple_from_id (int n, int id, int *a, int *b, int *c)
-{
-    uint32_t trip_id = 0;
-    int i, j, k;
-    for (i=0; i<n; i++) {
-        for (j=0; j<n; j++) {
-            if (j==i) {
-                continue;
-            }
-            for (k=0; k<n; k++) {
-                if (k==j || k==i) {
-                    continue;
-                }
-                if (trip_id == id) {
-                    *a=i;
-                    *b=j;
-                    *c=k;
-                }
-                trip_id ++;
-            }
-        }
-    }
-}
-
-void print_triple (int n, int id) {
-    int a=0, b=0, c=0;
-    triple_from_id (n, id, &a, &b, &c);
-    printf ("id:%d (%d, %d, %d)\n", id, a, b, c);
 }
 
 int count_common_vertices (triangle_t *a, triangle_t *b)
@@ -2366,5 +2197,4 @@ void order_triangles_size (int n, int *triangle_order)
     }
     free (sort_structs);
 }
-#define GEOMETRY_COMBINATORICS_H
 #endif

@@ -3,9 +3,6 @@
  */
 
 #if !defined(GUI_H)
-#include <cairo/cairo.h>
-#include <math.h>
-#include "common.h"
 
 #define RGBA VECT4
 #define RGB(r,g,b) VECT4(r,g,b,1)

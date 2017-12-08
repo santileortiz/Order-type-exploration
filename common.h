@@ -47,6 +47,18 @@ typedef union {
 } vect2_t;
 #define VECT2(x,y) ((vect2_t){{x,y}})
 
+// TODO: These are 128 bit structs, they may take up a lot of space, maybe have
+// another one of 32 bits for small coordinates.
+// TODO: Also, how does this affect performance?
+typedef union {
+    struct {
+        int64_t x;
+        int64_t y;
+    };
+    int64_t E[2];
+} vect2i_t;
+#define VECT2i(x,y) ((vect2i_t){{x,y}})
+
 typedef struct {
     vect2_t min;
     vect2_t max;
@@ -264,6 +276,18 @@ void FUNCNAME ## _user_data (TYPE *arr, int n, void *user_data) \
 void FUNCNAME(TYPE *arr, int n) {                               \
     FUNCNAME ## _user_data (arr,n,NULL);                        \
 }
+
+typedef struct {
+    int origin;
+    int key;
+} int_key_t;
+
+void int_key_print (int_key_t k)
+{
+    printf ("origin: %d, key: %d\n", k.origin, k.key);
+}
+
+templ_sort (sort_int_keys, int_key_t, a->key < b->key)
 
 bool in_array (int i, int* arr, int size)
 {

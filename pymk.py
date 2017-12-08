@@ -1,20 +1,20 @@
 #!/usr/bin/python3
 from mkpy.utility import *
 
-# NOTE: Last ones are only required for Pango, maybe move to HarfBuzz?
 DEP_FLAGS = '-lcairo ' \
             '-lX11-xcb ' \
             '-lX11 ' \
             '-lxcb ' \
             '-lxcb-sync ' \
-            '-lm ' \
-            \
-            '-lpango-1.0 ' \
-            '-lpangocairo-1.0 ' \
-            '-I/usr/include/pango-1.0 ' \
-            '-I/usr/include/cairo ' \
-            '-I/usr/include/glib-2.0 ' \
-            '-I/usr/lib/x86_64-linux-gnu/glib-2.0/include '
+            '-lm '
+
+# NOTE: This is too much just to depend on Pango, maybe move to HarfBuzz?
+PANGO_FLAGS = '-lpango-1.0 ' \
+              '-lpangocairo-1.0 ' \
+              '-I/usr/include/pango-1.0 ' \
+              '-I/usr/include/cairo ' \
+              '-I/usr/include/glib-2.0 ' \
+              '-I/usr/lib/x86_64-linux-gnu/glib-2.0/include '
 
 modes = {
         'debug': '-g -Wall',
@@ -29,7 +29,7 @@ def default():
     call_user_function(target)
 
 def database_expl ():
-    ex ('gcc {FLAGS} database_expl.c -o bin/database_expl {DEP_FLAGS} -lcurl')
+    ex ('gcc {FLAGS} -o bin/database_expl database_expl.c {DEP_FLAGS} {PANGO_FLAGS} -lcurl')
     return
 
 def search ():
@@ -41,7 +41,7 @@ def render_seq ():
     return
 
 def save_file_to_pdf ():
-    ex ('gcc {FLAGS} -o bin/save_file_to_pdf save_file_to_pdf.c -lcairo -lm')
+    ex ('gcc {FLAGS} -o bin/save_file_to_pdf save_file_to_pdf.c {PANGO_FLAGS} -lcairo -lm')
 
 if __name__ == "__main__":
     if get_cli_option ('--get_deps_pkgs'):

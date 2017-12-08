@@ -6,10 +6,22 @@
 #include <stdlib.h>
 #include <cairo/cairo.h>
 #include <cairo/cairo-pdf.h>
+#include <pango/pangocairo.h>
 #include <math.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <errno.h>
+
+#include "slo_timers.h"
 #include "common.h"
-#include "ot_db.h"
+#include "order_types.h"
 #include "geometry_combinatorics.h"
+#include "gui.h"
+
+#define SEQUENCE_STORE_IMPL
+#include "sequence_store.h"
+#include "order_types.c"
 
 triangle_t triangle_for_indexes (order_type_t *ot, int *idx)
 {
@@ -20,16 +32,10 @@ triangle_t triangle_for_indexes (order_type_t *ot, int *idx)
     return t;
 }
 
-typedef struct {
-    double scale;
-    double dx;
-    double dy;
-} transf_t;
-
 void transform (vect2i_t *p, transf_t *tr)
 {
-    p->x = tr->scale*(double)p->x+tr->dx;
-    p->y = tr->scale*(255-(double)p->y)+tr->dy;
+    p->x = tr->scale_x*(double)p->x+tr->dx;
+    p->y = tr->scale_y*(255-(double)p->y)+tr->dy;
 }
 
 void draw_segment (cairo_t *cr, vect2i_t p1, vect2i_t p2, double line_width, transf_t *tr)
@@ -97,7 +103,7 @@ int main (void)
     double y_margin = (PAGE_HEIGHT-ot_side*y_slots)/(y_slots+1);
     double y_step = ot_side+y_margin;
     transf_t transf;
-    transf.scale = ot_side/255;
+    transf.scale_x = transf.scale_y = ot_side/255;
     transf.dx = X_MARGIN;
     transf.dy = y_margin;
 
@@ -177,7 +183,7 @@ int main (void)
     double y_margin = (PAGE_HEIGHT-ot_side*y_slots)/(y_slots+1);
     double y_step = ot_side+y_margin;
     transf_t transf;
-    transf.scale = ot_side/255;
+    transf.scale_x = transf.scale_y = ot_side/255;
     transf.dx = X_MARGIN;
     transf.dy = y_margin;
 

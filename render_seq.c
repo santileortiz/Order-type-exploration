@@ -9,30 +9,18 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <cairo/cairo-pdf.h>
+#include <errno.h>
 
 #include "common.h"
 #include "slo_timers.h"
 
+#include "order_types.h"
+#include "geometry_combinatorics.h"
+
 #define SEQUENCE_STORE_IMPL
 #include "sequence_store.h"
 
-#include "ot_db.h"
-#include "geometry_combinatorics.h"
-
-// TODO: This function is duplicated! Fix all .h dependency issues and get files
-// properly organized.
-order_type_t* order_type_from_id (int n, uint64_t ot_id)
-{
-    order_type_t *res = order_type_new (n, NULL);
-    if (ot_id == 0 && n>10) {
-        convex_ot_searchable (res);
-    } else {
-        assert (n<=10);
-        open_database (n);
-        db_seek (res, ot_id);
-    }
-    return res;
-}
+#include "order_types.c"
 
 int main ()
 {

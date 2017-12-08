@@ -8,22 +8,20 @@
 #include <stdlib.h>
 #include <fcntl.h>
 #include <unistd.h>
-
 #include <sys/stat.h>
-
 //#define NDEBUG
 #include <assert.h>
+#include <errno.h>
+#include <curl/curl.h>
 
 #include "slo_timers.h"
 #include "common.h"
+#include "order_types.h"
+#include "geometry_combinatorics.h"
 
 #define SEQUENCE_STORE_IMPL
 #include "sequence_store.h"
-
-#include "geometry_combinatorics.h"
-
-#define OT_DB_IMPLEMENTATION
-#include "ot_db.h"
+#include "order_types.c"
 
 // Function to define functions that read binary arrays of elements of type
 // _type_ to files.
@@ -107,19 +105,6 @@ void progress_bar (float val, float total)
             fprintf (stderr, "\r\e[K");
         }
     }
-}
-
-order_type_t* order_type_from_id (int n, uint64_t ot_id)
-{
-    order_type_t *res = order_type_new (n, NULL);
-    if (ot_id == 0 && n>10) {
-        convex_ot_searchable (res);
-    } else {
-        assert (n<=10);
-        open_database (n);
-        db_seek (res, ot_id);
-    }
-    return res;
 }
 
 #if 1
@@ -427,26 +412,6 @@ void count_thrackles (int n, int k)
     }
     free (triangle_it);
     free (triangle_set_it);
-}
-
-void print_differing_triples (int n, uint64_t ot_id_1, uint64_t ot_id_2)
-{
-    open_database (n);
-    order_type_t *ot_1 = order_type_new (n, NULL);
-    db_seek (ot_1, ot_id_1);
-    ot_triples_t *ot_triples_1 = ot_triples_new (ot_1, NULL);
-
-    order_type_t *ot_2 = order_type_new (n, NULL);
-    db_seek (ot_2, ot_id_2);
-    ot_triples_t *ot_triples_2 = ot_triples_new (ot_2, NULL);
-
-    int32_t trip_id = 0;
-    while (trip_id < ot_triples_1->size) {
-        if (ot_triples_1->triples[trip_id] != ot_triples_2->triples[trip_id]) {
-            print_triple (n, trip_id);
-        }
-        trip_id++;
-    }
 }
 
 void print_edge_disjoint_sets (int n, int k)

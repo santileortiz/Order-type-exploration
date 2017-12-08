@@ -2,9 +2,6 @@
  * Copyright (C) 2017 Santiago León O. <santileortiz@gmail.com>
  */
 
-#include"app_api.h"
-#include "point_set_mode.h"
-
 #define CANVAS_SIZE 65535 // It's the size of the coordinate axis at 1 zoom
 void int_string_update (uint64_string_t *x, uint64_t i)
 {

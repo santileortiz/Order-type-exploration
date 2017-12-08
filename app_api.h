@@ -3,9 +3,6 @@
  */
 
 #if !defined(APP_API_H)
-#include "tree_mode.h"
-#include "point_set_mode.h"
-#include "grid_mode.h"
 
 typedef struct {
     float time_elapsed_ms;

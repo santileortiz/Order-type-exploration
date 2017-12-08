@@ -2,9 +2,6 @@
  * Copyright (C) 2017 Santiago León O. <santileortiz@gmail.com>
  */
 
-#include "grid_mode.h"
-#include "common.h"
-
 #define cairo_BOX(cr,box) cairo_rectangle (cr, (box).min.x, (box).min.y, BOX_WIDTH(box), BOX_HEIGHT(box));
 void draw_graph (cairo_t *cr, struct grid_mode_state_t *grid_st, int id, box_t *dest)
 {

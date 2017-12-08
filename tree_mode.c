@@ -2,9 +2,6 @@
  * Copyright (C) 2017 Santiago León O. <santileortiz@gmail.com>
  */
 
-#include "tree_mode.h"
-#include "common.h"
-
 typedef enum {VTN_OPEN, VTN_CLOSED, VTN_IGNORED} vtn_state_t;
 typedef enum {VTN_FULL, VTN_COMPACT} vtn_view_type_t;
 
