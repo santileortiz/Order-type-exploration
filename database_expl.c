@@ -503,16 +503,9 @@ int main (void)
     app_input_t app_input = {0};
     app_input.wheel = 1;
 
-    int storage_size =  megabyte(60);
-    uint8_t* memory = calloc (storage_size, 1);
-    struct app_state_t *st = (struct app_state_t*)memory;
-    st->storage_size = storage_size;
-    memory_stack_init (&st->memory, st->storage_size-sizeof(struct app_state_t), memory+sizeof(struct app_state_t));
-
-    // TODO: Should this be inside st->memory?
-    int temp_memory_size =  megabyte(10);
-    uint8_t* temp_memory = calloc (temp_memory_size, 1);
-    memory_stack_init (&st->temporary_memory, temp_memory_size, temp_memory);
+    mem_pool_t bootstrap = {0};
+    struct app_state_t *st = mem_pool_push_size_full (&bootstrap, sizeof(struct app_state_t), POOL_ZERO_INIT);
+    st->memory = bootstrap;
 
     while (!st->end_execution) {
         while ((event = xcb_poll_for_event (x_st.xcb_c))) {

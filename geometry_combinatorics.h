@@ -388,7 +388,7 @@ typedef struct {
     uint64_t size; // total number of subsets
     int *idx; // actual indexes
 
-    memory_stack_t *storage;
+    mem_pool_t *storage;
 
     int *precomp;
 } subset_it_t;
@@ -411,13 +411,13 @@ void subset_it_init (subset_it_t *it, int n, int k, int *idx)
     subset_it_reset_idx (idx, k);
 }
 
-subset_it_t *subset_it_new (int n, int k, memory_stack_t *stack)
+subset_it_t *subset_it_new (int n, int k, mem_pool_t *pool)
 {
     subset_it_t *retval;
-    if (stack) {
-        retval = push_struct (stack, subset_it_t);
-        retval->idx = push_array (stack, k, int);
-        retval->storage = stack;
+    if (pool) {
+        retval = mem_pool_push_struct (pool, subset_it_t);
+        retval->idx = mem_pool_push_array (pool, k, int);
+        retval->storage = pool;
     } else {
         retval = malloc (sizeof(subset_it_t));
         retval->idx = malloc (k*sizeof(int));
@@ -593,7 +593,7 @@ int subset_it_precompute (subset_it_t *it)
 
     int *precomp;
     if (it->storage) {
-        precomp = push_array (it->storage, it->size*it->k, int);
+        precomp = mem_pool_push_array (it->storage, it->size*it->k, int);
     } else {
         precomp = malloc (sizeof(int)*it->size*it->k);
     }

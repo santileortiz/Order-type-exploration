@@ -14,7 +14,6 @@ struct tree_mode_state_t{
     uint64_t num_nodes;
 
     int *all_perms;
-    memory_stack_t memory;
 
     mem_pool_t pool;
 };

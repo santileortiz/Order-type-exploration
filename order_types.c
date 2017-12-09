@@ -198,11 +198,11 @@ void db_seek (order_type_t *ot, uint64_t id)
 }
 
 #define order_type_size(n) (sizeof(order_type_t)+(n-1)*sizeof(vect2i_t))
-order_type_t *order_type_new (int n, memory_stack_t *stack)
+order_type_t *order_type_new (int n, mem_pool_t *pool)
 {
     order_type_t *ret;
-    if (stack) {
-         ret = push_size (stack, order_type_size(n));
+    if (pool) {
+         ret = mem_pool_push_size (pool, order_type_size(n));
     } else {
         ret = malloc(order_type_size(n));
     }
@@ -285,12 +285,12 @@ typedef struct {
     int8_t triples [1];
 } ot_triples_t;
 
-ot_triples_t *ot_triples_new (order_type_t *ot, memory_stack_t *stack)
+ot_triples_t *ot_triples_new (order_type_t *ot, mem_pool_t *pool)
 {
     ot_triples_t *ret;
     uint32_t size = ot->n*(ot->n-1)*(ot->n-2);
-    if (stack) {
-         ret = push_size (stack, sizeof(ot_triples_t)+(ot->n-1)*sizeof(int8_t));
+    if (pool) {
+         ret = mem_pool_push_size (pool, sizeof(ot_triples_t)+(ot->n-1)*sizeof(int8_t));
     } else {
         ret = malloc(sizeof(ot_triples_t)+(ot->n-1)*sizeof(int8_t));
     }

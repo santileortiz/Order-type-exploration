@@ -47,17 +47,12 @@ bool grid_mode (struct app_state_t *st, app_graphics_t *gr)
 {
     struct grid_mode_state_t *grid_mode = st->grid_mode;
     if (!st->grid_mode) {
-        uint32_t panel_storage = megabyte(5);
-        uint8_t *base = push_size (&st->memory, panel_storage);
-        st->grid_mode = (struct grid_mode_state_t*)base;
-        memory_stack_init (&st->grid_mode->memory,
-                           panel_storage-sizeof(struct grid_mode_state_t),
-                           base+sizeof(struct grid_mode_state_t));
+        st->grid_mode = mem_pool_push_size_full (&st->memory, sizeof(struct grid_mode_state_t), POOL_ZERO_INIT);
 
         grid_mode = st->grid_mode;
         grid_mode->n = 3;
         grid_mode->loops_computed = false;
-        grid_mode->points = push_array (&grid_mode->memory, 2*grid_mode->n, vect2_t);
+        grid_mode->points = mem_pool_push_array (&grid_mode->memory, 2*grid_mode->n, vect2_t);
 
         grid_mode->canvas_x = 10;
         grid_mode->canvas_y = 10;

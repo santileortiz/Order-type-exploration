@@ -50,11 +50,11 @@ struct app_state_t {
     int focused_layout_box;
     layout_box_t layout_boxes[30];
 
-    int storage_size;
-    memory_stack_t memory;
+    mem_pool_t memory;
 
     // NOTE: This will be cleared at every frame start
-    memory_stack_t temporary_memory;
+    // TODO: Should this be inside st->memory?
+    mem_pool_t temporary_memory;
 };
 
 #define APP_API_H

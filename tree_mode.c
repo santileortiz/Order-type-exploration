@@ -395,17 +395,12 @@ bool tree_mode (struct app_state_t *st, app_graphics_t *gr)
 
     int n = 4;
     if (!st->tree_mode) {
-        uint32_t mode_storage = megabyte(5);
-        uint8_t *base = push_size (&st->memory, mode_storage);
-        st->tree_mode = (struct tree_mode_state_t*)base;
-        memory_stack_init (&st->tree_mode->memory,
-                           mode_storage-sizeof(struct tree_mode_state_t),
-                           base+sizeof(struct tree_mode_state_t));
+        st->tree_mode = mem_pool_push_size_full (&st->memory, sizeof(struct tree_mode_state_t), POOL_ZERO_INIT);
         tree_mode = st->tree_mode;
         tree_mode->root_pos = VECT2 (100, 50);
         tree_mode->n = n;
         tree_mode->point_radius = 4;
-        tree_mode->points = push_array (&tree_mode->memory, 2*tree_mode->n, vect2_t);
+        tree_mode->points = mem_pool_push_array (&tree_mode->pool, 2*tree_mode->n, vect2_t);
         bipartite_points (tree_mode->n, tree_mode->points, &tree_mode->points_bb, 1.618);
 
         tree_mode->all_perms = mem_pool_push_array (&tree_mode->pool, factorial(n)*n, int);

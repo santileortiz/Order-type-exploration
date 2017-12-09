@@ -65,7 +65,7 @@ struct point_set_mode_t {
     bool view_db_ot;
     vect2_t visible_pts[50];
 
-    memory_stack_t memory;
+    mem_pool_t memory;
     mem_pool_t pool;
 };
 

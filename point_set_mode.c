@@ -174,7 +174,7 @@ void set_ot (struct point_set_mode_t *st)
 
 void set_n (struct point_set_mode_t *st, int n, app_graphics_t *graphics)
 {
-    st->memory.used = 0; // Clears all storage
+    mem_pool_destroy (&st->memory);
 
     int_string_update (&st->n, n);
     int t_n = thrackle_size (n);
@@ -345,8 +345,9 @@ void init_labeled_layout (labeled_entries_layout_t *layout_state, app_graphics_t
     double max_width = 0, max_height = 0;
     int i;
 
-    layout_state->label_layouts = push_array (&st->temporary_memory,
-                                              num_labels, layout_box_t);
+    layout_state->label_layouts =
+        mem_pool_push_array (&st->temporary_memory, num_labels, layout_box_t);
+
     struct css_box_t *label_style = &st->css_styles[CSS_LABEL];
     for (i=0; i<num_labels; i++) {
         layout_box_t *curr_layout_box = &layout_state->label_layouts[i];
@@ -460,12 +461,7 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
 {
     struct point_set_mode_t *ps_mode = st->ps_mode;
     if (!ps_mode) {
-        uint32_t panel_storage = megabyte(5);
-        uint8_t *base = push_size (&st->memory, panel_storage);
-        st->ps_mode = (struct point_set_mode_t*)base;
-        memory_stack_init (&st->ps_mode->memory,
-                           panel_storage-sizeof(struct point_set_mode_t),
-                           base+sizeof(struct point_set_mode_t));
+        st->ps_mode = mem_pool_push_size_full (&st->memory, sizeof(struct point_set_mode_t), POOL_ZERO_INIT);
 
         ps_mode = st->ps_mode;
         int_string_update (&ps_mode->n, 8);

@@ -14,7 +14,7 @@ struct grid_mode_state_t{
     uint64_t num_loops;
     int_dyn_arr_t edges_of_all_loops;
 
-    memory_stack_t memory;
+    mem_pool_t memory;
 };
 
 struct app_state_t;
