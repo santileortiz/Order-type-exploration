@@ -22,8 +22,6 @@ typedef enum {
     foc_ot,
     foc_k,
     foc_ts,
-    foc_edj,
-    foc_th,
 
     num_focus_options
 } focus_options_t;
@@ -38,6 +36,7 @@ struct point_set_mode_t {
     uint64_string_t ot_id;
     order_type_t *ot;
     uint64_string_t k;
+    uint64_t num_triangle_subsets; // = binomial(binomial(n,3),k)
     uint64_string_t ts_id;
 
     bool rebuild_panel; // Computes the state of all layout boxes
@@ -57,7 +56,6 @@ struct point_set_mode_t {
     focus_options_t foc_st;
 
     subset_it_t *triangle_it;
-    subset_it_t *triangle_set_it;
 
     int num_entities;
     entity_t entities[300];

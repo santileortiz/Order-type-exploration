@@ -147,7 +147,7 @@ int thrackle_size (int n)
         case 9:
             return 10;
         default:
-            printf ("Tn is unknown\n");
+            // Maximum thrackle size is unknown
             return -1;
     }
 }

@@ -3,6 +3,9 @@
  */
 
 #define CANVAS_SIZE 65535 // It's the size of the coordinate axis at 1 zoom
+
+#define int_string_inc(int_str) int_string_update(int_str,(int_str)->i+1)
+#define int_string_dec(int_str) int_string_update(int_str,(int_str)->i-1)
 void int_string_update (uint64_string_t *x, uint64_t i)
 {
     x->i = i;
@@ -172,16 +175,21 @@ void set_ot (struct point_set_mode_t *st)
     }
 }
 
+void set_k (struct point_set_mode_t *st, int k)
+{
+    int_string_update (&st->k, k);
+    st->num_triangle_subsets = binomial(binomial(st->n.i,3),k);
+}
+
 void set_n (struct point_set_mode_t *st, int n, app_graphics_t *graphics)
 {
     mem_pool_destroy (&st->memory);
 
     int_string_update (&st->n, n);
-    int t_n = thrackle_size (n);
-    if (t_n == -1) {
-        int_string_update (&st->k, thrackle_size_lower_bound (n));
-    } else {
-        int_string_update (&st->k, t_n);
+
+    int initial_k = thrackle_size (n);
+    if (initial_k == -1) {
+        initial_k = thrackle_size_lower_bound (n);
     }
 
     st->ot = order_type_new (10, &st->memory);
@@ -192,7 +200,7 @@ void set_n (struct point_set_mode_t *st, int n, app_graphics_t *graphics)
 
     st->triangle_it = subset_it_new (n, 3, &st->memory);
     subset_it_precompute (st->triangle_it);
-    st->triangle_set_it = subset_it_new (st->triangle_it->size, st->k.i, &st->memory);
+    set_k (st, initial_k);
     focus_order_type (graphics, st);
 }
 
@@ -484,6 +492,7 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
         ps_mode->redraw_canvas = true;
 
         set_n (ps_mode, ps_mode->n.i, graphics);
+        int_string_update (&ps_mode->ts_id, 0);
     }
 
     app_input_t input = st->input;
@@ -570,13 +579,36 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
                     }
                 }
                 set_n (ps_mode, n, graphics);
-            } else if (ps_mode->foc_st == foc_ts) {
+            } else if (ps_mode->foc_st == foc_k) {
+                uint64_t max_k = ps_mode->triangle_it->size;
                 if (XCB_KEY_BUT_MASK_SHIFT & input.modifiers
                         || input.keycode == 113) {
-                    subset_it_prev (ps_mode->triangle_set_it);
+                    if (ps_mode->k.i != 0) {
+                        set_k (ps_mode, ps_mode->k.i-1);
+                    }
                 } else {
-                    subset_it_next (ps_mode->triangle_set_it);
+                    if (ps_mode->k.i < max_k) {
+                        set_k (ps_mode, ps_mode->k.i+1);
+                    }
                 }
+            } else if (ps_mode->foc_st == foc_ts) {
+                uint64_t id = ps_mode->ts_id.i;
+                uint64_t last_id = ps_mode->num_triangle_subsets-1;
+                if (XCB_KEY_BUT_MASK_SHIFT & input.modifiers
+                        || input.keycode == 113) {
+                    if (id == 0) {
+                        id = last_id;
+                    } else {
+                        id--;
+                    }
+                } else {
+                    if (id == last_id) {
+                        id = 0;
+                    } else {
+                        id++;
+                    }
+                }
+                int_string_update (&ps_mode->ts_id, id);
             }
             ps_mode->rebuild_panel = true;
             ps_mode->redraw_canvas = true;
@@ -589,15 +621,32 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
             break;
         case 36: //KEY_ENTER
             if (ps_mode->foc_st == foc_ot) {
-                db_seek (ps_mode->ot, ps_mode->temp_number.i);
-                set_ot (ps_mode);
-                focus_order_type (graphics, ps_mode);
+                if (ps_mode->temp_number.i < __g_db_data.num_order_types) {
+                    db_seek (ps_mode->ot, ps_mode->temp_number.i);
+                    set_ot (ps_mode);
+                    focus_order_type (graphics, ps_mode);
+                } else {
+                    int_string_update (&ps_mode->temp_number, ps_mode->ot_id.i);
+                }
             } else if (ps_mode->foc_st == foc_n) {
                 if (3 <= ps_mode->temp_number.i && ps_mode->temp_number.i <= 10) {
                     set_n (ps_mode, ps_mode->temp_number.i, graphics);
+                } else {
+                    int_string_update (&ps_mode->temp_number, ps_mode->n.i);
+                }
+            } else if (ps_mode->foc_st == foc_k) {
+                uint64_t max_k = ps_mode->triangle_it->size;
+                if (ps_mode->temp_number.i <= max_k) {
+                    set_k (ps_mode, ps_mode->temp_number.i);
+                }else {
+                    int_string_update (&ps_mode->temp_number, ps_mode->k.i);
                 }
             } else if (ps_mode->foc_st == foc_ts) {
-                subset_it_seek (ps_mode->triangle_set_it, ps_mode->temp_number.i);
+                if (ps_mode->temp_number.i < ps_mode->num_triangle_subsets) {
+                    int_string_update (&ps_mode->ts_id, ps_mode->temp_number.i);
+                } else {
+                    int_string_update (&ps_mode->temp_number, ps_mode->ts_id.i);
+                }
             }
             ps_mode->editing_entry = false;
             ps_mode->redraw_canvas = true;
@@ -631,7 +680,7 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
         char *entry_labels[] = {"n:",
                                 "Order Type:",
                                 "k:",
-                                "Triangle Set:"};
+                                "ID:"};
         labeled_entries_layout_t lay;
         init_labeled_layout (&lay, graphics, x_step, y_step,
                              bg_pos.x+x_margin, bg_pos.y+y_margin, bg_min_size.x,
@@ -646,9 +695,9 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
             sep->draw = draw_separator;
             lay.y_pos += lay.y_step;
         }
-        title ("Triangle Sets", &lay, st, graphics);
+        title ("Triangle Set", &lay, st, graphics);
         labeled_text_entry (ps_mode->k.str, &lay, st, ps_mode->foc_st==foc_k);
-        labeled_text_entry ("0", &lay, st, ps_mode->foc_st==foc_ts);
+        labeled_text_entry (ps_mode->ts_id.str, &lay, st, ps_mode->foc_st==foc_ts);
 
         st->layout_boxes[0].box.max.x = st->layout_boxes[0].box.min.x + bg_min_size.x;
         st->layout_boxes[0].box.max.y = lay.y_pos;
@@ -690,20 +739,17 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
 
         int i;
         get_next_color (0);
+        int triangles [ps_mode->k.i];
+        if (ps_mode->ts_id.i >= ps_mode->num_triangle_subsets) {
+            int_string_update (&ps_mode->ts_id, ps_mode->num_triangle_subsets-1);
+        }
+
+        subset_it_idx_for_id (ps_mode->ts_id.i, ps_mode->triangle_it->size,
+                              triangles, ARRAY_SIZE(triangles));
         for (i=0; i<ps_mode->k.i; i++) {
             vect3_t color;
             get_next_color (&color);
-        if (ps_mode->editing_entry) {
-            layout_box_t *focused_box = &st->layout_boxes[st->focused_layout_box];
-            focused_box->str.s = ps_mode->temp_number.str;
-        }
-
-        if (ps_mode->editing_entry) {
-            layout_box_t *focused_box = &st->layout_boxes[st->focused_layout_box];
-            focused_box->str.s = ps_mode->temp_number.str;
-        }
-
-            triangle_entity_add (ps_mode, ps_mode->triangle_set_it->idx[i], color);
+            triangle_entity_add (ps_mode, triangles[i], color);
         }
 
         draw_entities (ps_mode, graphics);
