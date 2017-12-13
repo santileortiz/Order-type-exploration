@@ -480,52 +480,50 @@ vect4_t shade (vect4_t *in, double f)
 
 void hsv_to_rgb (vect3_t *hsv, vect3_t *rgb)
 {
-        double h = hsv->E[0];
-        double s = hsv->E[1];
-        double v = hsv->E[2];
-        if (h>1) {
-            h -= 1;
-        }
+    double h = hsv->E[0];
+    double s = hsv->E[1];
+    double v = hsv->E[2];
+    assert (h <= 1 && s <= 1 && v <= 1);
 
-        int h_i = (int)(h*6);
-        double frac = h*6 - h_i;
+    int h_i = (int)(h*6);
+    double frac = h*6 - h_i;
 
-        double m = v * (1 - s);
-        double desc = v * (1 - frac*s);
-        double asc = v * (1 - (1 - frac) * s);
+    double m = v * (1 - s);
+    double desc = v * (1 - frac*s);
+    double asc = v * (1 - (1 - frac) * s);
 
-        switch (h_i) {
-            case 0:
-                rgb->r = v;
-                rgb->g = asc;
-                rgb->b = m;
-                break;
-            case 1:
-                rgb->r = desc;
-                rgb->g = v;
-                rgb->b = m;
-                break;
-            case 2:
-                rgb->r = m;
-                rgb->g = v;
-                rgb->b = asc;
-                break;
-            case 3:
-                rgb->r = m;
-                rgb->g = desc;
-                rgb->b = v;
-                break;
-            case 4:
-                rgb->r = asc;
-                rgb->g = m;
-                rgb->b = v;
-                break;
-            case 5:
-                rgb->r = v;
-                rgb->g = m;
-                rgb->b = desc;
-                break;
-        }
+    switch (h_i) {
+        case 0:
+            rgb->r = v;
+            rgb->g = asc;
+            rgb->b = m;
+            break;
+        case 1:
+            rgb->r = desc;
+            rgb->g = v;
+            rgb->b = m;
+            break;
+        case 2:
+            rgb->r = m;
+            rgb->g = v;
+            rgb->b = asc;
+            break;
+        case 3:
+            rgb->r = m;
+            rgb->g = desc;
+            rgb->b = v;
+            break;
+        case 4:
+            rgb->r = asc;
+            rgb->g = m;
+            rgb->b = v;
+            break;
+        case 5:
+            rgb->r = v;
+            rgb->g = m;
+            rgb->b = desc;
+            break;
+    }
 }
 
 void rgba_print (vect4_t rgba)
@@ -591,6 +589,9 @@ void get_next_color (vect3_t *color)
         palette_idx++;
     } else {
         h += PHI_INV;
+        if (h>1) {
+            h -= 1;
+        }
         hsv_to_rgb (&VECT3(h, 0.99, 0.99), color);
     }
 }
