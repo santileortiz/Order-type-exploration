@@ -592,7 +592,7 @@ void get_next_color (vect3_t *color)
         if (h>1) {
             h -= 1;
         }
-        hsv_to_rgb (&VECT3(h, 0.99, 0.99), color);
+        hsv_to_rgb (&VECT3(h, 0.8, 0.7), color);
     }
 }
 
