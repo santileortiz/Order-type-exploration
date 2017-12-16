@@ -91,6 +91,12 @@ void pixel_align_as_line (vect2_t *p, int line_width)
     p->y = floor (p->y)+(double)(line_width%2)/2;
 }
 
+void vect_floor (vect2_t *p)
+{
+    p->x = floor (p->x);
+    p->y = floor (p->y);
+}
+
 void rounded_box_path (cairo_t *cr, double x, double y, double width, double height, double radius)
 {
     cairo_move_to (cr, x, y+radius);
@@ -229,9 +235,34 @@ struct selection_t {
     vect4_t background_color;
 };
 
-struct gui_state_t {
-    struct selection_t selection;
+enum behavior_type_t {
+    BEHAVIOR_BUTTON,
+    BEHAVIOR_TEXT_ENTRY
 };
+
+struct behavior_t {
+    enum behavior_type_t type;
+    layout_box_t *box;
+    struct behavior_t *next;
+};
+
+struct gui_state_t {
+    mem_pool_t pool;
+    struct selection_t selection;
+    struct behavior_t *behaviors;
+};
+
+void add_behavior (struct gui_state_t *gui_st, layout_box_t *box, enum behavior_type_t type)
+{
+    printf ("Adding behavior\n");
+    struct behavior_t *new_behavior =
+        mem_pool_push_size_full (&gui_st->pool, sizeof(struct behavior_t),
+                                 POOL_ZERO_INIT);
+    new_behavior->next = gui_st->behaviors;
+    gui_st->behaviors = new_behavior;
+    new_behavior->type = type;
+    new_behavior->box = box;
+}
 
 struct gui_state_t *global_gui_st;
 
@@ -278,6 +309,7 @@ void render_text (cairo_t *cr, vect2_t pos, PangoLayout *pango_layout,
 
     PangoRectangle logical;
     pango_layout_get_pixel_extents (pango_layout, NULL, &logical);
+    vect_floor (&pos);
     if (bg_color != NULL) {
         cairo_set_source_rgba (cr, bg_color->r, bg_color->g, bg_color->b,
                                bg_color->a);
@@ -385,8 +417,10 @@ void css_box_draw (app_graphics_t *gr, struct css_box_t *box, layout_box_t *layo
         struct selection_t *selection = &global_gui_st->selection;
         vect2_t pos = VECT2(text_pos_x, text_pos_y);
         if (selection->dest == layout) {
-            render_text (cr, pos, pango_layout, layout->str.s, selection->start - layout->str.s,
-                         &box->color, NULL, &pos);
+            if (selection->start != layout->str.s) {
+                render_text (cr, pos, pango_layout, layout->str.s, selection->start - layout->str.s,
+                             &box->color, NULL, &pos);
+            }
             render_text (cr, pos, pango_layout, selection->start, selection->len,
                          &selection->color, &selection->background_color, &pos);
             render_text (cr, pos, pango_layout, selection->start+selection->len, 0,

@@ -406,6 +406,7 @@ void labeled_text_entry (char *entry_content,
         st->focused_layout_box = st->num_layout_boxes-1;
     }
     text_entry_layout_box->str.s = entry_content;
+    add_behavior (&st->gui_st, text_entry_layout_box, BEHAVIOR_TEXT_ENTRY);
 
     BOX_POS_SIZE (text_entry_layout_box->box, entry_pos, layout_state->entry_size);
     BOX_POS_SIZE (label_layout_box->box, label_pos, layout_state->label_size);
@@ -438,9 +439,6 @@ bool labeled_button (char *button_text,
 void title (char *str, labeled_entries_layout_t *layout_state, struct app_state_t *st, app_graphics_t *graphics)
 {
     layout_box_t *title = next_layout_box (st);
-    st->gui_st.selection.dest = title;
-    st->gui_st.selection.start = str+1;
-    st->gui_st.selection.len = 3;
     title->style = &st->css_styles[CSS_TITLE_LABEL];
     title->str.s = str;
     sized_string_compute (&title->str, title->style, graphics->text_layout, title->str.s);
@@ -708,6 +706,37 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
         ps_mode->redraw_panel = true;
     }
 
+    struct behavior_t *beh = st->gui_st.behaviors;
+    int i = 0;
+    while (beh != NULL) {
+        switch (beh->type) {
+            case BEHAVIOR_BUTTON:
+                update_button_state (st, beh->box, &ps_mode->redraw_panel);
+                break;
+            case BEHAVIOR_TEXT_ENTRY:
+                {
+                    struct layout_box_t *lay_box = beh->box;
+                    bool is_ptr_over =
+                        is_point_in_box (st->click_coord[0].x, st->click_coord[0].y,
+                                         lay_box->box.min.x, lay_box->box.min.y,
+                                         BOX_WIDTH(lay_box->box), BOX_HEIGHT(lay_box->box));
+                    if (st->mouse_double_clicked[0] && is_ptr_over) {
+                        // FIXME: seems st->mouse_double_clicked has a bug,
+                        // because this is called more than once!!!!
+                        printf ("beh idx: %d\n", i);
+                        st->gui_st.selection.dest = lay_box;
+                        st->gui_st.selection.start = lay_box->str.s;
+                        st->gui_st.selection.len = strlen(lay_box->str.s);
+                        ps_mode->redraw_panel = true;
+                    }
+                } break;
+            default:
+                invalid_code_path;
+        }
+        beh = beh->next;
+        i++;
+    }
+
     bool ptr_clicked_in_canvas =
         !is_point_in_box (st->click_coord[0].x, st->click_coord[0].y,
                           panel->box.min.x, panel->box.min.y,
@@ -718,7 +747,7 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
         ps_mode->redraw_canvas = true;
     }
 
-    if (st->mouse_double_clicked[0]) {
+    if (st->mouse_double_clicked[0] && ptr_clicked_in_canvas) {
         focus_order_type (graphics, ps_mode);
         ps_mode->redraw_canvas = true;
     }
