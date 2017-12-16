@@ -438,6 +438,9 @@ bool labeled_button (char *button_text,
 void title (char *str, labeled_entries_layout_t *layout_state, struct app_state_t *st, app_graphics_t *graphics)
 {
     layout_box_t *title = next_layout_box (st);
+    st->gui_st.selection.dest = title;
+    st->gui_st.selection.start = str+1;
+    st->gui_st.selection.len = 3;
     title->style = &st->css_styles[CSS_TITLE_LABEL];
     title->str.s = str;
     sized_string_compute (&title->str, title->style, graphics->text_layout, title->str.s);

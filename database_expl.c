@@ -45,6 +45,7 @@
 #define WINDOW_HEIGHT 700
 #define WINDOW_WIDTH 700
 
+
 bool update_and_render (struct app_state_t *st, app_graphics_t *graphics, app_input_t input)
 {
     if (!st->is_initialized) {
@@ -71,6 +72,10 @@ bool update_and_render (struct app_state_t *st, app_graphics_t *graphics, app_in
         init_label (&st->css_styles[CSS_LABEL]);
         init_title_label (&st->css_styles[CSS_TITLE_LABEL]);
         st->focused_layout_box = -1;
+
+        st->gui_st.selection.color = selected_fg_color;
+        st->gui_st.selection.background_color = selected_bg_color;
+        global_gui_st = &st->gui_st;
 
         st->app_mode = APP_POINT_SET_MODE;
 

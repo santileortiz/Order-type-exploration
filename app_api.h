@@ -49,6 +49,7 @@ struct app_state_t {
     int num_layout_boxes;
     int focused_layout_box;
     layout_box_t layout_boxes[30];
+    struct gui_state_t gui_st;
 
     mem_pool_t memory;
 

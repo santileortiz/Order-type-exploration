@@ -146,6 +146,8 @@ typedef enum {
     CSS_BUTTON_SA_ACTIVE,
     CSS_BACKGROUND,
     CSS_TEXT_ENTRY,
+    CSS_TEXT_TEXT,
+    CSS_TEXT_TEXT_SELECTED,
     CSS_TEXT_ENTRY_FOCUS,
     CSS_LABEL,
     CSS_TITLE_LABEL,
@@ -219,6 +221,20 @@ struct layout_box_t {
     sized_string_t str;
 };
 
+struct selection_t {
+    layout_box_t *dest;
+    char *start;
+    size_t len;
+    vect4_t color;
+    vect4_t background_color;
+};
+
+struct gui_state_t {
+    struct selection_t selection;
+};
+
+struct gui_state_t *global_gui_st;
+
 void update_font_description (struct css_box_t *box, PangoLayout *pango_layout)
 {
     const PangoFontDescription *orig_font_desc = pango_layout_get_font_description (pango_layout);
@@ -250,6 +266,32 @@ void sized_string_compute (sized_string_t *res, struct css_box_t *style, PangoLa
     res->height = logical.height;
     res->pos.x = logical.x;
     res->pos.y = logical.y;
+}
+
+// NOTE: len == 0/NULL means the string is null terminated. User should not try
+// to print an empty string.
+void render_text (cairo_t *cr, vect2_t pos, PangoLayout *pango_layout,
+                  char *str, size_t len, vect4_t *color, vect4_t *bg_color,
+                  vect2_t *out_pos)
+{
+    pango_layout_set_text (pango_layout, str, (len==0? -1 : len));
+
+    PangoRectangle logical;
+    pango_layout_get_pixel_extents (pango_layout, NULL, &logical);
+    if (bg_color != NULL) {
+        cairo_set_source_rgba (cr, bg_color->r, bg_color->g, bg_color->b,
+                               bg_color->a);
+        cairo_rectangle (cr, pos.x, pos.y, logical.width, logical.height);
+        cairo_fill (cr);
+    }
+
+    if (out_pos != NULL ) {
+        out_pos->x = pos.x + logical.width;
+    }
+
+    cairo_set_source_rgba (cr, color->r, color->g, color->b, color->a);
+    cairo_move_to (cr, pos.x, pos.y);
+    pango_cairo_show_layout (cr, pango_layout);
 }
 
 void layout_size_from_css_content_size (struct css_box_t *css_box,
@@ -314,6 +356,7 @@ void css_box_draw (app_graphics_t *gr, struct css_box_t *box, layout_box_t *layo
     cairo_stroke (cr);
 
     if (layout->str.s != NULL) {
+
         PangoLayout *pango_layout = gr->text_layout;
         double text_pos_x = box->border_width, text_pos_y = box->border_width;
         sized_string_compute (&layout->str, box, pango_layout, layout->str.s);
@@ -339,11 +382,19 @@ void css_box_draw (app_graphics_t *gr, struct css_box_t *box, layout_box_t *layo
 
         update_font_description (box, pango_layout);
 
-        cairo_move_to (cr, text_pos_x, text_pos_y);
-        cairo_set_source_rgba (cr, box->color.r, box->color.g, box->color.b,
-                               box->color.a);
-        pango_layout_set_text (pango_layout, layout->str.s, -1);
-        pango_cairo_show_layout (cr, pango_layout);
+        struct selection_t *selection = &global_gui_st->selection;
+        vect2_t pos = VECT2(text_pos_x, text_pos_y);
+        if (selection->dest == layout) {
+            render_text (cr, pos, pango_layout, layout->str.s, selection->start - layout->str.s,
+                         &box->color, NULL, &pos);
+            render_text (cr, pos, pango_layout, selection->start, selection->len,
+                         &selection->color, &selection->background_color, &pos);
+            render_text (cr, pos, pango_layout, selection->start+selection->len, 0,
+                         &box->color, NULL, NULL);
+        } else {
+            render_text (cr, pos, pango_layout, layout->str.s, 0, &box->color, NULL, NULL);
+        }
+
 #if 0
         cairo_set_source_rgba (cr, 1.0, 0.0, 0.0, 0.3);
         cairo_rectangle (cr, box->border_width, box->border_width, content_width, content_height);
