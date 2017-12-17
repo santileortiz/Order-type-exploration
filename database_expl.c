@@ -52,10 +52,10 @@ bool update_and_render (struct app_state_t *st, app_graphics_t *graphics, app_in
         st->end_execution = false;
         st->is_initialized = true;
 
-        st->time_since_last_click[0] = -1;
-        st->time_since_last_click[1] = -1;
-        st->time_since_last_click[2] = -1;
-        st->double_click_time = 100;
+        st->time_since_last_click[0] = st->double_click_time;
+        st->time_since_last_click[1] = st->double_click_time;
+        st->time_since_last_click[2] = st->double_click_time;
+        st->double_click_time = 200;
         st->min_distance_for_drag = 10;
 
         init_button (&st->css_styles[CSS_BUTTON]);
@@ -82,57 +82,46 @@ bool update_and_render (struct app_state_t *st, app_graphics_t *graphics, app_in
         input.force_redraw = 1;
     }
 
-    st->temporary_memory.used = 0;
+    mem_pool_destroy (&st->temporary_memory);
 
-    // TODO: This is a very rudimentary implementation for detection of Click,
-    // Double Click, and Dragging. See if it can be implemented cleanly with a
-    // state machine.
-    app_input_t prev_input = st->input;
-    if (input.mouse_down[0]) {
-        if (!prev_input.mouse_down[0]) {
-            st->click_coord[0] = input.ptr;
-            if (st->time_since_last_click[0] > 0 && st->time_since_last_click[0] < st->double_click_time) {
-                // DOUBLE CLICK
-                st->mouse_double_clicked[0] = true;
+    // FSM that detects clicks and double clicks
+    assert (input.time_elapsed_ms > 0);
+    st->time_since_last_click[0] += input.time_elapsed_ms;
 
-                // We want to ignore this button press as an actual click, we
-                // use -10 to signal this.
-                st->time_since_last_click[0] = -10;
-            }
-        } else {
-            // button is being held
-            if (st->dragging[0] || vect2_distance (&input.ptr, &st->click_coord[0]) > st->min_distance_for_drag) {
-                // DRAGGING
-                st->dragging[0] = 1;
-                st->time_since_last_click[0] = -10;
-            }
-        }
-    } else {
-        if (prev_input.mouse_down[0]) {
-            // CLICK
-            st->mouse_clicked[0] = true;
-
+    static int state = 0;
+    switch (state) {
+        case 0:
+            st->mouse_clicked[0] = false;
             st->mouse_double_clicked[0] = false;
-            if (st->time_since_last_click[0] != -10) {
-
-                // button was released, start counter to see if
-                // it's a double click
+            if (input.mouse_down[0]) {
+                st->click_coord[0] = input.ptr;
+                state = 1;
+            }
+            break;
+        case 1:
+            if (!input.mouse_down[0]) {
+                if (st->time_since_last_click[0] < st->double_click_time) {
+                    st->mouse_double_clicked[0] = true;
+                }
+                st->mouse_clicked[0] = true;
                 st->time_since_last_click[0] = 0;
-            } else {
-                st->time_since_last_click[0] = -1;
+                state = 0;
             }
-        } else if (st->time_since_last_click[0] >= 0) {
-            st->mouse_clicked[0] = false;
-            st->time_since_last_click[0] += input.time_elapsed_ms;
-            if (st->time_since_last_click[0] > st->double_click_time) {
-                st->time_since_last_click[0] = -1;
-            }
-        } else {
-            st->mouse_clicked[0] = false;
-        }
-        st->dragging[0] = 0;
+            break;
+        default:
+            invalid_code_path;
     }
 
+    // Detect dragging with minimum distance threshold
+    if (input.mouse_down[0]) {
+        if (vect2_distance (&input.ptr, &st->click_coord[0]) > st->min_distance_for_drag) {
+            st->dragging[0] = true;
+        }
+    } else {
+        st->dragging[0] = false;
+    }
+
+    app_input_t prev_input = st->input;
     st->ptr_delta.x = input.ptr.x - prev_input.ptr.x;
     st->ptr_delta.y = input.ptr.y - prev_input.ptr.y;
 

@@ -721,9 +721,6 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
                                          lay_box->box.min.x, lay_box->box.min.y,
                                          BOX_WIDTH(lay_box->box), BOX_HEIGHT(lay_box->box));
                     if (st->mouse_double_clicked[0] && is_ptr_over) {
-                        // FIXME: seems st->mouse_double_clicked has a bug,
-                        // because this is called more than once!!!!
-                        printf ("beh idx: %d\n", i);
                         st->gui_st.selection.dest = lay_box;
                         st->gui_st.selection.start = lay_box->str.s;
                         st->gui_st.selection.len = strlen(lay_box->str.s);
