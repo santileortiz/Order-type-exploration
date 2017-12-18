@@ -52,83 +52,21 @@ bool update_and_render (struct app_state_t *st, app_graphics_t *graphics, app_in
         st->end_execution = false;
         st->is_initialized = true;
 
-        st->time_since_last_click[0] = st->double_click_time;
-        st->time_since_last_click[1] = st->double_click_time;
-        st->time_since_last_click[2] = st->double_click_time;
-        st->double_click_time = 200;
-        st->min_distance_for_drag = 10;
-
-        init_button (&st->css_styles[CSS_BUTTON]);
-        init_button_active (&st->css_styles[CSS_BUTTON_ACTIVE]);
-        st->css_styles[CSS_BUTTON].selector_active = &st->css_styles[CSS_BUTTON_ACTIVE];
-
-        init_suggested_action_button (&st->css_styles[CSS_BUTTON_SA]);
-        init_suggested_action_button_active (&st->css_styles[CSS_BUTTON_SA_ACTIVE]);
-        st->css_styles[CSS_BUTTON_SA].selector_active = &st->css_styles[CSS_BUTTON_SA_ACTIVE];
-
-        init_background (&st->css_styles[CSS_BACKGROUND]);
-        init_text_entry (&st->css_styles[CSS_TEXT_ENTRY]);
-        init_text_entry_focused (&st->css_styles[CSS_TEXT_ENTRY_FOCUS]);
-        init_label (&st->css_styles[CSS_LABEL]);
-        init_title_label (&st->css_styles[CSS_TITLE_LABEL]);
+        default_gui_init (&st->gui_st);
         st->focused_layout_box = -1;
-
-        st->gui_st.selection.color = selected_fg_color;
-        st->gui_st.selection.background_color = selected_bg_color;
         global_gui_st = &st->gui_st;
 
         st->app_mode = APP_POINT_SET_MODE;
-
-        input.force_redraw = 1;
     }
 
     mem_pool_destroy (&st->temporary_memory);
 
-    // FSM that detects clicks and double clicks
-    assert (input.time_elapsed_ms > 0);
-    st->time_since_last_click[0] += input.time_elapsed_ms;
+    update_input (&st->gui_st, input);
 
-    static int state = 0;
-    switch (state) {
-        case 0:
-            st->mouse_clicked[0] = false;
-            st->mouse_double_clicked[0] = false;
-            if (input.mouse_down[0]) {
-                st->click_coord[0] = input.ptr;
-                state = 1;
-            }
-            break;
-        case 1:
-            if (!input.mouse_down[0]) {
-                if (st->time_since_last_click[0] < st->double_click_time) {
-                    st->mouse_double_clicked[0] = true;
-                }
-                st->mouse_clicked[0] = true;
-                st->time_since_last_click[0] = 0;
-                state = 0;
-            }
-            break;
-        default:
-            invalid_code_path;
-    }
-
-    // Detect dragging with minimum distance threshold
-    if (input.mouse_down[0]) {
-        if (vect2_distance (&input.ptr, &st->click_coord[0]) > st->min_distance_for_drag) {
-            st->dragging[0] = true;
-        }
-    } else {
-        st->dragging[0] = false;
-    }
-
-    app_input_t prev_input = st->input;
-    st->ptr_delta.x = input.ptr.x - prev_input.ptr.x;
-    st->ptr_delta.y = input.ptr.y - prev_input.ptr.y;
-
-    switch (input.keycode) {
+    switch (st->gui_st.input.keycode) {
         case 58: //KEY_M
             st->app_mode = (st->app_mode + 1)%NUM_APP_MODES;
-            input.force_redraw = true;
+            st->gui_st.input.force_redraw = true;
             break;
         case 24: //KEY_Q
             st->end_execution = 1;
@@ -141,7 +79,6 @@ bool update_and_render (struct app_state_t *st, app_graphics_t *graphics, app_in
             break;
     }
 
-    st->input = input;
     bool blit_needed = false;
     switch (st->app_mode) {
         case APP_POINT_SET_MODE:

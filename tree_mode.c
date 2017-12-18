@@ -445,13 +445,14 @@ bool tree_mode (struct app_state_t *st, app_graphics_t *gr)
         mem_pool_destroy (&layout_tree);
     }
 
-    if (st->dragging[0]) {
-        tree_mode->root_pos.x += st->ptr_delta.x;
-        tree_mode->root_pos.y += st->ptr_delta.y;
-        st->input.force_redraw = true;
+    struct gui_state_t *gui_st = &st->gui_st;
+    if (gui_st->dragging[0]) {
+        tree_mode->root_pos.x += gui_st->ptr_delta.x;
+        tree_mode->root_pos.y += gui_st->ptr_delta.y;
+        gui_st->input.force_redraw = true;
     }
 
-    if (st->input.force_redraw) {
+    if (gui_st->input.force_redraw) {
         cairo_set_source_rgb (cr, 1,1,1);
         cairo_paint (cr);
         cairo_set_source_rgb (cr,0,0,0);

@@ -7,72 +7,12 @@
 #define RGBA VECT4
 #define RGB(r,g,b) VECT4(r,g,b,1)
 
-void cairo_clear (cairo_t *cr)
-{
-    cairo_save (cr);
-    cairo_set_operator (cr, CAIRO_OPERATOR_CLEAR);
-    cairo_paint (cr);
-    cairo_restore (cr);
-}
-
-int _g_gui_num_colors = 0;
-vect4_t _g_gui_colors[50];
-
 typedef struct {
     double scale_x;
     double scale_y;
     double dx;
     double dy;
 } transf_t;
-
-void apply_transform (transf_t *tr, vect2_t *p)
-{
-    p->x = tr->scale_x*p->x + tr->dx;
-    p->y = tr->scale_y*p->y + tr->dy;
-}
-
-void apply_transform_distance (transf_t *tr, vect2_t *p)
-{
-    p->x = tr->scale_x*p->x;
-    p->y = tr->scale_y*p->y;
-}
-
-void apply_inverse_transform (transf_t *tr, vect2_t *p)
-{
-    p->x = (p->x - tr->dx)/tr->scale_x;
-    p->y = (p->y - tr->dy)/tr->scale_y;
-}
-
-void apply_inverse_transform_distance (transf_t *tr, vect2_t *p)
-{
-    p->x = p->x/tr->scale_x;
-    p->y = p->y/tr->scale_y;
-}
-
-// Calculates a ratio by which multiply box a so that it fits inside box b
-double best_fit_ratio (double a_width, double a_height,
-                       double b_width, double b_height)
-{
-    if (a_width/a_height < b_width/b_height) {
-        return b_height/a_height;
-    } else {
-        return b_width/a_width;
-    }
-}
-
-void compute_best_fit_box_to_box_transform (transf_t *tr, box_t *src, box_t *dest)
-{
-    double src_width = BOX_WIDTH(*src);
-    double src_height = BOX_HEIGHT(*src);
-    double dest_width = BOX_WIDTH(*dest);
-    double dest_height = BOX_HEIGHT(*dest);
-
-    tr->scale_x = best_fit_ratio (src_width, src_height,
-                                dest_width, dest_height);
-    tr->scale_y = tr->scale_x;
-    tr->dx = dest->min.x + (dest_width-src_width*tr->scale_x)/2;
-    tr->dy = dest->min.y + (dest_height-src_height*tr->scale_y)/2;
-}
 
 // TODO: Maybe in the future we want this to be defined for each different
 // plattform we support. Maybe move _width_ and _height_ to app_input_t. Also
@@ -85,47 +25,20 @@ typedef struct {
     uint16_t height;
 } app_graphics_t;
 
-void pixel_align_as_line (vect2_t *p, int line_width)
-{
-    p->x = floor (p->x)+(double)(line_width%2)/2;
-    p->y = floor (p->y)+(double)(line_width%2)/2;
-}
+// TODO: Do per platform too.
+typedef struct {
+    float time_elapsed_ms;
 
-void vect_floor (vect2_t *p)
-{
-    p->x = floor (p->x);
-    p->y = floor (p->y);
-}
+    bool force_redraw;
 
-void rounded_box_path (cairo_t *cr, double x, double y, double width, double height, double radius)
-{
-    cairo_move_to (cr, x, y+radius);
-    cairo_arc (cr, x+radius, y+radius, radius, M_PI, 3*M_PI/2);
-    cairo_arc (cr, x+width - radius, y+radius, radius, 3*M_PI/2, 0);
-    cairo_arc (cr, x+width - radius, y+height - radius, radius, 0, M_PI/2);
-    cairo_arc (cr, x+radius, y+height - radius, radius, M_PI/2, M_PI);
-    cairo_close_path (cr);
-}
+    xcb_keycode_t keycode;
+    uint16_t modifiers;
 
-bool is_point_in_box (double p_x, double p_y, double x, double y, double width, double height)
-{
-    if (p_x < x || p_x > x+width) {
-        return false;
-    } else if (p_y < y || p_y > y+height) {
-        return false;
-    } else {
-        return true;
-    }
-}
+    float wheel;
+    char mouse_down[3];
 
-bool is_box_visible (box_t *box, app_graphics_t *gr)
-{
-    return
-        is_point_in_box (box->min.x, box->min.y, 0, 0, gr->width, gr->height) ||
-        is_point_in_box (box->max.x, box->max.y, 0, 0, gr->width, gr->height) ||
-        is_point_in_box (box->min.x, box->max.y, 0, 0, gr->width, gr->height) ||
-        is_point_in_box (box->max.x, box->min.y, 0, 0, gr->width, gr->height);
-}
+    vect2_t ptr;
+} app_input_t;
 
 typedef struct {
     char *s;
@@ -140,12 +53,7 @@ typedef struct {
 } sized_string_t;
 
 typedef enum {
-    INACTIVE,
-    PRESSED,
-    RELEASED
-} hit_status_t;
-
-typedef enum {
+    CSS_NONE,
     CSS_BUTTON,
     CSS_BUTTON_ACTIVE,
     CSS_BUTTON_SA,
@@ -210,7 +118,8 @@ struct css_box_t {
 };
 
 typedef enum {
-    CSS_SEL_ACTIVE  = 1<<0
+    CSS_SEL_ACTIVE  = 1<<0,
+    CSS_SEL_HOVER   = 2<<0
 } css_selector_t;
 
 typedef struct layout_box_t layout_box_t;
@@ -218,10 +127,10 @@ typedef struct layout_box_t layout_box_t;
 typedef DRAW_CALLBACK(draw_callback_t);
 struct layout_box_t {
     box_t box;
-    css_selector_t selectors;
-    bool status_changed;
-    hit_status_t status;
+    css_selector_t active_selectors;
+    int state; // Used as a FSM state
     css_text_align_t text_align_override;
+    css_style_t base_style_id;
     struct css_box_t *style;
     draw_callback_t *draw;
     sized_string_t str;
@@ -248,9 +157,264 @@ struct behavior_t {
 
 struct gui_state_t {
     mem_pool_t pool;
+
+    app_input_t input;
+
+    char dragging[3];
+    vect2_t ptr_delta;
+    vect2_t click_coord[3];
+    bool mouse_clicked[3];
+    bool mouse_double_clicked[3];
+    float time_since_last_click[3];
+    float double_click_time;
+    float min_distance_for_drag;
+
     struct selection_t selection;
     struct behavior_t *behaviors;
+
+    struct css_box_t css_styles[CSS_NUM_STYLES];
 };
+
+// Forward declaration of CSS "stylesheet"
+
+vect4_t selected_bg_color = RGB(0.239216, 0.607843, 0.854902);
+vect4_t selected_fg_color = RGB(1,1,1);
+
+void init_button (struct css_box_t *box);
+void init_button_active (struct css_box_t *box);
+void init_suggested_action_button (struct css_box_t *box);
+void init_suggested_action_button_active (struct css_box_t *box);
+void init_background (struct css_box_t *box);
+void init_text_entry (struct css_box_t *box);
+void init_text_entry_focused (struct css_box_t *box);
+void init_label (struct css_box_t *box);
+void init_title_label (struct css_box_t *box);
+
+void default_gui_init (struct gui_state_t *gui_st)
+{
+
+    gui_st->double_click_time = 200;
+    gui_st->min_distance_for_drag = 10;
+    gui_st->time_since_last_click[0] = gui_st->double_click_time;
+    gui_st->time_since_last_click[1] = gui_st->double_click_time;
+    gui_st->time_since_last_click[2] = gui_st->double_click_time;
+
+    init_button (&gui_st->css_styles[CSS_BUTTON]);
+    init_button_active (&gui_st->css_styles[CSS_BUTTON_ACTIVE]);
+    gui_st->css_styles[CSS_BUTTON].selector_active = &gui_st->css_styles[CSS_BUTTON_ACTIVE];
+
+    init_suggested_action_button (&gui_st->css_styles[CSS_BUTTON_SA]);
+    init_suggested_action_button_active (&gui_st->css_styles[CSS_BUTTON_SA_ACTIVE]);
+    gui_st->css_styles[CSS_BUTTON_SA].selector_active = &gui_st->css_styles[CSS_BUTTON_SA_ACTIVE];
+
+    init_background (&gui_st->css_styles[CSS_BACKGROUND]);
+    init_text_entry (&gui_st->css_styles[CSS_TEXT_ENTRY]);
+    init_text_entry_focused (&gui_st->css_styles[CSS_TEXT_ENTRY_FOCUS]);
+    init_label (&gui_st->css_styles[CSS_LABEL]);
+    init_title_label (&gui_st->css_styles[CSS_TITLE_LABEL]);
+
+    gui_st->selection.color = selected_fg_color;
+    gui_st->selection.background_color = selected_bg_color;
+}
+
+void cairo_clear (cairo_t *cr)
+{
+    cairo_save (cr);
+    cairo_set_operator (cr, CAIRO_OPERATOR_CLEAR);
+    cairo_paint (cr);
+    cairo_restore (cr);
+}
+
+int _g_gui_num_colors = 0;
+vect4_t _g_gui_colors[50];
+
+void apply_transform (transf_t *tr, vect2_t *p)
+{
+    p->x = tr->scale_x*p->x + tr->dx;
+    p->y = tr->scale_y*p->y + tr->dy;
+}
+
+void apply_transform_distance (transf_t *tr, vect2_t *p)
+{
+    p->x = tr->scale_x*p->x;
+    p->y = tr->scale_y*p->y;
+}
+
+void apply_inverse_transform (transf_t *tr, vect2_t *p)
+{
+    p->x = (p->x - tr->dx)/tr->scale_x;
+    p->y = (p->y - tr->dy)/tr->scale_y;
+}
+
+void apply_inverse_transform_distance (transf_t *tr, vect2_t *p)
+{
+    p->x = p->x/tr->scale_x;
+    p->y = p->y/tr->scale_y;
+}
+
+// Calculates a ratio by which multiply box a so that it fits inside box b
+double best_fit_ratio (double a_width, double a_height,
+                       double b_width, double b_height)
+{
+    if (a_width/a_height < b_width/b_height) {
+        return b_height/a_height;
+    } else {
+        return b_width/a_width;
+    }
+}
+
+void compute_best_fit_box_to_box_transform (transf_t *tr, box_t *src, box_t *dest)
+{
+    double src_width = BOX_WIDTH(*src);
+    double src_height = BOX_HEIGHT(*src);
+    double dest_width = BOX_WIDTH(*dest);
+    double dest_height = BOX_HEIGHT(*dest);
+
+    tr->scale_x = best_fit_ratio (src_width, src_height,
+                                dest_width, dest_height);
+    tr->scale_y = tr->scale_x;
+    tr->dx = dest->min.x + (dest_width-src_width*tr->scale_x)/2;
+    tr->dy = dest->min.y + (dest_height-src_height*tr->scale_y)/2;
+}
+
+void pixel_align_as_line (vect2_t *p, int line_width)
+{
+    p->x = floor (p->x)+(double)(line_width%2)/2;
+    p->y = floor (p->y)+(double)(line_width%2)/2;
+}
+
+void vect_floor (vect2_t *p)
+{
+    p->x = floor (p->x);
+    p->y = floor (p->y);
+}
+
+void rounded_box_path (cairo_t *cr, double x, double y, double width, double height, double radius)
+{
+    cairo_move_to (cr, x, y+radius);
+    cairo_arc (cr, x+radius, y+radius, radius, M_PI, 3*M_PI/2);
+    cairo_arc (cr, x+width - radius, y+radius, radius, 3*M_PI/2, 0);
+    cairo_arc (cr, x+width - radius, y+height - radius, radius, 0, M_PI/2);
+    cairo_arc (cr, x+radius, y+height - radius, radius, M_PI/2, M_PI);
+    cairo_close_path (cr);
+}
+
+bool is_point_in_box (double p_x, double p_y, double x, double y, double width, double height)
+{
+    if (p_x < x || p_x > x+width) {
+        return false;
+    } else if (p_y < y || p_y > y+height) {
+        return false;
+    } else {
+        return true;
+    }
+}
+
+bool is_box_visible (box_t *box, app_graphics_t *gr)
+{
+    return
+        is_point_in_box (box->min.x, box->min.y, 0, 0, gr->width, gr->height) ||
+        is_point_in_box (box->max.x, box->max.y, 0, 0, gr->width, gr->height) ||
+        is_point_in_box (box->min.x, box->max.y, 0, 0, gr->width, gr->height) ||
+        is_point_in_box (box->max.x, box->min.y, 0, 0, gr->width, gr->height);
+}
+
+void update_input (struct gui_state_t *gui_st, app_input_t input)
+{
+    // FSM that detects clicks and double clicks
+    assert (input.time_elapsed_ms > 0);
+    gui_st->time_since_last_click[0] += input.time_elapsed_ms;
+
+    static int state = 0;
+    switch (state) {
+        case 0:
+            gui_st->mouse_clicked[0] = false;
+            gui_st->mouse_double_clicked[0] = false;
+            if (input.mouse_down[0]) {
+                gui_st->click_coord[0] = input.ptr;
+                state = 1;
+            }
+            break;
+        case 1:
+            if (!input.mouse_down[0]) {
+                if (gui_st->time_since_last_click[0] < gui_st->double_click_time) {
+                    gui_st->mouse_double_clicked[0] = true;
+                }
+                gui_st->mouse_clicked[0] = true;
+                gui_st->time_since_last_click[0] = 0;
+                state = 0;
+            }
+            break;
+        default:
+            invalid_code_path;
+    }
+
+    // Detect dragging with minimum distance threshold
+    if (input.mouse_down[0]) {
+        if (vect2_distance (&input.ptr, &gui_st->click_coord[0]) > gui_st->min_distance_for_drag) {
+            gui_st->dragging[0] = true;
+        }
+    } else {
+        gui_st->dragging[0] = false;
+    }
+
+    app_input_t prev_input = gui_st->input;
+    gui_st->ptr_delta.x = input.ptr.x - prev_input.ptr.x;
+    gui_st->ptr_delta.y = input.ptr.y - prev_input.ptr.y;
+    gui_st->input = input;
+}
+
+void update_active_selectors (struct gui_state_t *gui_st, layout_box_t *lay_box, css_selector_t *changed_selectors)
+{
+    bool is_ptr_over = is_point_in_box (gui_st->click_coord[0].x, gui_st->click_coord[0].y,
+                                        lay_box->box.min.x, lay_box->box.min.y,
+                                        BOX_WIDTH(lay_box->box), BOX_HEIGHT(lay_box->box));
+
+    css_selector_t old = lay_box->active_selectors;
+    if (gui_st->input.mouse_down[0] && is_ptr_over) {
+        lay_box->active_selectors |= CSS_SEL_ACTIVE;
+    } else {
+        lay_box->active_selectors &= ~CSS_SEL_ACTIVE;
+    }
+
+    if (is_ptr_over) {
+        lay_box->active_selectors |= CSS_SEL_HOVER;
+    } else {
+        lay_box->active_selectors &= ~CSS_SEL_HOVER;
+    }
+
+    *changed_selectors = (old ^ lay_box->active_selectors);
+}
+
+#define update_layout_box_style(gui_st,box,style_id) {box->style=&(gui_st->css_styles[style_id]);}
+void init_layout_box_style (struct gui_state_t *gui_st, layout_box_t *box, css_style_t style_id)
+{
+    box->base_style_id = style_id;
+    update_layout_box_style (gui_st, box, style_id);
+}
+
+void update_layout_boxes (struct gui_state_t *gui_st, layout_box_t *layout_boxes,
+                          int num_layout_boxes, bool *changed)
+{
+    *changed = false;
+    int i;
+    for (i=0; i<num_layout_boxes; i++) {
+        layout_box_t *curr_box = layout_boxes + i;
+
+        css_selector_t selectors_changed = 0;
+        update_active_selectors (gui_st, curr_box, &selectors_changed);
+        if (selectors_changed & CSS_SEL_ACTIVE) {
+            struct css_box_t *active_style =
+                gui_st->css_styles[curr_box->base_style_id].selector_active;
+            if (curr_box->active_selectors & CSS_SEL_ACTIVE && active_style != NULL) { 
+                curr_box->style = active_style;
+            } else {
+                curr_box->style = &gui_st->css_styles[curr_box->base_style_id];
+            }
+            *changed = true;
+        }
+    }
+}
 
 void add_behavior (struct gui_state_t *gui_st, layout_box_t *box, enum behavior_type_t type)
 {
@@ -680,9 +844,6 @@ void get_next_color (vect3_t *color)
         hsv_to_rgb (&VECT3(h, 0.8, 0.7), color);
     }
 }
-
-vect4_t selected_bg_color = RGB(0.239216, 0.607843, 0.854902);
-vect4_t selected_fg_color = RGB(1,1,1);
 
 void init_button (struct css_box_t *box)
 {

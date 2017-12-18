@@ -61,11 +61,13 @@ bool grid_mode (struct app_state_t *st, app_graphics_t *gr)
         bipartite_points (grid_mode->n, grid_mode->points, &grid_mode->points_bb, 0);
     }
 
-    app_input_t input = st->input;
+    app_input_t input = st->gui_st.input;
     cairo_t *cr = gr->cr;
-    if (st->dragging[0]) {
-        grid_mode->canvas_x += st->ptr_delta.x;
-        grid_mode->canvas_y += st->ptr_delta.y;
+
+    struct gui_state_t *gui_st = &st->gui_st;
+    if (gui_st->dragging[0]) {
+        grid_mode->canvas_x += gui_st->ptr_delta.x;
+        grid_mode->canvas_y += gui_st->ptr_delta.y;
         input.force_redraw = true;
     }
 
