@@ -277,14 +277,14 @@ bool update_button_state (struct app_state_t *st, layout_box_t *lay_box, bool *u
             if (lay_box->active_selectors & CSS_SEL_ACTIVE) {
                 lay_box->state = 1;
                 retval = true;
-                *update_panel = true;
+                if (update_panel != NULL) {*update_panel = true;}
             }
             break;
         case 1:
             retval = false;
             if (!(lay_box->active_selectors & CSS_SEL_ACTIVE)) {
                 lay_box->state = 0;
-                *update_panel = true;
+                if (update_panel != NULL) {*update_panel = true;}
             }
     }
     return retval;
@@ -292,7 +292,7 @@ bool update_button_state (struct app_state_t *st, layout_box_t *lay_box, bool *u
 
 bool button (char *label, app_graphics_t *gr,
              double x, double y, double *width, double *height,
-             struct app_state_t *st, bool *update_panel, bool is_focused)
+             struct app_state_t *st, layout_box_t **button)
 {
     layout_box_t *curr_box = next_layout_box_css (st, CSS_BUTTON);
 
@@ -322,7 +322,9 @@ bool button (char *label, app_graphics_t *gr,
     curr_box->box.min.y = y;
     curr_box->box.max.y = y + *height;
 
-    return update_button_state (st, curr_box, update_panel);
+    *button = curr_box;
+
+    return update_button_state (st, curr_box, NULL);
 }
 
 typedef struct {
@@ -383,7 +385,7 @@ void init_labeled_layout (labeled_entries_layout_t *layout_state, app_graphics_t
 
 void labeled_text_entry (char *entry_content,
                                labeled_entries_layout_t *layout_state,
-                               struct app_state_t *st, bool is_focused)
+                               struct app_state_t *st)
 {
     vect2_t label_pos = VECT2(layout_state->label_align, layout_state->y_pos);
     vect2_t entry_pos = VECT2(layout_state->entry_align, layout_state->y_pos);
@@ -405,8 +407,7 @@ void labeled_text_entry (char *entry_content,
 
 bool labeled_button (char *button_text,
                                labeled_entries_layout_t *layout_state,
-                               struct app_state_t *st, app_graphics_t *gr,
-                               bool *update_panel, bool is_focused)
+                               struct app_state_t *st, app_graphics_t *gr)
 {
     vect2_t label_pos = VECT2(layout_state->label_align, layout_state->y_pos);
     vect2_t button_pos = VECT2(layout_state->entry_align, layout_state->y_pos);
@@ -415,15 +416,15 @@ bool labeled_button (char *button_text,
     *label_layout_box = layout_state->label_layouts[layout_state->current_label_layout];
     layout_state->current_label_layout++;
 
-    struct gui_state_t *gui_st = &st->gui_st;
     label_layout_box->text_align_override = CSS_TEXT_ALIGN_RIGHT;
 
     BOX_POS_SIZE (label_layout_box->box, label_pos, layout_state->label_size);
     layout_state->y_pos += layout_state->row_height + layout_state->y_step;
+    layout_box_t *btn;
     bool retval =  button (button_text, gr, button_pos.x, button_pos.y,
                            &layout_state->entry_size.x, &layout_state->entry_size.y,
-                           st, update_panel, is_focused);
-    st->layout_boxes[st->num_layout_boxes-1].style = &gui_st->css_styles[CSS_BUTTON_SA];
+                           st, &btn);
+    init_layout_box_style (&st->gui_st, btn, CSS_BUTTON_SA);
     return retval;
 }
 
@@ -671,15 +672,16 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
         char *entry_labels[] = {"n:",
                                 "Order Type:",
                                 "k:",
-                                "ID:"};
+                                "ID:",
+                                "Test:"};
         labeled_entries_layout_t lay;
         init_labeled_layout (&lay, graphics, x_step, y_step,
                              bg_pos.x+x_margin, bg_pos.y+y_margin, bg_min_size.x,
                              entry_labels, ARRAY_SIZE(entry_labels), st);
 
         title ("Point Set", &lay, st, graphics);
-        labeled_text_entry (ps_mode->n.str, &lay, st, ps_mode->foc_st==foc_n);
-        labeled_text_entry (ps_mode->ot_id.str, &lay, st, ps_mode->foc_st==foc_ot);
+        labeled_text_entry (ps_mode->n.str, &lay, st);
+        labeled_text_entry (ps_mode->ot_id.str, &lay, st);
         {
             layout_box_t *sep = next_layout_box (st);
             BOX_X_Y_W_H(sep->box, lay.x_pos, lay.y_pos, bg_min_size.x-2*x_margin, 2);
@@ -687,8 +689,14 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
             lay.y_pos += lay.y_step;
         }
         title ("Triangle Set", &lay, st, graphics);
-        labeled_text_entry (ps_mode->k.str, &lay, st, ps_mode->foc_st==foc_k);
-        labeled_text_entry (ps_mode->ts_id.str, &lay, st, ps_mode->foc_st==foc_ts);
+        labeled_text_entry (ps_mode->k.str, &lay, st);
+        labeled_text_entry (ps_mode->ts_id.str, &lay, st);
+
+        // NOTE: This is here only so that button code does not bit rot.
+        // TODO: As soon as we have any other button in the GUI remove this one.
+#if 1
+        labeled_button ("Test button", &lay, st, graphics);
+#endif
 
         panel->box.max.x = st->layout_boxes[0].box.min.x + bg_min_size.x;
         panel->box.max.y = lay.y_pos;
