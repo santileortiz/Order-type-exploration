@@ -204,58 +204,6 @@ void set_n (struct point_set_mode_t *st, int n, app_graphics_t *graphics)
     focus_order_type (graphics, st);
 }
 
-// This code shows how to make a panel with 3 example buttons:
-//
-//    bool update_panel = false;
-//    st->num_layout_boxes = 0;
-//    vect2_t bg_pos = VECT2(10, 10);
-//    st->layout_boxes[st->num_layout_boxes].box.min = bg_pos;
-//    st->layout_boxes[st->num_layout_boxes].style = &st->css_styles[CSS_BACKGROUND];
-//    st->num_layout_boxes++;
-//    double x_margin = 10;
-//    double y_margin = 10;
-//
-//    double y_pos = bg_pos.y + y_margin;
-//    double width = 0, height = 0, max_width = 0;
-//
-//
-//    char *btns[] = {"Prueba",
-//                    "c",
-//                    "Prueba1 larga"};
-//    {
-//        int i;
-//        for (i=0; i<ARRAY_SIZE(btns); i++) {
-//            css_box_t css_style = &st->css_styles[CSS_BUTTON];
-//            css_box_compute_content_width_and_position (graphics->cr, css_style, btns[i]);
-//            width = MAX (max_width, css_style->width);
-//        }
-//    }
-//
-//    if (button (btns[0], graphics->cr, bg_pos.x+x_margin, y_pos, st, &width, &height, &update_panel)) {
-//        //Hacer algo.
-//        printf ("Saving point set.\n");
-//    }
-//
-//    y_pos += height+y_margin;
-//    max_width = MAX (max_width, width);
-//    if (button (btns[1], graphics->cr, bg_pos.x+x_margin, y_pos, st, &width, &height, &update_panel)) {
-//        //Hacer algo.
-//        printf ("Bla bla bla.\n");
-//    }
-//
-//    y_pos += height+y_margin;
-//    max_width = MAX (max_width, width);
-//    if (button (btns[2], graphics->cr, bg_pos.x+x_margin, y_pos, st, &width, &height, &update_panel)) {
-//        //Hacer algo.
-//        printf ("Do other thing.\n");
-//    }
-//
-//    y_pos += height+y_margin;
-//    max_width = MAX (max_width, width);
-//    st->layout_boxes[0].box.max.x = st->layout_boxes[0].box.min.x+max_width+2*x_margin;
-//    st->layout_boxes[0].box.max.y = y_pos;
-//
-
 #define next_layout_box(st) next_layout_box_css(st,CSS_NONE)
 layout_box_t* next_layout_box_css (struct app_state_t *st, css_style_t style_id)
 {
@@ -271,28 +219,16 @@ layout_box_t* next_layout_box_css (struct app_state_t *st, css_style_t style_id)
 
 bool update_button_state (struct app_state_t *st, layout_box_t *lay_box, bool *update_panel)
 {
-    bool retval;
-    switch (lay_box->state) {
-        case 0:
-            if (lay_box->active_selectors & CSS_SEL_ACTIVE) {
-                lay_box->state = 1;
-                retval = true;
-                if (update_panel != NULL) {*update_panel = true;}
-            }
-            break;
-        case 1:
-            retval = false;
-            if (!(lay_box->active_selectors & CSS_SEL_ACTIVE)) {
-                lay_box->state = 0;
-                if (update_panel != NULL) {*update_panel = true;}
-            }
+    bool retval = false;
+    if (st->gui_st.mouse_clicked[0] && (lay_box->active_selectors & CSS_SEL_HOVER)) {
+        retval = true;
     }
     return retval;
 }
 
-bool button (char *label, app_graphics_t *gr,
-             double x, double y, double *width, double *height,
-             struct app_state_t *st, layout_box_t **button)
+layout_box_t* button (char *label, bool *target, app_graphics_t *gr,
+                      double x, double y, double *width, double *height,
+                      struct app_state_t *st)
 {
     layout_box_t *curr_box = next_layout_box_css (st, CSS_BUTTON);
 
@@ -322,9 +258,9 @@ bool button (char *label, app_graphics_t *gr,
     curr_box->box.min.y = y;
     curr_box->box.max.y = y + *height;
 
-    *button = curr_box;
-
-    return update_button_state (st, curr_box, NULL);
+    add_behavior (&st->gui_st, curr_box, BEHAVIOR_BUTTON, target);
+    *target = update_button_state (st, curr_box, NULL);
+    return curr_box;
 }
 
 typedef struct {
@@ -398,14 +334,14 @@ void labeled_text_entry (char *entry_content,
 
     layout_box_t *text_entry_layout_box = next_layout_box_css (st, CSS_TEXT_ENTRY);
     text_entry_layout_box->str.s = entry_content;
-    add_behavior (&st->gui_st, text_entry_layout_box, BEHAVIOR_TEXT_ENTRY);
+    add_behavior (&st->gui_st, text_entry_layout_box, BEHAVIOR_TEXT_ENTRY, NULL);
 
     BOX_POS_SIZE (text_entry_layout_box->box, entry_pos, layout_state->entry_size);
     BOX_POS_SIZE (label_layout_box->box, label_pos, layout_state->label_size);
     layout_state->y_pos += layout_state->row_height + layout_state->y_step;
 }
 
-bool labeled_button (char *button_text,
+layout_box_t* labeled_button (char *button_text, bool *target,
                                labeled_entries_layout_t *layout_state,
                                struct app_state_t *st, app_graphics_t *gr)
 {
@@ -420,12 +356,11 @@ bool labeled_button (char *button_text,
 
     BOX_POS_SIZE (label_layout_box->box, label_pos, layout_state->label_size);
     layout_state->y_pos += layout_state->row_height + layout_state->y_step;
-    layout_box_t *btn;
-    bool retval =  button (button_text, gr, button_pos.x, button_pos.y,
-                           &layout_state->entry_size.x, &layout_state->entry_size.y,
-                           st, &btn);
+    layout_box_t *btn =
+        button (button_text, target, gr, button_pos.x, button_pos.y,
+                &layout_state->entry_size.x, &layout_state->entry_size.y, st);
     init_layout_box_style (&st->gui_st, btn, CSS_BUTTON_SA);
-    return retval;
+    return btn;
 }
 
 void title (char *str, labeled_entries_layout_t *layout_state, struct app_state_t *st, app_graphics_t *graphics)
@@ -659,6 +594,7 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
 
     // Build layout
     static layout_box_t *panel;
+    static bool btn_state = false;
     if (ps_mode->rebuild_panel) {
         st->num_layout_boxes = 0;
         vect2_t bg_pos = VECT2(10, 10);
@@ -695,13 +631,17 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
         // NOTE: This is here only so that button code does not bit rot.
         // TODO: As soon as we have any other button in the GUI remove this one.
 #if 1
-        labeled_button ("Test button", &lay, st, graphics);
+        labeled_button ("Test button", &btn_state, &lay, st, graphics);
 #endif
 
         panel->box.max.x = st->layout_boxes[0].box.min.x + bg_min_size.x;
         panel->box.max.y = lay.y_pos;
 
         ps_mode->redraw_panel = true;
+    }
+
+    if (btn_state) {
+        printf ("Test button clicked\n");
     }
 
     update_layout_boxes (&st->gui_st, st->layout_boxes, st->num_layout_boxes, &ps_mode->redraw_panel);
@@ -712,7 +652,7 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
     while (beh != NULL) {
         switch (beh->type) {
             case BEHAVIOR_BUTTON:
-                update_button_state (st, beh->box, &ps_mode->redraw_panel);
+                *beh->target.b = update_button_state (st, beh->box, &ps_mode->redraw_panel);
                 break;
             case BEHAVIOR_TEXT_ENTRY:
                 {

@@ -128,7 +128,6 @@ typedef DRAW_CALLBACK(draw_callback_t);
 struct layout_box_t {
     box_t box;
     css_selector_t active_selectors;
-    int state; // Used as a FSM state
     css_text_align_t text_align_override;
     css_style_t base_style_id;
     struct css_box_t *style;
@@ -151,6 +150,12 @@ enum behavior_type_t {
 
 struct behavior_t {
     enum behavior_type_t type;
+    union {
+        void *ptr;
+        bool *b;
+        int *i32;
+        float *r32;
+    } target;
     layout_box_t *box;
     struct behavior_t *next;
 };
@@ -366,7 +371,7 @@ void update_input (struct gui_state_t *gui_st, app_input_t input)
 
 void update_active_selectors (struct gui_state_t *gui_st, layout_box_t *lay_box, css_selector_t *changed_selectors)
 {
-    bool is_ptr_over = is_point_in_box (gui_st->click_coord[0].x, gui_st->click_coord[0].y,
+    bool is_ptr_over = is_point_in_box (gui_st->input.ptr.x, gui_st->input.ptr.y,
                                         lay_box->box.min.x, lay_box->box.min.y,
                                         BOX_WIDTH(lay_box->box), BOX_HEIGHT(lay_box->box));
 
@@ -416,7 +421,7 @@ void update_layout_boxes (struct gui_state_t *gui_st, layout_box_t *layout_boxes
     }
 }
 
-void add_behavior (struct gui_state_t *gui_st, layout_box_t *box, enum behavior_type_t type)
+void add_behavior (struct gui_state_t *gui_st, layout_box_t *box, enum behavior_type_t type, void *target)
 {
     printf ("Adding behavior\n");
     struct behavior_t *new_behavior =
@@ -425,6 +430,7 @@ void add_behavior (struct gui_state_t *gui_st, layout_box_t *box, enum behavior_
     new_behavior->next = gui_st->behaviors;
     gui_st->behaviors = new_behavior;
     new_behavior->type = type;
+    new_behavior->target.ptr = target;
     new_behavior->box = box;
 }
 
