@@ -38,6 +38,7 @@ struct point_set_mode_t {
     uint64_string_t k;
     uint64_t num_triangle_subsets; // = binomial(binomial(n,3),k)
     uint64_string_t ts_id;
+    layout_box_t *focus_list[num_focus_options];
 
     bool rebuild_panel; // Computes the state of all layout boxes
     bool redraw_panel;  // Renders available layout boxes to screen
@@ -52,8 +53,6 @@ struct point_set_mode_t {
     bool zoom_changed;
     double old_zoom;
     transf_t points_to_canvas;
-
-    focus_options_t foc_st;
 
     subset_it_t *triangle_it;
 
