@@ -7,6 +7,35 @@
 #define RGBA VECT4
 #define RGB(r,g,b) VECT4(r,g,b,1)
 
+#define PLATFORM_SET_CLIPBOARD_STR(name) void name(char *str, size_t len)
+typedef PLATFORM_SET_CLIPBOARD_STR(platform_set_clipboard_str_t);
+
+// When content is ready, gui_state_t->clipboard_ready == true and content is in
+// gui_state_t->clipboard_str.
+// NOTE: gui_state_t->clipboard_ready is only set to false by the platform layer
+// while waiting for the content of the clipboard. To make it only trigger once
+// it should be cleard by the application.
+//
+// Sample usage code:
+//    struct gui_state_t *gui_st = global_gui_st;
+//    if (<CTRL+V pressed>) {
+//        gui_st->platform.get_clipboard_str ();
+//    }
+//
+//    if (gui_st->clipboard_ready) {
+//        printf ("Pasted: %s\n", gui_st->clipboard_str);
+//        gui_st->clipboard_ready = false;
+//    }
+//
+
+#define PLATFORM_GET_CLIPBOARD_STR(name) void name()
+typedef PLATFORM_GET_CLIPBOARD_STR(platform_get_clipboard_str_t);
+
+struct platform_api_t {
+    platform_set_clipboard_str_t *set_clipboard_str;
+    platform_get_clipboard_str_t *get_clipboard_str;
+};
+
 typedef struct {
     double scale_x;
     double scale_y;
@@ -119,6 +148,7 @@ struct css_box_t {
 };
 
 typedef enum {
+    CSS_SEL_DEFAULT = 0,
     CSS_SEL_ACTIVE  = 1<<0,
     CSS_SEL_HOVER   = 1<<1,
     CSS_SEL_FOCUS   = 1<<2
@@ -174,6 +204,8 @@ struct gui_state_t {
 
     app_input_t input;
 
+    struct platform_api_t platform;
+
     char dragging[3];
     vect2_t ptr_delta;
     vect2_t click_coord[3];
@@ -188,6 +220,9 @@ struct gui_state_t {
 
     struct focus_element_t *focus;
     struct focus_element_t *focus_end;
+
+    bool clipboard_ready;
+    char *clipboard_str;
 
     struct css_box_t css_styles[CSS_NUM_STYLES];
 };
@@ -535,6 +570,7 @@ void focus_prev (struct gui_state_t *gui_st)
 
 void update_font_description (struct css_box_t *box, PangoLayout *pango_layout)
 {
+    assert (box != NULL);
     const PangoFontDescription *orig_font_desc = pango_layout_get_font_description (pango_layout);
     PangoFontDescription *new_font_desc = pango_font_description_copy (orig_font_desc);
     if (box->font_weight == CSS_FONT_WEIGHT_NORMAL) {
