@@ -207,13 +207,18 @@ void set_n (struct point_set_mode_t *st, int n, app_graphics_t *graphics)
 #define next_layout_box(st) next_layout_box_css(st,CSS_NONE)
 layout_box_t* next_layout_box_css (struct app_state_t *st, css_style_t style_id)
 {
-    assert (st->num_layout_boxes < ARRAY_SIZE (st->layout_boxes));
+    assert (st->num_layout_boxes+1 < ARRAY_SIZE (st->layout_boxes));
     layout_box_t *layout_box = &st->layout_boxes[st->num_layout_boxes];
+
+    // NOTE: Even though we zero initialize app_state, if we reuse the layout
+    // boxes then we should initialize them to 0.
+    *layout_box = (layout_box_t){0};
     st->num_layout_boxes++;
 
     if (style_id != CSS_NONE) {
         init_layout_box_style (&st->gui_st, layout_box, style_id);
     }
+
     return layout_box;
 }
 
@@ -287,7 +292,7 @@ void init_labeled_layout (labeled_entries_layout_t *layout_state, app_graphics_t
     int i;
 
     layout_state->label_layouts =
-        mem_pool_push_array (&st->temporary_memory, num_labels, layout_box_t);
+        mem_pool_push_size_full (&st->temporary_memory,(num_labels)*sizeof(layout_box_t),POOL_ZERO_INIT);
 
     struct css_box_t *label_style = &st->gui_st.css_styles[CSS_LABEL];
     for (i=0; i<num_labels; i++) {
@@ -647,6 +652,19 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
 
     if (btn_state) {
         printf ("Test button clicked\n");
+#if 1
+        // NOTE: Test copy.
+        char test_string[] = "Copiando texto";
+        gui_st->platform.set_clipboard_str (test_string, strlen(test_string));
+#else
+        // NOTE: Test paste.
+        gui_st->platform.get_clipboard_str ();
+    }
+
+    if (gui_st->clipboard_ready) {
+        printf ("Pasted: %s\n", gui_st->clipboard_str);
+        gui_st->clipboard_ready = false;
+#endif
     }
 
     update_layout_boxes (&st->gui_st, st->layout_boxes, st->num_layout_boxes, &ps_mode->redraw_panel);

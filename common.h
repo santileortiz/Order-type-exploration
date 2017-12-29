@@ -21,6 +21,8 @@ typedef enum {false, true} bool;
 #define MAX(a,b) ((a)>(b)?(a):(b))
 #endif
 
+#define I_CEIL_DIVIDE(a,b) ((a%b)?(a)/(b)+1:(a)/(b))
+
 #define kilobyte(val) ((val)*1024LL)
 #define megabyte(val) (kilobyte(val)*1024LL)
 #define gigabyte(val) (megabyte(val)*1024LL)
