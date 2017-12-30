@@ -549,11 +549,23 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
             ps_mode->redraw_panel = true;
             ps_mode->redraw_canvas = true;
             } break;
+        case 54: //KEY_C
+            if (XCB_KEY_BUT_MASK_CONTROL & input.modifiers) {
+                if (gui_st->selection.dest != NULL) {
+                    gui_st->platform.set_clipboard_str (gui_st->selection.start,
+                                                        gui_st->selection.len);
+                }
+            }
+            break;
         case 55: //KEY_V
-            ps_mode->view_db_ot = !ps_mode->view_db_ot;
-            set_ot (ps_mode);
-            focus_order_type (graphics, ps_mode);
-            ps_mode->redraw_canvas = true;
+            if (XCB_KEY_BUT_MASK_CONTROL & input.modifiers) {
+                printf ("CTRL+V\n");
+            } else {
+                ps_mode->view_db_ot = !ps_mode->view_db_ot;
+                set_ot (ps_mode);
+                focus_order_type (graphics, ps_mode);
+                ps_mode->redraw_canvas = true;
+            }
             break;
         case 36: //KEY_ENTER
             {
@@ -652,11 +664,6 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
 
     if (btn_state) {
         printf ("Test button clicked\n");
-#if 1
-        // NOTE: Test copy.
-        char test_string[] = "Copiando texto";
-        gui_st->platform.set_clipboard_str (test_string, strlen(test_string));
-#else
         // NOTE: Test paste.
         gui_st->platform.get_clipboard_str ();
     }
@@ -664,7 +671,6 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
     if (gui_st->clipboard_ready) {
         printf ("Pasted: %s\n", gui_st->clipboard_str);
         gui_st->clipboard_ready = false;
-#endif
     }
 
     update_layout_boxes (&st->gui_st, st->layout_boxes, st->num_layout_boxes, &ps_mode->redraw_panel);

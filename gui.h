@@ -174,6 +174,7 @@ struct focus_element_t {
     struct focus_element_t *next;
 };
 
+// NOTE: dest == NULL means there is nothing selected.
 struct selection_t {
     layout_box_t *dest;
     char *start;
