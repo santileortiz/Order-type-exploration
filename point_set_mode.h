@@ -26,11 +26,6 @@ typedef enum {
     num_focus_options
 } focus_options_t;
 
-typedef struct {
-    uint64_t i;
-    char str[20];
-} uint64_string_t;
-
 struct point_set_mode_t {
     uint64_string_t n;
     uint64_string_t ot_id;
@@ -44,7 +39,7 @@ struct point_set_mode_t {
     bool redraw_panel;  // Renders available layout boxes to screen
     bool redraw_canvas;
     bool editing_entry;
-    uint64_string_t temp_number;
+    uint64_string_t bak_number;
 
     int db;
 

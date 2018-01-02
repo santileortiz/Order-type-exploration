@@ -12,6 +12,14 @@ void int_string_update (uint64_string_t *x, uint64_t i)
     snprintf (x->str, ARRAY_SIZE(x->str), "%ld", i);
 }
 
+void int_string_update_s (uint64_string_t *x, char* str)
+{
+    x->i = atoi (str);
+    if (strlen (str) + 1 < ARRAY_SIZE(x->str)) {
+        strcpy (x->str, str);
+    }
+}
+
 void triangle_entity_add (struct point_set_mode_t *st, int id, vect3_t color)
 {
     assert (st->num_entities < ARRAY_SIZE(st->entities));
@@ -326,6 +334,7 @@ void init_labeled_layout (labeled_entries_layout_t *layout_state, app_graphics_t
 }
 
 layout_box_t* labeled_text_entry (char *entry_content,
+                                  uint64_string_t *target,
                                labeled_entries_layout_t *layout_state,
                                struct app_state_t *st)
 {
@@ -341,7 +350,7 @@ layout_box_t* labeled_text_entry (char *entry_content,
     layout_box_t *text_entry_layout_box = next_layout_box_css (st, CSS_TEXT_ENTRY);
     add_to_focus_chain (&st->gui_st, text_entry_layout_box);
     text_entry_layout_box->str.s = entry_content;
-    add_behavior (&st->gui_st, text_entry_layout_box, BEHAVIOR_TEXT_ENTRY, NULL);
+    add_behavior (&st->gui_st, text_entry_layout_box, BEHAVIOR_TEXT_ENTRY, target);
 
     BOX_POS_SIZE (text_entry_layout_box->box, entry_pos, layout_state->entry_size);
     BOX_POS_SIZE (label_layout_box->box, label_pos, layout_state->label_size);
@@ -401,6 +410,53 @@ DRAW_CALLBACK(draw_separator)
     cairo_stroke (cr);
 }
 
+void set_focused_box_value (struct point_set_mode_t *ps_mode, app_graphics_t *graphics, uint64_t val)
+{
+    layout_box_t *focused_box = global_gui_st->focus->dest;
+    if (ps_mode->focus_list[foc_ot] == focused_box) {
+        if (val >= __g_db_data.num_order_types) {
+            val = __g_db_data.num_order_types-1;
+        }
+        db_seek (ps_mode->ot, val);
+        set_ot (ps_mode);
+        focus_order_type (graphics, ps_mode);
+
+    } else if (ps_mode->focus_list[foc_n] == focused_box) {
+        if (val < 3) {
+            val = 3;
+        } else if (val > 10) {
+            val = 10;
+        }
+        set_n (ps_mode, val, graphics);
+
+    } else if (ps_mode->focus_list[foc_k] == focused_box) {
+        uint64_t max_k = ps_mode->triangle_it->size;
+        if (val > max_k) {
+            val = max_k;
+        }
+        set_k (ps_mode, val);
+
+    } else if (ps_mode->focus_list[foc_ts] == focused_box) {
+        if (val >= ps_mode->num_triangle_subsets) {
+            val = ps_mode->num_triangle_subsets-1;
+        }
+        int_string_update (&ps_mode->ts_id, val);
+    }
+
+    ps_mode->redraw_canvas = true;
+}
+
+bool is_negative (char *str)
+{
+    while (*str != '\0') {
+        if (*str == '-') {
+            return true;
+        }
+        str++;
+    }
+    return false;
+}
+
 bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
 {
     struct point_set_mode_t *ps_mode = st->ps_mode;
@@ -432,43 +488,8 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
     }
 
     app_input_t input = st->gui_st.input;
-    if (10 <= input.keycode && input.keycode < 20) { // KEY_0-9
-        if (!ps_mode->editing_entry) {
-            ps_mode->temp_number.i = 0;
-            ps_mode->editing_entry = true;
-
-            layout_box_t *focused_box = gui_st->focus->dest;
-            focused_box->str.s = ps_mode->temp_number.str;
-        }
-
-        int digit = (input.keycode+1)%10;
-        int new_number = ps_mode->temp_number.i*10 + digit;
-        int_string_update (&ps_mode->temp_number, new_number);
-        input.force_redraw = true;
-        input.keycode = 0;
-    }
 
     switch (input.keycode) {
-        case 9: //KEY_ESC
-            if (ps_mode->editing_entry == true) {
-                ps_mode->temp_number.i = 0;
-                ps_mode->editing_entry = false;
-
-                layout_box_t *focused_box = gui_st->focus->dest;
-                if (ps_mode->focus_list[foc_ot] == focused_box) {
-                    focused_box->str.s = ps_mode->ot_id.str;
-                } else if (ps_mode->focus_list[foc_n] == focused_box) {
-                    focused_box->str.s = ps_mode->n.str;
-                } else if (ps_mode->focus_list[foc_k] == focused_box) {
-                    focused_box->str.s = ps_mode->k.str;
-                } else if (ps_mode->focus_list[foc_ts] == focused_box) {
-                    focused_box->str.s = ps_mode->ts_id.str;
-                }
-            } else {
-                focus_disable (gui_st);
-            }
-            ps_mode->redraw_panel = true;
-            break;
         case 33: //KEY_P
             print_order_type (ps_mode->ot);
             break;
@@ -559,7 +580,7 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
             break;
         case 55: //KEY_V
             if (XCB_KEY_BUT_MASK_CONTROL & input.modifiers) {
-                printf ("CTRL+V\n");
+                gui_st->platform.get_clipboard_str ();
             } else {
                 ps_mode->view_db_ot = !ps_mode->view_db_ot;
                 set_ot (ps_mode);
@@ -567,40 +588,6 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
                 ps_mode->redraw_canvas = true;
             }
             break;
-        case 36: //KEY_ENTER
-            {
-            layout_box_t *focused_box = gui_st->focus->dest;
-            if (ps_mode->focus_list[foc_ot] == focused_box) {
-                if (ps_mode->temp_number.i < __g_db_data.num_order_types) {
-                    db_seek (ps_mode->ot, ps_mode->temp_number.i);
-                    set_ot (ps_mode);
-                    focus_order_type (graphics, ps_mode);
-                } else {
-                    int_string_update (&ps_mode->temp_number, ps_mode->ot_id.i);
-                }
-            } else if (ps_mode->focus_list[foc_n] == focused_box) {
-                if (3 <= ps_mode->temp_number.i && ps_mode->temp_number.i <= 10) {
-                    set_n (ps_mode, ps_mode->temp_number.i, graphics);
-                } else {
-                    int_string_update (&ps_mode->temp_number, ps_mode->n.i);
-                }
-            } else if (ps_mode->focus_list[foc_k] == focused_box) {
-                uint64_t max_k = ps_mode->triangle_it->size;
-                if (ps_mode->temp_number.i <= max_k) {
-                    set_k (ps_mode, ps_mode->temp_number.i);
-                }else {
-                    int_string_update (&ps_mode->temp_number, ps_mode->k.i);
-                }
-            } else if (ps_mode->focus_list[foc_ts] == focused_box) {
-                if (ps_mode->temp_number.i < ps_mode->num_triangle_subsets) {
-                    int_string_update (&ps_mode->ts_id, ps_mode->temp_number.i);
-                } else {
-                    int_string_update (&ps_mode->temp_number, ps_mode->ts_id.i);
-                }
-            }
-            ps_mode->editing_entry = false;
-            ps_mode->redraw_canvas = true;
-            } break;
         default:
             break;
     }
@@ -638,8 +625,8 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
                              entry_labels, ARRAY_SIZE(entry_labels), st);
 
         title ("Point Set", &lay, st, graphics);
-        ps_mode->focus_list[foc_n] = labeled_text_entry (ps_mode->n.str, &lay, st);
-        ps_mode->focus_list[foc_ot] = labeled_text_entry (ps_mode->ot_id.str, &lay, st);
+        ps_mode->focus_list[foc_n] = labeled_text_entry (ps_mode->n.str, &ps_mode->n, &lay, st);
+        ps_mode->focus_list[foc_ot] = labeled_text_entry (ps_mode->ot_id.str, &ps_mode->ot_id, &lay, st);
         {
             layout_box_t *sep = next_layout_box (st);
             BOX_X_Y_W_H(sep->box, lay.x_pos, lay.y_pos, bg_min_size.x-2*x_margin, 2);
@@ -647,8 +634,8 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
             lay.y_pos += lay.y_step;
         }
         title ("Triangle Set", &lay, st, graphics);
-        ps_mode->focus_list[foc_k] = labeled_text_entry (ps_mode->k.str, &lay, st);
-        ps_mode->focus_list[foc_ts] = labeled_text_entry (ps_mode->ts_id.str, &lay, st);
+        ps_mode->focus_list[foc_k] = labeled_text_entry (ps_mode->k.str, &ps_mode->k, &lay, st);
+        ps_mode->focus_list[foc_ts] = labeled_text_entry (ps_mode->ts_id.str, &ps_mode->ts_id, &lay, st);
 
         // NOTE: This is here only so that button code does not bit rot.
         // TODO: As soon as we have any other button in the GUI remove this one.
@@ -664,12 +651,18 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
 
     if (btn_state) {
         printf ("Test button clicked\n");
-        // NOTE: Test paste.
-        gui_st->platform.get_clipboard_str ();
     }
 
     if (gui_st->clipboard_ready) {
-        printf ("Pasted: %s\n", gui_st->clipboard_str);
+
+        uint64_t val;
+        if (is_negative (gui_st->clipboard_str)) {
+            val = 0;
+        } else {
+            val = strtoull (gui_st->clipboard_str, NULL, 10);
+        }
+
+        set_focused_box_value (ps_mode, graphics, val);
         gui_st->clipboard_ready = false;
     }
 
@@ -684,21 +677,73 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
                 break;
             case BEHAVIOR_TEXT_ENTRY:
                 {
+                    // NOTE: This is not a normal tex entry behavior, here we
+                    // have no cursor, and we always select all the content.
                     struct layout_box_t *lay_box = beh->box;
-                    bool is_ptr_over =
-                        is_point_in_box (gui_st->click_coord[0].x, gui_st->click_coord[0].y,
-                                         lay_box->box.min.x, lay_box->box.min.y,
-                                         BOX_WIDTH(lay_box->box), BOX_HEIGHT(lay_box->box));
 
-                    if (gui_st->mouse_clicked[0] && is_ptr_over) {
-                        focus_set (&st->gui_st, lay_box);
-                    }
+                    switch (beh->state) {
+                        case 0:
+                            {
+                                if (SEL_RISING_EDGE(lay_box,CSS_SEL_FOCUS) ||
+                                   (gui_st->mouse_clicked[0] && lay_box->active_selectors & CSS_SEL_HOVER))
+                                {
+                                    select_all_str (gui_st, lay_box, lay_box->str.s);
+                                    ps_mode->redraw_panel = true;
+                                    beh->state = 1;
+                                }
+                            } break;
+                        case 1:
+                            {
+                                if ((gui_st->mouse_double_clicked[0] &&
+                                     lay_box->active_selectors & CSS_SEL_HOVER))
+                                {
+                                    // If the user double clicks, expecting the
+                                    // usual "select all" behavior, then we do
+                                    // that too, instead of unselecting the
+                                    // selection made by a single click.
+                                    //
+                                    // Do Nothing.
+                                } else if (10 <= input.keycode && input.keycode < 20) { // KEY_0-9
+                                    unselect (gui_st);
 
-                    if (gui_st->mouse_double_clicked[0] && is_ptr_over) {
-                        gui_st->selection.dest = lay_box;
-                        gui_st->selection.start = lay_box->str.s;
-                        gui_st->selection.len = strlen(lay_box->str.s);
-                        ps_mode->redraw_panel = true;
+                                    ps_mode->bak_number = *beh->target.u32_str;
+                                    int digit = (input.keycode+1)%10;
+                                    int_string_update (beh->target.u32_str, digit);
+
+                                    ps_mode->redraw_panel = true;
+                                    beh->state = 2;
+                                } else if (36 == input.keycode || // KEY_ENTER
+                                            9 == input.keycode || // KEY_ESC
+                                            (gui_st->mouse_clicked[0] && lay_box->active_selectors & CSS_SEL_HOVER)) {
+                                    unselect (gui_st);
+
+                                    beh->state = 0;
+                                    ps_mode->redraw_panel = true;
+                                } else if (SEL_FALLING_EDGE(lay_box,CSS_SEL_FOCUS)) {
+                                    beh->state = 0;
+                                    ps_mode->redraw_panel = true;
+                                }
+                            } break;
+                        case 2:
+                            {
+                                if (10 <= input.keycode && input.keycode < 20) { // KEY_0-9
+                                    int digit = (input.keycode+1)%10;
+                                    int new_number = beh->target.u32_str->i*10 + digit;
+                                    int_string_update (beh->target.u32_str, new_number);
+                                    ps_mode->redraw_panel = true;
+                                } else if (36 == input.keycode || // KEY_ENTER
+                                           SEL_FALLING_EDGE(lay_box,CSS_SEL_FOCUS)) {
+                                    lay_box->content_changed = true;
+                                    ps_mode->redraw_panel = true;
+                                    beh->state = 0;
+                                } else if (9 == input.keycode) { // KEY_ESC
+                                    *beh->target.u32_str = ps_mode->bak_number;
+                                    ps_mode->redraw_panel = true;
+                                    beh->state = 0;
+                                }
+                            } break;
+                        default:
+                            invalid_code_path;
                     }
                 } break;
             default:
@@ -706,6 +751,50 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
         }
         beh = beh->next;
         i++;
+    }
+
+    for (i=1; i<num_focus_options; i++) {
+        layout_box_t *curr_layout_box = ps_mode->focus_list[i];
+        if (curr_layout_box->content_changed) {
+            ps_mode->redraw_canvas = true;
+            uint64_t val;
+            switch (i) {
+                case foc_n:
+                    val = ps_mode->n.i;
+                    if (val < 3) {
+                        val = 3;
+                    } else if (val > 10) {
+                        val = 10;
+                    }
+                    set_n (ps_mode, val, graphics);
+                    break;
+                case foc_ot:
+                    val = ps_mode->ot_id.i;
+                    if (val >= __g_db_data.num_order_types) {
+                        val = __g_db_data.num_order_types-1;
+                    } 
+                    db_seek (ps_mode->ot, val);
+                    set_ot (ps_mode);
+                    focus_order_type (graphics, ps_mode);
+                    break;
+                case foc_k:
+                    val = ps_mode->k.i;
+                    uint64_t max_k = ps_mode->triangle_it->size;
+                    if (val > max_k) {
+                        val = max_k;
+                    }
+                    set_k (ps_mode, val);
+                    break;
+                case foc_ts:
+                    val = ps_mode->ts_id.i;
+                    if (val >= ps_mode->num_triangle_subsets) {
+                        val = ps_mode->num_triangle_subsets-1;
+                    }
+                    int_string_update (&ps_mode->ts_id, val);
+                    break;
+            }
+            break;
+        }
     }
 
     bool ptr_clicked_in_canvas =
@@ -783,6 +872,8 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
         }
         blit_needed = true;
     }
+
+    layout_boxes_end_frame (st->layout_boxes, st->num_layout_boxes);
 
     ps_mode->rebuild_panel = false;
     ps_mode->redraw_panel = false;

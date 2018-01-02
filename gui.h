@@ -165,8 +165,15 @@ struct layout_box_t {
     css_style_t base_style_id;
     struct css_box_t *style;
     draw_callback_t *draw;
+
+    bool content_changed;
     sized_string_t str;
 };
+
+typedef struct {
+    uint64_t i;
+    char str[20];
+} uint64_string_t;
 
 struct focus_element_t {
     layout_box_t *dest;
@@ -178,7 +185,7 @@ struct focus_element_t {
 struct selection_t {
     layout_box_t *dest;
     char *start;
-    size_t len;
+    int32_t len; // -1 means select string untill the end.
     vect4_t color;
     vect4_t background_color;
 };
@@ -190,11 +197,13 @@ enum behavior_type_t {
 
 struct behavior_t {
     enum behavior_type_t type;
+    int state;
     union {
         void *ptr;
         bool *b;
         int *i32;
         float *r32;
+        uint64_string_t *u32_str;
     } target;
     layout_box_t *box;
     struct behavior_t *next;
@@ -227,6 +236,8 @@ struct gui_state_t {
 
     struct css_box_t css_styles[CSS_NUM_STYLES];
 };
+
+struct gui_state_t *global_gui_st;
 
 // Forward declaration of CSS "stylesheet"
 
@@ -418,6 +429,38 @@ void update_input (struct gui_state_t *gui_st, app_input_t input)
     gui_st->input = input;
 }
 
+void layout_box_print (layout_box_t *lay_box)
+{
+    printf ("---[0x%lX]---\n"
+            "Base Style: 0x%lX\n"
+            "Style: 0x%lX\n"
+            "Selectors Changed: 0x%X Active: 0x%X\n",
+            (uint64_t)lay_box,
+            (uint64_t)lay_box->style,
+            (uint64_t)&global_gui_st->css_styles[lay_box->base_style_id],
+            lay_box->changed_selectors, lay_box->active_selectors);
+}
+
+void unselect (struct gui_state_t *gui_st)
+{
+    gui_st->selection.dest = NULL;
+    gui_st->selection.start = NULL;
+    gui_st->selection.len = 0;
+}
+
+#define select_all_str(gui_st,lay_box,str) select_str(gui_st,lay_box,str,-1)
+void select_str (struct gui_state_t *gui_st, layout_box_t *lay_box, char* str, int len)
+{
+    gui_st->selection.dest = lay_box;
+    gui_st->selection.start = str;
+    gui_st->selection.len = len;
+}
+
+#define SEL_RISING_EDGE(lay_box,sel) \
+    (((lay_box)->changed_selectors&sel)&&((lay_box)->active_selectors&sel))
+
+#define SEL_FALLING_EDGE(lay_box,sel) \
+    (((lay_box)->changed_selectors&sel)&&!((lay_box)->active_selectors&sel))
 void selector_set (struct layout_box_t *lay_box, css_selector_t sel)
 {
     lay_box->active_selectors |= sel;
@@ -430,84 +473,6 @@ void selector_unset (struct layout_box_t *lay_box, css_selector_t sel)
     lay_box->changed_selectors |= sel;
 }
 
-void update_pointer_selectors (struct gui_state_t *gui_st, layout_box_t *lay_box)
-{
-    bool is_ptr_over = is_point_in_box (gui_st->input.ptr.x, gui_st->input.ptr.y,
-                                        lay_box->box.min.x, lay_box->box.min.y,
-                                        BOX_WIDTH(lay_box->box), BOX_HEIGHT(lay_box->box));
-
-    css_selector_t old = lay_box->active_selectors;
-    if (gui_st->input.mouse_down[0] && is_ptr_over) {
-        lay_box->active_selectors |= CSS_SEL_ACTIVE;
-    } else {
-        lay_box->active_selectors &= ~CSS_SEL_ACTIVE;
-    }
-
-    if (is_ptr_over) {
-        lay_box->active_selectors |= CSS_SEL_HOVER;
-    } else {
-        lay_box->active_selectors &= ~CSS_SEL_HOVER;
-    }
-
-    lay_box->changed_selectors |= (old ^ lay_box->active_selectors);
-}
-
-#define update_layout_box_style(gui_st,box,style_id) {box->style=&(gui_st->css_styles[style_id]);}
-void init_layout_box_style (struct gui_state_t *gui_st, layout_box_t *box, css_style_t style_id)
-{
-    box->base_style_id = style_id;
-    update_layout_box_style (gui_st, box, style_id);
-}
-
-void update_layout_boxes (struct gui_state_t *gui_st, layout_box_t *layout_boxes,
-                          int num_layout_boxes, bool *changed)
-{
-    *changed = false;
-    int i;
-    for (i=0; i<num_layout_boxes; i++) {
-        layout_box_t *curr_box = layout_boxes + i;
-
-        update_pointer_selectors (gui_st, curr_box);
-        if (curr_box->changed_selectors & CSS_SEL_ACTIVE) {
-            struct css_box_t *active_style =
-                gui_st->css_styles[curr_box->base_style_id].selector_active;
-            if (curr_box->active_selectors & CSS_SEL_ACTIVE && active_style != NULL) { 
-                curr_box->style = active_style;
-            } else {
-                curr_box->style = &gui_st->css_styles[curr_box->base_style_id];
-            }
-            *changed = true;
-        }
-
-        if (curr_box->changed_selectors & CSS_SEL_FOCUS) {
-            struct css_box_t *focus_style =
-                gui_st->css_styles[curr_box->base_style_id].selector_focus;
-            if (curr_box->active_selectors & CSS_SEL_FOCUS && focus_style != NULL) { 
-                curr_box->style = focus_style;
-            } else {
-                curr_box->style = &gui_st->css_styles[curr_box->base_style_id];
-            }
-            *changed = true;
-        }
-        curr_box->changed_selectors = 0;
-    }
-}
-
-void add_behavior (struct gui_state_t *gui_st, layout_box_t *box, enum behavior_type_t type, void *target)
-{
-    printf ("Adding behavior\n");
-    struct behavior_t *new_behavior =
-        mem_pool_push_size_full (&gui_st->pool, sizeof(struct behavior_t),
-                                 POOL_ZERO_INIT);
-    new_behavior->next = gui_st->behaviors;
-    gui_st->behaviors = new_behavior;
-    new_behavior->type = type;
-    new_behavior->target.ptr = target;
-    new_behavior->box = box;
-}
-
-struct gui_state_t *global_gui_st;
-
 void add_to_focus_chain (struct gui_state_t *gui_st, layout_box_t *lay_box)
 {
     struct focus_element_t *new_focus
@@ -518,7 +483,17 @@ void add_to_focus_chain (struct gui_state_t *gui_st, layout_box_t *lay_box)
         new_focus->next = new_focus;
         new_focus->prev = new_focus;
         gui_st->focus = new_focus;
-        selector_set (gui_st->focus->dest, CSS_SEL_FOCUS);
+
+        // NOTE: We don't call selector_set() because we don't want to trigger
+        // things as if the user had just focused the first element in the
+        // chain, (we did).
+        lay_box->active_selectors |= CSS_SEL_FOCUS;
+
+        struct css_box_t *focus_style =
+            gui_st->css_styles[lay_box->base_style_id].selector_focus;
+        if (focus_style != NULL) {
+            lay_box->style = focus_style;
+        }
     } else {
         new_focus->next = gui_st->focus_end->next;
         gui_st->focus_end->next = new_focus;
@@ -539,19 +514,24 @@ void focus_set (struct gui_state_t *gui_st, layout_box_t *lay_box)
 {
     assert (gui_st->focus != NULL && gui_st->focus_end != NULL && "No focus chain");
     if (lay_box != gui_st->focus->dest) {
-        selector_unset (gui_st->focus->dest, CSS_SEL_FOCUS);
+        layout_box_t *old_dest = gui_st->focus->dest;
+
         struct focus_element_t *iter = gui_st->focus_end;
         do {
             if (iter->dest == lay_box) {
                 gui_st->focus = iter;
+                break;
             }
             iter = iter->prev;
         } while (iter != gui_st->focus_end);
 
-        if (gui_st->focus->dest != lay_box) {
-            printf ("Trying to set focus to layout box not in focus chain\n");
+        if (gui_st->focus->dest == lay_box) {
+            selector_unset (old_dest, CSS_SEL_FOCUS);
+            selector_set (gui_st->focus->dest, CSS_SEL_FOCUS);
+        } else {
+            // lay_box is not in the focus chain.
+            // Do nothing.
         }
-        selector_set (gui_st->focus->dest, CSS_SEL_FOCUS);
     }
 }
 
@@ -582,6 +562,100 @@ void update_font_description (struct css_box_t *box, PangoLayout *pango_layout)
     pango_layout_set_font_description (pango_layout, new_font_desc);
 }
 
+void update_selectors (struct gui_state_t *gui_st, layout_box_t *layout_boxes, int num_layout_boxes)
+{
+    int i;
+    for (i=0; i<num_layout_boxes; i++) {
+        layout_box_t *curr_box = layout_boxes + i;
+        // TODO: is_ptr_over should consider z-axis so that only visible boxes are
+        // triggered.
+        bool is_ptr_over = is_point_in_box (gui_st->input.ptr.x, gui_st->input.ptr.y,
+                                            curr_box->box.min.x, curr_box->box.min.y,
+                                            BOX_WIDTH(curr_box->box), BOX_HEIGHT(curr_box->box));
+
+        css_selector_t old = curr_box->active_selectors;
+        if (gui_st->input.mouse_down[0] && is_ptr_over) {
+            curr_box->active_selectors |= CSS_SEL_ACTIVE;
+        } else {
+            curr_box->active_selectors &= ~CSS_SEL_ACTIVE;
+        }
+
+        if (is_ptr_over) {
+            curr_box->active_selectors |= CSS_SEL_HOVER;
+        } else {
+            curr_box->active_selectors &= ~CSS_SEL_HOVER;
+        }
+
+        if (gui_st->mouse_clicked[0] && is_ptr_over) {
+            focus_set (gui_st, curr_box);
+        }
+
+        curr_box->changed_selectors |= (old ^ curr_box->active_selectors);
+    }
+}
+
+#define update_layout_box_style(gui_st,box,style_id) {box->style=&(gui_st->css_styles[style_id]);}
+void init_layout_box_style (struct gui_state_t *gui_st, layout_box_t *box, css_style_t style_id)
+{
+    box->base_style_id = style_id;
+    update_layout_box_style (gui_st, box, style_id);
+}
+
+void update_layout_boxes (struct gui_state_t *gui_st, layout_box_t *layout_boxes,
+                          int num_layout_boxes, bool *changed)
+{
+    update_selectors (gui_st, layout_boxes, num_layout_boxes);
+
+    int i;
+    for (i=0; i<num_layout_boxes; i++) {
+        layout_box_t *curr_box = layout_boxes + i;
+
+        struct css_box_t *active_style =
+            gui_st->css_styles[curr_box->base_style_id].selector_active;
+        if (curr_box->changed_selectors & CSS_SEL_ACTIVE && active_style != NULL) {
+            if (curr_box->active_selectors & CSS_SEL_ACTIVE) {
+                curr_box->style = active_style;
+            } else {
+                curr_box->style = &gui_st->css_styles[curr_box->base_style_id];
+            }
+            *changed = true;
+        }
+
+        struct css_box_t *focus_style =
+            gui_st->css_styles[curr_box->base_style_id].selector_focus;
+        if (curr_box->changed_selectors & CSS_SEL_FOCUS && focus_style != NULL) {
+            if (curr_box->active_selectors & CSS_SEL_FOCUS) {
+                curr_box->style = focus_style;
+            } else {
+                curr_box->style = &gui_st->css_styles[curr_box->base_style_id];
+            }
+            *changed = true;
+        }
+    }
+}
+
+void layout_boxes_end_frame (layout_box_t *layout_boxes, int len)
+{
+    int i;
+    for (i=0; i<len; i++) {
+        layout_boxes[i].changed_selectors = 0;
+        layout_boxes[i].content_changed = false;
+    }
+}
+
+void add_behavior (struct gui_state_t *gui_st, layout_box_t *box, enum behavior_type_t type, void *target)
+{
+    printf ("Adding behavior\n");
+    struct behavior_t *new_behavior =
+        mem_pool_push_size_full (&gui_st->pool, sizeof(struct behavior_t),
+                                 POOL_ZERO_INIT);
+    new_behavior->next = gui_st->behaviors;
+    gui_st->behaviors = new_behavior;
+    new_behavior->type = type;
+    new_behavior->target.ptr = target;
+    new_behavior->box = box;
+}
+
 void sized_string_compute (sized_string_t *res, struct css_box_t *style, PangoLayout *pango_layout, char *str)
 {
     // TODO: Try to refactor code so this fuction does not receive a PangoLayout
@@ -603,8 +677,7 @@ void sized_string_compute (sized_string_t *res, struct css_box_t *style, PangoLa
     res->pos.y = logical.y;
 }
 
-// NOTE: len == 0/NULL means the string is null terminated. User should not try
-// to print an empty string.
+// NOTE: len == -1 means the string is null terminated.
 void render_text (cairo_t *cr, vect2_t pos, PangoLayout *pango_layout,
                   char *str, size_t len, vect4_t *color, vect4_t *bg_color,
                   vect2_t *out_pos)
@@ -721,14 +794,23 @@ void css_box_draw (app_graphics_t *gr, struct css_box_t *box, layout_box_t *layo
         struct selection_t *selection = &global_gui_st->selection;
         vect2_t pos = VECT2(text_pos_x, text_pos_y);
         if (selection->dest == layout) {
+            size_t len = strlen (layout->str.s);
+            assert (layout->str.s >= selection->start &&
+                    selection->start <= layout->str.s + len &&
+                    "selection->start must point into selection->dest->str.s");
+
             if (selection->start != layout->str.s) {
                 render_text (cr, pos, pango_layout, layout->str.s, selection->start - layout->str.s,
                              &box->color, NULL, &pos);
             }
+
             render_text (cr, pos, pango_layout, selection->start, selection->len,
                          &selection->color, &selection->background_color, &pos);
-            render_text (cr, pos, pango_layout, selection->start+selection->len, 0,
-                         &box->color, NULL, NULL);
+
+            if (selection->len != -1) {
+                render_text (cr, pos, pango_layout, selection->start+selection->len, -1,
+                             &box->color, NULL, NULL);
+            }
         } else {
             render_text (cr, pos, pango_layout, layout->str.s, 0, &box->color, NULL, NULL);
         }
