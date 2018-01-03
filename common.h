@@ -3,6 +3,8 @@
  */
 
 #if !defined(COMMON_H)
+#include <stdio.h>
+#include <unistd.h>
 #include <inttypes.h>
 #include <assert.h>
 #include <stdlib.h>
@@ -29,6 +31,335 @@ typedef enum {false, true} bool;
 #define terabyte(val) (gigabyte(val)*1024LL)
 
 #define invalid_code_path assert(0)
+
+////////////
+// STRINGS
+//
+// There are currently two implementations of string handling, one that
+// optimizes operations on small strings avoiding calls to malloc, and a
+// straightforward one that mallocs everything.
+//
+// Functions available:
+//  str_new(char *c_str)
+//     strn_new(char *c_str, size_t len)
+//  str_set(string_t *str, char *c_str)
+//     strn_set(string_t *str, char *c_str, size_t len)
+//  str_len(string_t *str)
+//  str_data(string_t *str)
+//  str_cpy(string_t *dest, string_t *src)
+//  str_cat(string_t *dest, string_t *src)
+//  str_free(string_t *str)
+//
+// NOTE:
+//  - string_t is zero initialized, an empty string can be created as:
+//      string_t str = {0};
+//    Use str_new() to initialize one from a null terminated string.
+//
+//  - str_data() returns a NULL terminated C type string.
+//
+// Both implementations were tested using the following code:
+
+/*
+//gcc -g -o strings strings.c -lm
+
+#include "common.h"
+int main (int argv, char *argc[])
+{
+    string_t str1 = {0};
+    string_t str2 = str_new ("");
+    // NOTE: str_len(str3) == ARRAY_SIZE(str->str_small)-1, to test correctly
+    // the string implementation that uses small string optimization.
+    string_t str3 = str_new ("Hercule Poirot");
+    string_t str4 = str_new (" ");
+    // NOTE: str_len(str3) < str_len(str5)
+    string_t str5 = str_new ("is a good detective");
+
+    printf ("str1: '%s'\n", str_data(&str1));
+    printf ("str2: '%s'\n", str_data(&str2));
+    printf ("str3: '%s'\n", str_data(&str3));
+    printf ("str4: '%s'\n", str_data(&str4));
+    printf ("str5: '%s'\n", str_data(&str5));
+
+    string_t str_test = {0};
+    str_set (&str_test, str_data(&str1));
+
+    printf ("\nTEST 1:\n");
+    str_cpy (&str_test, &str2);
+    printf ("str_test: '%s'\n", str_data(&str_test));
+    str_set (&str_test, str_data(&str3));
+    printf ("str_set(str_test, '%s')\n", str_data(&str3));
+    printf ("str_test: '%s'\n", str_data(&str_test));
+    str_set (&str_test, str_data(&str5));
+    printf ("str_set(str_test, '%s')\n", str_data(&str5));
+    printf ("str_test: '%s'\n", str_data(&str_test));
+    str_set (&str_test, str_data(&str4));
+    printf ("str_set(str_test, '%s')\n", str_data(&str4));
+    printf ("str_test: '%s'\n", str_data(&str_test));
+    str_debug_print (&str_test);
+    str_free (&str_test);
+
+    str_set (&str_test, "");
+    printf ("\nTEST 2:\n");
+    str_cpy (&str_test, &str3);
+    printf ("str_test: '%s'\n", str_data(&str_test));
+    str_cat (&str_test, &str4);
+    printf ("str_cat(str_test, str4)\n");
+    printf ("str_test: '%s'\n", str_data(&str_test));
+    str_cat (&str_test, &str5);
+    printf ("str_cat(str_test, str5)\n");
+    printf ("str_test: '%s'\n", str_data(&str_test));
+    str_debug_print (&str_test);
+    str_free (&str_test);
+    return 0;
+}
+*/
+
+#if 1
+// String implementation with small string optimization.
+
+#pragma pack(push, 1)
+#if defined(__BYTE_ORDER__)&&(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
+typedef union {
+    struct {
+        uint8_t len_small;
+        char str_small[15];
+    };
+
+    struct {
+        uint32_t str_size;
+        uint32_t len;
+        char *str;
+    };
+} string_t;
+#elif defined(__BYTE_ORDER__)&&(__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
+// TODO: This has NOT been tested!
+typedef union {
+    struct {
+        char str_small[15];
+        uint8_t len_small;
+    };
+
+    struct {
+        char *str;
+        uint32_t len;
+        uint32_t str_size;
+    };
+} string_t;
+#endif
+#pragma pack(pop)
+
+#define str_is_small(string) (!((string)->len_small&0x01))
+#define str_len(string) (str_is_small(string)?(string)->len_small/2-1:(string)->len)
+#define str_data(string) (str_is_small(string)?(string)->str_small:(string)->str)
+
+static inline
+char* str_small_alloc (string_t *str, size_t len)
+{
+    str->len_small = 2*(len+1); // Guarantee LSB == 0
+    return str->str_small;
+}
+
+static inline
+char* str_non_small_alloc (string_t *str, size_t len)
+{
+    str->str_size = (len+1) | 0xF; // Round up and guarantee LSB == 1
+    str->str = malloc(str->str_size);
+    return str->str;
+}
+
+static inline
+void str_maybe_grow (string_t *str, size_t len, bool keep_content)
+{
+    if (!str_is_small(str)) {
+        if (len >= str->str_size) {
+            if (keep_content) {
+                uint32_t tmp_len = str->len;
+                char *tmp = str->str;
+
+                str_non_small_alloc (str, len);
+                memcpy (str->str, tmp, tmp_len);
+                free (tmp);
+            } else {
+                free (str->str);
+                str_non_small_alloc (str, len);
+            }
+        }
+        str->len = len;
+
+    } else {
+        if (len >= ARRAY_SIZE(str->str_small)) {
+            if (keep_content) {
+                char tmp[ARRAY_SIZE(str->str_small)];
+                strcpy (tmp, str->str_small);
+
+                str_non_small_alloc (str, len);
+                strcpy (str->str, tmp);
+            } else {
+                str_non_small_alloc (str, len);
+            }
+            str->len = len;
+        } else {
+            str_small_alloc (str, len);
+        }
+    }
+}
+
+static inline
+char* str_init (string_t *str, size_t len)
+{
+    char *dest;
+    if (len < ARRAY_SIZE(str->str_small)) {
+        dest = str_small_alloc (str, len);
+    } else {
+        str->len = len;
+        dest = str_non_small_alloc (str, len);
+    }
+    return dest;
+}
+
+void str_free (string_t *str)
+{
+    if (!str_is_small(str)) {
+        free (str->str);
+    }
+    *str = (string_t){0};
+}
+
+void str_debug_print (string_t *str)
+{
+    if (str_is_small(str)) {
+        printf ("string_t: [SMALL OPT]\n"
+                "  Type: small\n"
+                "  data: %s\n"
+                "  len: %"PRIu32"\n"
+                "  len_small: %"PRIu32"\n",
+                str->str_small, str_len(str), str->len_small);
+    } else {
+        printf ("string_t: [SMALL OPT]\n"
+                "  Type: long\n"
+                "  data: %s\n"
+                "  len: %"PRIu32"\n"
+                "  allocated size: %"PRIu32"\n",
+                str->str, str->len, str->str_size);
+    }
+}
+
+#else
+// Straightforward string implementation
+
+typedef struct {
+    char *str;
+    uint32_t len;
+    uint32_t str_size;
+} string_t;
+
+static inline
+char* str_alloc (string_t *str, size_t len)
+{
+    str->str_size = (len+1) | 0x0F; // Round up
+    str->str = malloc(str->str_size);
+    return str->str;
+}
+
+#define str_len(string) ((string)->len)
+char* str_data (string_t *str)
+{
+    if (str->str == NULL) {
+        str_alloc (str, 0);
+        str->len = 0;
+    }
+    return str->str;
+}
+
+static inline
+void str_maybe_grow (string_t *str, size_t len, bool keep_content)
+{
+    if (len >= str->str_size) {
+        if (keep_content) {
+            uint32_t tmp_len = str->len;
+            char *tmp = str->str;
+            str_alloc (str, len);
+            memcpy (str->str, tmp, tmp_len);
+            free (tmp);
+        } else {
+            free (str->str);
+            str_alloc (str, len);
+        }
+    }
+    str->len = len;
+}
+
+static inline
+char* str_init (string_t *str, size_t len)
+{
+    char *dest;
+    str->len = len;
+    dest = str_alloc (str, len);
+    return dest;
+}
+
+void str_free (string_t *str)
+{
+    free (str->str);
+    *str = (string_t){0};
+}
+
+void str_debug_print (string_t *str)
+{
+    printf ("string_t: [SIMPLE]\n"
+            "  data: %s\n"
+            "  len: %"PRIu32"\n"
+            "  allocated size: %"PRIu32"\n",
+            str->str, str->len, str->str_size);
+}
+
+#endif
+
+#define str_new(data) strn_new((data),((data)!=NULL?strlen(data):0))
+string_t strn_new (char *data, size_t len)
+{
+    string_t retval = {0};
+    char *dest = str_init (&retval, len);
+
+    if (data != NULL) {
+        memmove (dest, data, len);
+    }
+    dest[len] = '\0';
+    return retval;
+}
+
+#define str_set(str,data) strn_set(str,(data),((data)!=NULL?strlen(data):0))
+void strn_set (string_t *str, char *data, size_t len)
+{
+    str_maybe_grow (str, len, false);
+
+    char *dest = str_data(str);
+    if (data != NULL) {
+        memmove (dest, data, len);
+    }
+    dest[len] = '\0';
+}
+
+void str_cpy (string_t *dest, string_t *src)
+{
+    size_t len = str_len(src);
+    str_maybe_grow (dest, len, false);
+
+    char *dest_data = str_data(dest);
+    memmove (dest_data, str_data(src), len);
+    dest_data[len] = '\0';
+}
+
+void str_cat (string_t *dest, string_t *src)
+{
+    size_t len_dest = str_len(dest);
+    size_t len = len_dest + str_len(src);
+
+    str_maybe_grow (dest, len, true);
+    char *dest_data = str_data(dest);
+    memmove (dest_data+len_dest, str_data(src), len);
+    dest_data[len] = '\0';
+}
 
 #define VECT_X 0
 #define VECT_Y 1
