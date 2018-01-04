@@ -126,7 +126,7 @@ typedef union {
     };
 
     struct {
-        uint32_t str_size;
+        uint32_t capacity;
         uint32_t len;
         char *str;
     };
@@ -142,7 +142,7 @@ typedef union {
     struct {
         char *str;
         uint32_t len;
-        uint32_t str_size;
+        uint32_t capacity;
     };
 } string_t;
 #endif
@@ -162,8 +162,8 @@ char* str_small_alloc (string_t *str, size_t len)
 static inline
 char* str_non_small_alloc (string_t *str, size_t len)
 {
-    str->str_size = (len+1) | 0xF; // Round up and guarantee LSB == 1
-    str->str = malloc(str->str_size);
+    str->capacity = (len+1) | 0xF; // Round up and guarantee LSB == 1
+    str->str = malloc(str->capacity);
     return str->str;
 }
 
@@ -171,7 +171,7 @@ static inline
 void str_maybe_grow (string_t *str, size_t len, bool keep_content)
 {
     if (!str_is_small(str)) {
-        if (len >= str->str_size) {
+        if (len >= str->capacity) {
             if (keep_content) {
                 uint32_t tmp_len = str->len;
                 char *tmp = str->str;
@@ -232,15 +232,17 @@ void str_debug_print (string_t *str)
                 "  Type: small\n"
                 "  data: %s\n"
                 "  len: %"PRIu32"\n"
-                "  len_small: %"PRIu32"\n",
-                str->str_small, str_len(str), str->len_small);
+                "  len_small: %"PRIu32"\n"
+                "  capacity: %lu\n",
+                str->str_small, str_len(str),
+                str->len_small, ARRAY_SIZE(str->str_small));
     } else {
         printf ("string_t: [SMALL OPT]\n"
                 "  Type: long\n"
                 "  data: %s\n"
                 "  len: %"PRIu32"\n"
-                "  allocated size: %"PRIu32"\n",
-                str->str, str->len, str->str_size);
+                "  capacity: %"PRIu32"\n",
+                str->str, str->len, str->capacity);
     }
 }
 
@@ -250,14 +252,14 @@ void str_debug_print (string_t *str)
 typedef struct {
     char *str;
     uint32_t len;
-    uint32_t str_size;
+    uint32_t capacity;
 } string_t;
 
 static inline
 char* str_alloc (string_t *str, size_t len)
 {
-    str->str_size = (len+1) | 0x0F; // Round up
-    str->str = malloc(str->str_size);
+    str->capacity = (len+1) | 0x0F; // Round up
+    str->str = malloc(str->capacity);
     return str->str;
 }
 
@@ -274,7 +276,7 @@ char* str_data (string_t *str)
 static inline
 void str_maybe_grow (string_t *str, size_t len, bool keep_content)
 {
-    if (len >= str->str_size) {
+    if (len >= str->capacity) {
         if (keep_content) {
             uint32_t tmp_len = str->len;
             char *tmp = str->str;
@@ -309,33 +311,33 @@ void str_debug_print (string_t *str)
     printf ("string_t: [SIMPLE]\n"
             "  data: %s\n"
             "  len: %"PRIu32"\n"
-            "  allocated size: %"PRIu32"\n",
-            str->str, str->len, str->str_size);
+            "  capacity: %"PRIu32"\n",
+            str->str, str->len, str->capacity);
 }
 
 #endif
 
 #define str_new(data) strn_new((data),((data)!=NULL?strlen(data):0))
-string_t strn_new (char *data, size_t len)
+string_t strn_new (char *c_str, size_t len)
 {
     string_t retval = {0};
     char *dest = str_init (&retval, len);
 
-    if (data != NULL) {
-        memmove (dest, data, len);
+    if (c_str != NULL) {
+        memmove (dest, c_str, len);
     }
     dest[len] = '\0';
     return retval;
 }
 
-#define str_set(str,data) strn_set(str,(data),((data)!=NULL?strlen(data):0))
-void strn_set (string_t *str, char *data, size_t len)
+#define str_set(str,c_str) strn_set(str,(c_str),((c_str)!=NULL?strlen(c_str):0))
+void strn_set (string_t *str, char *c_str, size_t len)
 {
     str_maybe_grow (str, len, false);
 
     char *dest = str_data(str);
-    if (data != NULL) {
-        memmove (dest, data, len);
+    if (c_str != NULL) {
+        memmove (dest, c_str, len);
     }
     dest[len] = '\0';
 }

@@ -585,7 +585,7 @@ void x11_send_event (xcb_connection_t *c, xcb_drawable_t window, void *event)
 ////////////////////////////////////////////////////
 // Code to handle selections (copy and paste) in X11
 
-#define DEBUG_X11_SELECTIONS
+//#define DEBUG_X11_SELECTIONS
 void print_selection_request_event (struct x_state *x_st,
                                     xcb_selection_request_event_t *selection_request_ev)
 {

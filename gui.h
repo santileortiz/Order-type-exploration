@@ -167,12 +167,13 @@ struct layout_box_t {
     draw_callback_t *draw;
 
     bool content_changed;
+    struct behavior_t *behavior;
     sized_string_t str;
 };
 
 typedef struct {
     uint64_t i;
-    char str[20];
+    string_t str;
 } uint64_string_t;
 
 struct focus_element_t {
@@ -203,7 +204,7 @@ struct behavior_t {
         bool *b;
         int *i32;
         float *r32;
-        uint64_string_t *u32_str;
+        uint64_string_t *u64_str;
     } target;
     layout_box_t *box;
     struct behavior_t *next;
@@ -230,6 +231,7 @@ struct gui_state_t {
 
     struct focus_element_t *focus;
     struct focus_element_t *focus_end;
+    struct focus_element_t *freed_focus_elements;
 
     bool clipboard_ready;
     char *clipboard_str;
@@ -315,6 +317,32 @@ void apply_inverse_transform_distance (transf_t *tr, vect2_t *p)
 {
     p->x = p->x/tr->scale_x;
     p->y = p->y/tr->scale_y;
+}
+
+#define int_string_inc(int_str) int_string_update(int_str,(int_str)->i+1)
+#define int_string_dec(int_str) int_string_update(int_str,(int_str)->i-1)
+void int_string_update (uint64_string_t *x, uint64_t i)
+{
+    x->i = i;
+
+    char buff[20];
+    snprintf (buff, ARRAY_SIZE(buff), "%ld", i);
+    str_set (&x->str, buff);
+}
+
+void int_string_append_digit (uint64_string_t *x, int digit)
+{
+    x->i = x->i*10 + digit;
+
+    char digit_c_str[] = {0x30+digit, '\0'};
+    string_t str_digit = str_new (digit_c_str);
+    str_cat (&x->str, &str_digit);
+}
+
+void int_string_update_s (uint64_string_t *x, char* str)
+{
+    x->i = strtoull (str, NULL, 10);
+    str_set (&x->str, str);
 }
 
 // Calculates a ratio by which multiply box a so that it fits inside box b
@@ -473,10 +501,16 @@ void selector_unset (struct layout_box_t *lay_box, css_selector_t sel)
     lay_box->changed_selectors |= sel;
 }
 
-void add_to_focus_chain (struct gui_state_t *gui_st, layout_box_t *lay_box)
+void focus_chain_add (struct gui_state_t *gui_st, layout_box_t *lay_box)
 {
-    struct focus_element_t *new_focus
-        = mem_pool_push_struct (&gui_st->pool, struct focus_element_t);
+    struct focus_element_t *new_focus;
+    if (gui_st->freed_focus_elements != NULL) {
+        new_focus = gui_st->freed_focus_elements;
+        gui_st->freed_focus_elements = new_focus->prev;
+    } else {
+        new_focus = mem_pool_push_struct (&gui_st->pool, struct focus_element_t);
+    }
+
     new_focus->dest = lay_box;
 
     if (gui_st->focus == NULL) {
@@ -513,6 +547,8 @@ void focus_disable (struct gui_state_t *gui_st)
 void focus_set (struct gui_state_t *gui_st, layout_box_t *lay_box)
 {
     assert (gui_st->focus != NULL && gui_st->focus_end != NULL && "No focus chain");
+    assert (lay_box != NULL && "lay_box can't be NULL");
+
     if (lay_box != gui_st->focus->dest) {
         layout_box_t *old_dest = gui_st->focus->dest;
 
@@ -547,6 +583,50 @@ void focus_prev (struct gui_state_t *gui_st)
     selector_unset (gui_st->focus->dest, CSS_SEL_FOCUS);
     gui_st->focus = gui_st->focus->prev;
     selector_set (gui_st->focus->dest, CSS_SEL_FOCUS);
+}
+
+void focus_chain_remove (struct gui_state_t *gui_st, layout_box_t *lay_box)
+{
+    assert (gui_st->focus != NULL && gui_st->focus_end != NULL && "No focus chain");
+    assert (lay_box != NULL && "lay_box can't be NULL");
+
+    struct focus_element_t *found_focus = NULL;
+    if (lay_box == gui_st->focus->dest) {
+        found_focus = gui_st->focus;
+        focus_next (gui_st);
+
+    } else if (lay_box == gui_st->focus_end->dest) {
+        found_focus = gui_st->focus_end;
+        gui_st->focus_end = gui_st->focus_end->prev;
+
+    } else {
+        struct focus_element_t *iter = gui_st->focus_end;
+        do {
+            if (iter->dest == lay_box) {
+                break;
+            }
+            iter = iter->prev;
+        } while (iter != gui_st->focus_end);
+
+        if (iter->dest == lay_box) {
+            found_focus = iter;
+        }
+    }
+
+    if (found_focus) {
+        found_focus->prev->next = found_focus->next;
+        found_focus->next->prev = found_focus->prev;
+
+        // The strategy to not leak focus elements is to store allocated
+        // focus_element_t objects in a SINGLY linked list (prev pointer) whose
+        // head can be found in gui_st->freed_focus_elements.
+        if (gui_st->freed_focus_elements) {
+            found_focus->prev = gui_st->freed_focus_elements;
+        } else {
+            found_focus->prev = NULL;
+        }
+        gui_st->freed_focus_elements = found_focus;
+    }
 }
 
 void update_font_description (struct css_box_t *box, PangoLayout *pango_layout)
@@ -645,7 +725,6 @@ void layout_boxes_end_frame (layout_box_t *layout_boxes, int len)
 
 void add_behavior (struct gui_state_t *gui_st, layout_box_t *box, enum behavior_type_t type, void *target)
 {
-    printf ("Adding behavior\n");
     struct behavior_t *new_behavior =
         mem_pool_push_size_full (&gui_st->pool, sizeof(struct behavior_t),
                                  POOL_ZERO_INIT);
@@ -654,6 +733,7 @@ void add_behavior (struct gui_state_t *gui_st, layout_box_t *box, enum behavior_
     new_behavior->type = type;
     new_behavior->target.ptr = target;
     new_behavior->box = box;
+    box->behavior = new_behavior;
 }
 
 void sized_string_compute (sized_string_t *res, struct css_box_t *style, PangoLayout *pango_layout, char *str)

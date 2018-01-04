@@ -4,22 +4,6 @@
 
 #define CANVAS_SIZE 65535 // It's the size of the coordinate axis at 1 zoom
 
-#define int_string_inc(int_str) int_string_update(int_str,(int_str)->i+1)
-#define int_string_dec(int_str) int_string_update(int_str,(int_str)->i-1)
-void int_string_update (uint64_string_t *x, uint64_t i)
-{
-    x->i = i;
-    snprintf (x->str, ARRAY_SIZE(x->str), "%ld", i);
-}
-
-void int_string_update_s (uint64_string_t *x, char* str)
-{
-    x->i = atoi (str);
-    if (strlen (str) + 1 < ARRAY_SIZE(x->str)) {
-        strcpy (x->str, str);
-    }
-}
-
 void triangle_entity_add (struct point_set_mode_t *st, int id, vect3_t color)
 {
     assert (st->num_entities < ARRAY_SIZE(st->entities));
@@ -272,7 +256,7 @@ layout_box_t* button (char *label, bool *target, app_graphics_t *gr,
     curr_box->box.max.y = y + *height;
 
     add_behavior (&st->gui_st, curr_box, BEHAVIOR_BUTTON, target);
-    add_to_focus_chain (&st->gui_st, curr_box);
+    focus_chain_add (&st->gui_st, curr_box);
     *target = update_button_state (st, curr_box, NULL);
     return curr_box;
 }
@@ -333,10 +317,9 @@ void init_labeled_layout (labeled_entries_layout_t *layout_state, app_graphics_t
     layout_state->current_label_layout = 0;
 }
 
-layout_box_t* labeled_text_entry (char *entry_content,
-                                  uint64_string_t *target,
-                               labeled_entries_layout_t *layout_state,
-                               struct app_state_t *st)
+layout_box_t* labeled_text_entry (uint64_string_t *target,
+                                  labeled_entries_layout_t *layout_state,
+                                  struct app_state_t *st)
 {
     vect2_t label_pos = VECT2(layout_state->label_align, layout_state->y_pos);
     vect2_t entry_pos = VECT2(layout_state->entry_align, layout_state->y_pos);
@@ -348,8 +331,8 @@ layout_box_t* labeled_text_entry (char *entry_content,
     label_layout_box->text_align_override = CSS_TEXT_ALIGN_RIGHT;
 
     layout_box_t *text_entry_layout_box = next_layout_box_css (st, CSS_TEXT_ENTRY);
-    add_to_focus_chain (&st->gui_st, text_entry_layout_box);
-    text_entry_layout_box->str.s = entry_content;
+    focus_chain_add (&st->gui_st, text_entry_layout_box);
+    text_entry_layout_box->str.s = str_data (&target->str);
     add_behavior (&st->gui_st, text_entry_layout_box, BEHAVIOR_TEXT_ENTRY, target);
 
     BOX_POS_SIZE (text_entry_layout_box->box, entry_pos, layout_state->entry_size);
@@ -625,8 +608,8 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
                              entry_labels, ARRAY_SIZE(entry_labels), st);
 
         title ("Point Set", &lay, st, graphics);
-        ps_mode->focus_list[foc_n] = labeled_text_entry (ps_mode->n.str, &ps_mode->n, &lay, st);
-        ps_mode->focus_list[foc_ot] = labeled_text_entry (ps_mode->ot_id.str, &ps_mode->ot_id, &lay, st);
+        ps_mode->focus_list[foc_n] = labeled_text_entry (&ps_mode->n, &lay, st);
+        ps_mode->focus_list[foc_ot] = labeled_text_entry (&ps_mode->ot_id, &lay, st);
         {
             layout_box_t *sep = next_layout_box (st);
             BOX_X_Y_W_H(sep->box, lay.x_pos, lay.y_pos, bg_min_size.x-2*x_margin, 2);
@@ -634,13 +617,14 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
             lay.y_pos += lay.y_step;
         }
         title ("Triangle Set", &lay, st, graphics);
-        ps_mode->focus_list[foc_k] = labeled_text_entry (ps_mode->k.str, &ps_mode->k, &lay, st);
-        ps_mode->focus_list[foc_ts] = labeled_text_entry (ps_mode->ts_id.str, &ps_mode->ts_id, &lay, st);
+        ps_mode->focus_list[foc_k] = labeled_text_entry (&ps_mode->k, &lay, st);
+        ps_mode->focus_list[foc_ts] = labeled_text_entry (&ps_mode->ts_id, &lay, st);
 
         // NOTE: This is here only so that button code does not bit rot.
         // TODO: As soon as we have any other button in the GUI remove this one.
 #if 1
-        labeled_button ("Test button", &btn_state, &lay, st, graphics);
+        layout_box_t *test_btn = labeled_button ("Test button", &btn_state, &lay, st, graphics);
+        focus_chain_remove (gui_st, test_btn);
 #endif
 
         panel->box.max.x = st->layout_boxes[0].box.min.x + bg_min_size.x;
@@ -653,17 +637,27 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
         printf ("Test button clicked\n");
     }
 
-    if (gui_st->clipboard_ready) {
-
-        uint64_t val;
+    // I'm still not sure about handling selection here in the future. On one
+    // hand it seems like we would want a selection to be a unique thing in
+    // gui_st and handle it only once and do the right thing for different kinds
+    // of selections (like here). On the other it seems to be tightly coupled to
+    // the handling of BEHAVIOR_TEXT_ENTRY. Should this better be handled inside
+    // the text entry FSM?, or have a BEHAVIOR_SELECTION with a changing
+    // target?. This should get sorted out when implementing a complete unicode
+    // text entry that has a cursor and more advanced selection.
+    if (gui_st->clipboard_ready && gui_st->selection.dest != NULL) {
+        char *val;
         if (is_negative (gui_st->clipboard_str)) {
-            val = 0;
+            val = "0";
         } else {
-            val = strtoull (gui_st->clipboard_str, NULL, 10);
+            val = gui_st->clipboard_str;
         }
 
-        set_focused_box_value (ps_mode, graphics, val);
-        gui_st->clipboard_ready = false;
+        layout_box_t *selected_box = gui_st->selection.dest;
+        if (selected_box->behavior->type == BEHAVIOR_TEXT_ENTRY) {
+            str_cpy (&ps_mode->bak_number.str, &selected_box->behavior->target.u64_str->str);
+            int_string_update_s (selected_box->behavior->target.u64_str, val);
+        }
     }
 
     update_layout_boxes (&st->gui_st, st->layout_boxes, st->num_layout_boxes, &ps_mode->redraw_panel);
@@ -677,7 +671,7 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
                 break;
             case BEHAVIOR_TEXT_ENTRY:
                 {
-                    // NOTE: This is not a normal tex entry behavior, here we
+                    // NOTE: This is not a normal text entry behavior, here we
                     // have no cursor, and we always select all the content.
                     struct layout_box_t *lay_box = beh->box;
 
@@ -706,12 +700,19 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
                                 } else if (10 <= input.keycode && input.keycode < 20) { // KEY_0-9
                                     unselect (gui_st);
 
-                                    ps_mode->bak_number = *beh->target.u32_str;
+                                    str_cpy (&ps_mode->bak_number.str, &beh->target.u64_str->str);
                                     int digit = (input.keycode+1)%10;
-                                    int_string_update (beh->target.u32_str, digit);
+                                    int_string_update (beh->target.u64_str, digit);
 
                                     ps_mode->redraw_panel = true;
                                     beh->state = 2;
+
+                                } else if (gui_st->clipboard_ready) {
+                                    unselect (gui_st);
+                                    gui_st->clipboard_ready = false;
+                                    ps_mode->redraw_panel = true;
+                                    beh->state = 2;
+
                                 } else if (36 == input.keycode || // KEY_ENTER
                                             9 == input.keycode || // KEY_ESC
                                             (gui_st->mouse_clicked[0] && lay_box->active_selectors & CSS_SEL_HOVER)) {
@@ -719,25 +720,29 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
 
                                     beh->state = 0;
                                     ps_mode->redraw_panel = true;
-                                } else if (SEL_FALLING_EDGE(lay_box,CSS_SEL_FOCUS)) {
+                                } else if (!(lay_box->active_selectors & CSS_SEL_FOCUS)) {
                                     beh->state = 0;
                                     ps_mode->redraw_panel = true;
                                 }
                             } break;
                         case 2:
                             {
-                                if (10 <= input.keycode && input.keycode < 20) { // KEY_0-9
+                                if (gui_st->mouse_clicked[0] && lay_box->active_selectors & CSS_SEL_HOVER) {
+                                    select_all_str (gui_st, lay_box, lay_box->str.s);
+                                    ps_mode->redraw_panel = true;
+                                    beh->state = 1;
+                                } else if (10 <= input.keycode && input.keycode < 20) { // KEY_0-9
                                     int digit = (input.keycode+1)%10;
-                                    int new_number = beh->target.u32_str->i*10 + digit;
-                                    int_string_update (beh->target.u32_str, new_number);
+                                    int_string_append_digit (beh->target.u64_str, digit);
                                     ps_mode->redraw_panel = true;
                                 } else if (36 == input.keycode || // KEY_ENTER
-                                           SEL_FALLING_EDGE(lay_box,CSS_SEL_FOCUS)) {
+                                           !(lay_box->active_selectors & CSS_SEL_FOCUS)) {
                                     lay_box->content_changed = true;
+                                    lay_box->str.s = str_data (&beh->target.u64_str->str);
                                     ps_mode->redraw_panel = true;
                                     beh->state = 0;
                                 } else if (9 == input.keycode) { // KEY_ESC
-                                    *beh->target.u32_str = ps_mode->bak_number;
+                                    str_cpy (&beh->target.u64_str->str, &ps_mode->bak_number.str);
                                     ps_mode->redraw_panel = true;
                                     beh->state = 0;
                                 }
