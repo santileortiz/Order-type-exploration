@@ -430,9 +430,29 @@ void update_input (struct gui_state_t *gui_st, app_input_t input)
             break;
         case 1:
             if (!input.mouse_down[0]) {
+                gui_st->mouse_clicked[0] = true;
+                gui_st->time_since_last_click[0] = 0;
+                state = 2;
+            }
+            break;
+        case 2:
+            gui_st->mouse_clicked[0] = false;
+            gui_st->mouse_double_clicked[0] = false;
+            if (input.mouse_down[0]) {
                 if (gui_st->time_since_last_click[0] < gui_st->double_click_time) {
                     gui_st->mouse_double_clicked[0] = true;
                 }
+                gui_st->click_coord[0] = input.ptr;
+                state = 3;
+            } else {
+                if (gui_st->time_since_last_click[0] >= gui_st->double_click_time) {
+                    state = 0;
+                }
+            }
+            break;
+        case 3:
+            gui_st->mouse_double_clicked[0] = false;
+            if (!input.mouse_down[0]) {
                 gui_st->mouse_clicked[0] = true;
                 gui_st->time_since_last_click[0] = 0;
                 state = 0;
