@@ -384,28 +384,6 @@ void pixel_align_as_line (vect2_t *p, int line_width)
     p->y = floor (p->y)+(double)(line_width%2)/2;
 }
 
-void vect_floor (vect2_t *p)
-{
-    p->x = floor (p->x);
-    p->y = floor (p->y);
-}
-
-static inline
-vect2_t vect2_add (vect2_t va, vect2_t vb)
-{
-    vect2_t res;
-    res.x = va.x+vb.x;
-    res.y = va.y+vb.y;
-    return res;
-}
-
-static inline
-void vect2_add_to (vect2_t *va, vect2_t vb)
-{
-    va->x += vb.x;
-    va->y += vb.y;
-}
-
 void rounded_box_path (cairo_t *cr, double x, double y, double width, double height, double radius)
 {
     cairo_move_to (cr, x, y+radius);
@@ -820,7 +798,7 @@ void render_text (cairo_t *cr, vect2_t pos, PangoLayout *pango_layout,
 
     PangoRectangle logical;
     pango_layout_get_pixel_extents (pango_layout, NULL, &logical);
-    vect_floor (&pos);
+    vect2_floor (&pos);
     if (bg_color != NULL) {
         cairo_set_source_rgba (cr, bg_color->r, bg_color->g, bg_color->b,
                                bg_color->a);

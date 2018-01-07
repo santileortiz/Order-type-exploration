@@ -399,6 +399,34 @@ typedef struct {
     vect2_t max;
 } box_t;
 
+void vect2_floor (vect2_t *p)
+{
+    p->x = floor (p->x);
+    p->y = floor (p->y);
+}
+
+void vect2_round (vect2_t *p)
+{
+    p->x = round (p->x);
+    p->y = round (p->y);
+}
+
+static inline
+vect2_t vect2_add (vect2_t va, vect2_t vb)
+{
+    vect2_t res;
+    res.x = va.x+vb.x;
+    res.y = va.y+vb.y;
+    return res;
+}
+
+static inline
+void vect2_add_to (vect2_t *va, vect2_t vb)
+{
+    va->x += vb.x;
+    va->y += vb.y;
+}
+
 #define BOX_X_Y_W_H(box,n_x,n_y,n_w,n_h) {(box).min.x=(n_x);(box).max.x=(n_x)+(n_w); \
                                           (box).min.y=(n_y);(box).max.y=(n_y)+(n_h);}
 #define BOX_CENTER_X_Y_W_H(box,n_x,n_y,n_w,n_h) {(box).min.x=(n_x)-(n_w)/2;(box).max.x=(n_x)+(n_w)/2; \

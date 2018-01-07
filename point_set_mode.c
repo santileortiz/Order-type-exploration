@@ -138,6 +138,37 @@ void focus_order_type (app_graphics_t *graphics, struct point_set_mode_t *st)
                        VECT2(box.min.x, box.max.y), st->zoom);
 }
 
+void move_hitbox (struct point_set_mode_t *ps_mode)
+{
+    struct gui_state_t *gui_st = global_gui_st;
+    int i = ps_mode->active_hitbox;
+    layout_box_t *hitbox = &ps_mode->pts_hitboxes[i];
+    transf_t *T = &ps_mode->points_to_canvas;
+
+    vect2_t delta_canvas = gui_st->ptr_delta;
+    apply_inverse_transform_distance (T, &delta_canvas);
+    vect2_add_to (&ps_mode->visible_pts[i], delta_canvas);
+
+    vect2_add_to (&hitbox->box.min, gui_st->ptr_delta);
+    vect2_add_to (&hitbox->box.max, gui_st->ptr_delta);
+}
+
+void move_hitbox_int (struct point_set_mode_t *ps_mode)
+{
+    struct gui_state_t *gui_st = global_gui_st;
+    int i = ps_mode->active_hitbox;
+    layout_box_t *hitbox = &ps_mode->pts_hitboxes[i];
+    transf_t *T = &ps_mode->points_to_canvas;
+
+    vect2_t ptr = gui_st->input.ptr;
+    apply_inverse_transform (T, &ptr);
+    vect2_round (&ptr);
+
+    ps_mode->visible_pts[i] = ptr;
+    vect2_add_to (&hitbox->box.min, gui_st->ptr_delta);
+    vect2_add_to (&hitbox->box.max, gui_st->ptr_delta);
+}
+
 void set_ot (struct point_set_mode_t *st)
 {
     int_string_update (&st->ot_id, st->ot->id);
@@ -823,16 +854,11 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
                     int i;
                     for (i=0; i<ps_mode->n.i; i++) {
                         layout_box_t *hitbox = &ps_mode->pts_hitboxes[i];
-                        ps_mode->active_hitbox = i;
 
                         if (is_vect2_in_box (gui_st->click_coord[0], hitbox->box)) {
-                            transf_t *T = &ps_mode->points_to_canvas;
-                            vect2_t delta_canvas = gui_st->ptr_delta;
-                            apply_inverse_transform_distance (T, &delta_canvas);
-                            vect2_add_to (&ps_mode->visible_pts[i], delta_canvas);
+                            ps_mode->active_hitbox = i;
+                            move_hitbox_int (ps_mode);
 
-                            vect2_add_to (&hitbox->box.min, gui_st->ptr_delta);
-                            vect2_add_to (&hitbox->box.max, gui_st->ptr_delta);
                             hit = true;
                             ps_mode->redraw_canvas = true;
                             ps_mode->canvas_state = 1;
@@ -851,16 +877,7 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
         case 1:
             {
                 if (gui_st->input.mouse_down[0]) {
-                    int i = ps_mode->active_hitbox;
-                    layout_box_t *hitbox = &ps_mode->pts_hitboxes[i];
-                    transf_t *T = &ps_mode->points_to_canvas;
-
-                    vect2_t delta_canvas = gui_st->ptr_delta;
-                    apply_inverse_transform_distance (T, &delta_canvas);
-                    vect2_add_to (&ps_mode->visible_pts[i], delta_canvas);
-
-                    vect2_add_to (&hitbox->box.min, gui_st->ptr_delta);
-                    vect2_add_to (&hitbox->box.max, gui_st->ptr_delta);
+                    move_hitbox_int (ps_mode);
                     ps_mode->redraw_canvas = true;
                 } else {
                     ps_mode->canvas_state = 0;
