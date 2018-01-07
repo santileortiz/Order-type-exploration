@@ -30,16 +30,16 @@ void segment_entity_add (struct point_set_mode_t *st, int id, vect3_t color)
     next_entity->id = id;
 }
 
-void draw_point (cairo_t *cr, vect2_t p, char *label, transf_t *T)
+void draw_point (cairo_t *cr, vect2_t p, char *label, double radius, transf_t *T)
 {
     if (T != NULL) {
         apply_transform (T, &p);
     }
-    cairo_arc (cr, p.x, p.y, 5, 0, 2*M_PI);
+    cairo_arc (cr, p.x, p.y, radius, 0, 2*M_PI);
     cairo_fill (cr);
 
-    p.x -= 10;
-    p.y -= 10;
+    p.x -= 2*radius;
+    p.y -= 2*radius;
     cairo_move_to (cr, p.x, p.y);
     cairo_show_text (cr, label);
 }
@@ -108,7 +108,7 @@ void draw_entities (struct point_set_mode_t *st, app_graphics_t *graphics)
     for (i=0; i<n; i++) {
         char str[4];
         snprintf (str, ARRAY_SIZE(str), "%i", i);
-        draw_point (cr, pts[i], str, T);
+        draw_point (cr, pts[i], str, st->point_radius, T);
     }
 }
 
@@ -457,6 +457,7 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
         ps_mode->zoom_changed = false;
         ps_mode->old_zoom = 1;
         ps_mode->view_db_ot = false;
+        ps_mode->point_radius = 5;
 
         ps_mode->points_to_canvas.dx = WINDOW_MARGIN;
         ps_mode->points_to_canvas.dy = WINDOW_MARGIN;
@@ -471,7 +472,6 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
     }
 
     app_input_t input = st->gui_st.input;
-
     switch (input.keycode) {
         case 33: //KEY_P
             print_order_type (ps_mode->ot);
@@ -660,7 +660,12 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
         }
     }
 
-    update_layout_boxes (&st->gui_st, st->layout_boxes, st->num_layout_boxes, &ps_mode->redraw_panel);
+    update_layout_boxes (&st->gui_st, st->layout_boxes, st->num_layout_boxes,
+                         &ps_mode->redraw_panel);
+
+    update_layout_boxes (&st->gui_st, ps_mode->pts_hitboxes,
+                         ps_mode->n.i,
+                         &ps_mode->redraw_canvas);
 
     struct behavior_t *beh = st->gui_st.behaviors;
     int i = 0;
@@ -802,14 +807,77 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
         }
     }
 
-    bool ptr_clicked_in_canvas =
-        !is_point_in_box (gui_st->click_coord[0].x, gui_st->click_coord[0].y,
-                          panel->box.min.x, panel->box.min.y,
-                          BOX_WIDTH(panel->box), BOX_HEIGHT(panel->box));
-    if (gui_st->dragging[0] && ptr_clicked_in_canvas) {
-        ps_mode->points_to_canvas.dx += gui_st->ptr_delta.x;
-        ps_mode->points_to_canvas.dy += gui_st->ptr_delta.y;
-        ps_mode->redraw_canvas = true;
+    // Update canvas state
+    bool ptr_clicked_in_canvas = false;
+    switch (ps_mode->canvas_state) {
+        // TODO: Maybe convert this into a DRAG behavior once all the hitbox
+        // logic can be replaced by a more advanced visibility computation of
+        // the layout boxes.
+        //
+        // Or, we can also create a DRAGGING selector flag even though CSS
+        // doesn't have such thing.
+        case 0:
+            {
+                if (!is_vect2_in_box (gui_st->click_coord[0], panel->box) && gui_st->input.mouse_down[0]) {
+                    bool hit = false;
+                    int i;
+                    for (i=0; i<ps_mode->n.i; i++) {
+                        layout_box_t *hitbox = &ps_mode->pts_hitboxes[i];
+                        ps_mode->active_hitbox = i;
+
+                        if (is_vect2_in_box (gui_st->click_coord[0], hitbox->box)) {
+                            transf_t *T = &ps_mode->points_to_canvas;
+                            vect2_t delta_canvas = gui_st->ptr_delta;
+                            apply_inverse_transform_distance (T, &delta_canvas);
+                            vect2_add_to (&ps_mode->visible_pts[i], delta_canvas);
+
+                            vect2_add_to (&hitbox->box.min, gui_st->ptr_delta);
+                            vect2_add_to (&hitbox->box.max, gui_st->ptr_delta);
+                            hit = true;
+                            ps_mode->redraw_canvas = true;
+                            ps_mode->canvas_state = 1;
+                            break;
+                        }
+                    }
+
+                    if (!hit) {
+                        transform_translate (&ps_mode->points_to_canvas, &gui_st->ptr_delta);
+                        ptr_clicked_in_canvas = true;
+                        ps_mode->redraw_canvas = true;
+                        ps_mode->canvas_state = 2;
+                    }
+                }
+            } break;
+        case 1:
+            {
+                if (gui_st->input.mouse_down[0]) {
+                    int i = ps_mode->active_hitbox;
+                    layout_box_t *hitbox = &ps_mode->pts_hitboxes[i];
+                    transf_t *T = &ps_mode->points_to_canvas;
+
+                    vect2_t delta_canvas = gui_st->ptr_delta;
+                    apply_inverse_transform_distance (T, &delta_canvas);
+                    vect2_add_to (&ps_mode->visible_pts[i], delta_canvas);
+
+                    vect2_add_to (&hitbox->box.min, gui_st->ptr_delta);
+                    vect2_add_to (&hitbox->box.max, gui_st->ptr_delta);
+                    ps_mode->redraw_canvas = true;
+                } else {
+                    ps_mode->canvas_state = 0;
+                }
+            } break;
+        case 2:
+            if (gui_st->input.mouse_down[0]) {
+                transform_translate (&ps_mode->points_to_canvas, &gui_st->ptr_delta);
+                ps_mode->redraw_canvas = true;
+                ps_mode->canvas_state = 2;
+            } else {
+                ps_mode->canvas_state = 0;
+            }
+            break;
+        default:
+            invalid_code_path;
+
     }
 
     if (gui_st->mouse_double_clicked[0] && ptr_clicked_in_canvas) {
@@ -823,7 +891,6 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
         cairo_clear (cr);
         cairo_set_source_rgb (cr, 1, 1, 1);
         cairo_paint (cr);
-        //draw_point (graphics, VECT2(100,100), "0");
 
         if (ps_mode->zoom_changed) {
             vect2_t window_ptr_pos = input.ptr;
@@ -831,16 +898,29 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
             compute_transform (&ps_mode->points_to_canvas, input.ptr, window_ptr_pos, ps_mode->zoom);
         }
 
-        // Construct drawing on canvas.
-        ps_mode->num_entities = 0;
-
+        // Points may have changed position suddenly, update the hitboxes.
         int i;
-        get_next_color (0);
-        int triangles [ps_mode->k.i];
+        for (i=0; i<ARRAY_SIZE(ps_mode->pts_hitboxes); i++) {
+            layout_box_t *curr_hitbox = &ps_mode->pts_hitboxes[i];
+
+            vect2_t point = ps_mode->visible_pts[i];
+            apply_transform (&ps_mode->points_to_canvas, &point);
+
+            BOX_CENTER_X_Y_W_H(curr_hitbox->box,
+                               point.x, point.y,
+                               3*ps_mode->point_radius, 3*ps_mode->point_radius);
+        }
+
+        // If ts_id is outside of bounds, clamp it.
         if (ps_mode->ts_id.i >= ps_mode->num_triangle_subsets) {
             int_string_update (&ps_mode->ts_id, ps_mode->num_triangle_subsets-1);
         }
 
+        // Construct drawing on canvas.
+        ps_mode->num_entities = 0;
+
+        get_next_color (0);
+        int triangles [ps_mode->k.i];
         subset_it_idx_for_id (ps_mode->ts_id.i, ps_mode->triangle_it->size,
                               triangles, ARRAY_SIZE(triangles));
         for (i=0; i<ps_mode->k.i; i++) {
@@ -867,18 +947,12 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
                 invalid_code_path;
             }
 
-#if 0
-            box_t *rect = &st->layout_boxes[i].box;
-            cairo_rectangle (cr, rect->min.x+0.5, rect->min.y+0.5, BOX_WIDTH(*rect)-1, BOX_HEIGHT(*rect)-1);
-            cairo_set_source_rgba (cr, 0.3, 0.1, 0.7, 0.6);
-            cairo_set_line_width (cr, 1);
-            cairo_stroke (cr);
-#endif
         }
         blit_needed = true;
     }
 
     layout_boxes_end_frame (st->layout_boxes, st->num_layout_boxes);
+    layout_boxes_end_frame (ps_mode->pts_hitboxes, ps_mode->n.i);
 
     ps_mode->rebuild_panel = false;
     ps_mode->redraw_panel = false;

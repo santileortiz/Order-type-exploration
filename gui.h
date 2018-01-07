@@ -193,7 +193,7 @@ struct selection_t {
 
 enum behavior_type_t {
     BEHAVIOR_BUTTON,
-    BEHAVIOR_TEXT_ENTRY
+    BEHAVIOR_TEXT_ENTRY,
 };
 
 struct behavior_t {
@@ -204,6 +204,7 @@ struct behavior_t {
         bool *b;
         int *i32;
         float *r32;
+        vect2_t *vect2;
         uint64_string_t *u64_str;
     } target;
     layout_box_t *box;
@@ -214,6 +215,7 @@ struct gui_state_t {
     mem_pool_t pool;
 
     app_input_t input;
+    app_graphics_t gr;
 
     struct platform_api_t platform;
 
@@ -260,7 +262,7 @@ void default_gui_init (struct gui_state_t *gui_st)
 {
 
     gui_st->double_click_time = 200;
-    gui_st->min_distance_for_drag = 10;
+    gui_st->min_distance_for_drag = 3;
     gui_st->time_since_last_click[0] = gui_st->double_click_time;
     gui_st->time_since_last_click[1] = gui_st->double_click_time;
     gui_st->time_since_last_click[2] = gui_st->double_click_time;
@@ -317,6 +319,12 @@ void apply_inverse_transform_distance (transf_t *tr, vect2_t *p)
 {
     p->x = p->x/tr->scale_x;
     p->y = p->y/tr->scale_y;
+}
+
+void transform_translate (transf_t *tr, vect2_t *delta)
+{
+    tr->dx += delta->x;
+    tr->dy += delta->y;
 }
 
 #define int_string_inc(int_str) int_string_update(int_str,(int_str)->i+1)
@@ -382,6 +390,22 @@ void vect_floor (vect2_t *p)
     p->y = floor (p->y);
 }
 
+static inline
+vect2_t vect2_add (vect2_t va, vect2_t vb)
+{
+    vect2_t res;
+    res.x = va.x+vb.x;
+    res.y = va.y+vb.y;
+    return res;
+}
+
+static inline
+void vect2_add_to (vect2_t *va, vect2_t vb)
+{
+    va->x += vb.x;
+    va->y += vb.y;
+}
+
 void rounded_box_path (cairo_t *cr, double x, double y, double width, double height, double radius)
 {
     cairo_move_to (cr, x, y+radius);
@@ -392,6 +416,8 @@ void rounded_box_path (cairo_t *cr, double x, double y, double width, double hei
     cairo_close_path (cr);
 }
 
+#define is_vect2_in_box(v2,box) is_point_in_box((v2).x,(v2).y,(box).min.x,\
+                                                (box).min.y,BOX_WIDTH(box),BOX_HEIGHT(box))
 bool is_point_in_box (double p_x, double p_y, double x, double y, double width, double height)
 {
     if (p_x < x || p_x > x+width) {
@@ -740,6 +766,14 @@ void layout_boxes_end_frame (layout_box_t *layout_boxes, int len)
     for (i=0; i<len; i++) {
         layout_boxes[i].changed_selectors = 0;
         layout_boxes[i].content_changed = false;
+
+#if 0
+        box_t *rect = &layout_boxes[i].box;
+        cairo_t *cr = global_gui_st->gr.cr;
+        cairo_rectangle (cr, rect->min.x+0.5, rect->min.y+0.5, BOX_WIDTH(*rect)-1, BOX_HEIGHT(*rect)-1);
+        cairo_set_source_rgba (cr, 0.5, 0.1, 0.1, 0.3);
+        cairo_fill (cr);
+#endif
     }
 }
 

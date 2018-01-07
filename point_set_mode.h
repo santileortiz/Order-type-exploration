@@ -55,7 +55,11 @@ struct point_set_mode_t {
     entity_t entities[300];
 
     bool view_db_ot;
-    vect2_t visible_pts[50];
+    vect2_t visible_pts[15];
+    double point_radius;
+    layout_box_t pts_hitboxes[15];
+    int active_hitbox;
+    int canvas_state;
 
     mem_pool_t memory;
     mem_pool_t pool;

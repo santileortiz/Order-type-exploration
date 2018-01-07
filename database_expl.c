@@ -61,6 +61,7 @@ bool update_and_render (struct app_state_t *st, app_graphics_t *graphics, app_in
 
     mem_pool_destroy (&st->temporary_memory);
 
+    st->gui_st.gr = *graphics;
     update_input (&st->gui_st, input);
 
     switch (st->gui_st.input.keycode) {
