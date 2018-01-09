@@ -138,6 +138,121 @@ void focus_order_type (app_graphics_t *graphics, struct point_set_mode_t *st)
                        VECT2(box.min.x, box.max.y), st->zoom);
 }
 
+//static inline
+//double cost (double d, double h, double r)
+//{
+//    return h*exp(-d/r);
+//}
+
+static inline
+double cost (double d, double h, double r)
+{
+    h /= 255;
+    if (d >= r) {
+        return 0;
+    } else if (d > 0) {
+        return -h*d/r + h;
+    } else {
+        return -100*h*d/r + h;
+    }
+}
+
+double arrange_points (order_type_t *ot, vect2_t *points, int len, double h)
+{
+    vect2_t res[len];
+    int i;
+    for (i=0; i<len; i++) {
+        res[i] = (vect2_t){0};
+    }
+
+    // r controls how 'far' the force of each line reaches.
+    double r = 500;
+    int segment_idx[2] = {0,1};
+    for (i=0; i<binomial(len,2); i++) {
+        vect2_t a = points[segment_idx[0]];
+        vect2_t b = points[segment_idx[1]];
+
+        // n => unit vector a --> b
+        vect2_t n = vect2_subs (b, a);
+        double force = vect2_norm (n);
+        vect2_normalize (&n);
+
+        int j;
+        for (j=0; j<len; j++) {
+            if (j != segment_idx[0] && j != segment_idx[1]) {
+                vect2_t p = points[j];
+
+                // . -> dot product
+                // * -> scalar multiplication
+                // d_v = ((a-p).n)*n - (a-p)  => vector from segment to point,
+                //                               perpendicular to ab
+                vect2_t pa = vect2_subs (a, p);
+                vect2_t d_v = vect2_subs (vect2_mult(n, vect2_dot(pa, n)), pa);
+
+                // Normally d would represent the norm of d_v, but we want the
+                // force to be always applied in the direction given by the
+                // order type, to prevent points 'snapping' over segments.
+#if 0
+                double d = vect2_norm (d_v);
+#else
+                double d;
+                if (left(ot->pts[segment_idx[0]], ot->pts[segment_idx[1]], ot->pts[j]) ==
+                    left_vect (n, d_v)) {
+                    d = vect2_norm (d_v);
+                } else {
+                    d = -vect2_norm (d_v);
+                    vect2_mult_to (&d_v, -1);
+                }
+#endif
+                vect2_normalize (&d_v);
+                vect2_t seg_force = vect2_mult (d_v, cost (d, force, r));
+                if (j==2) {
+                    printf ("[%d, %d]:", segment_idx[0], segment_idx[1]);
+                    vect2_print (&seg_force);
+                }
+
+                vect2_add_to (&res[j], seg_force);
+            }
+        }
+
+        subset_it_next_explicit (len, 2, segment_idx);
+    }
+    printf ("\n");
+
+    for (i=0; i<len; i++) {
+        vect2_t p = points[i];
+        double boundary_r = 128;
+        vect2_t center = VECT2(boundary_r, boundary_r);
+
+        vect2_t to_center = vect2_subs (center, p);
+        double d = boundary_r - vect2_norm (to_center);
+        vect2_normalize (&to_center);
+        vect2_t boundary_force = vect2_mult (to_center, cost (d, 20, r));
+        vect2_add_to (&res[i], boundary_force);
+    }
+
+    // Move the original points by the computed force.
+    //
+    // Also compute an indicator that shows how much points are still moving.
+    // (used to decide if we iterate again or finish).
+    // As indicator we use the maximum change in distance from the first point
+    // to each point.
+    //
+    // NOTE: We previously used the average of the magnitudes of all forces, but
+    // this does not converge to 0. Sometimes the points gather momentum and the
+    // points start to rotate rigidly around some point.
+    double change = 0;
+    vect2_t old_p_0 = points[0];
+    vect2_add_to (&points[0], res[0]);
+    for (i=1; i<len; i++) {
+        double old_dist = vect2_distance (&old_p_0, &points[i]);
+        vect2_add_to (&points[i], res[i]);
+        double new_dist = vect2_distance (&points[0], &points[i]);
+        change = MAX(change, fabs(old_dist-new_dist));
+    }
+    return change;
+}
+
 void move_hitbox (struct point_set_mode_t *ps_mode)
 {
     struct gui_state_t *gui_st = global_gui_st;
@@ -487,7 +602,7 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
         ps_mode->zoom = 1;
         ps_mode->zoom_changed = false;
         ps_mode->old_zoom = 1;
-        ps_mode->view_db_ot = false;
+        ps_mode->view_db_ot = true;
         ps_mode->point_radius = 5;
 
         ps_mode->points_to_canvas.dx = WINDOW_MARGIN;
@@ -664,8 +779,53 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
         ps_mode->redraw_panel = true;
     }
 
+    static bool iterating = false;
     if (btn_state) {
-        printf ("Test button clicked\n");
+        //printf ("Test button clicked\n");
+        //vect2i_t *pts = ps_mode->ot->pts;
+
+        //vect2i_t p1_i = pts[1];
+        //vect2i_t p2_i = pts[2];
+        //vect2i_t p3_i = pts[3];
+
+        //vect2i_t p1_i = VECT2i(0, 1);
+        //vect2i_t p2_i = VECT2i(0, 2);
+        //vect2i_t p3_i = VECT2i(-1, 3);
+
+        //if (left (p1_i, p2_i, p3_i)) {
+        //    printf ("OT is left\n");
+        //} else {
+        //    printf ("OT NOT left\n");
+        //}
+
+        //vect2_t p1 = v2_from_v2i (p1_i);
+        //vect2_t p2 = v2_from_v2i (p2_i);
+        //vect2_t p3 = v2_from_v2i (p3_i);
+
+        //vect2_t a = vect2_subs (p2, p1);
+        //vect2_t p = vect2_subs (p3, p1);
+        //if (left_vect (a, p)) {
+        //    printf ("vects is left\n");
+        //} else {
+        //    printf ("vects NOT left\n");
+        //}
+
+        if (iterating) {
+            printf ("Finished.\n");
+            iterating = false;
+        } else {
+            printf ("Started\n");
+            iterating = true;
+        }
+    }
+
+    if (iterating) {
+        double change = arrange_points (ps_mode->ot, ps_mode->visible_pts, ps_mode->n.i, 1);
+        ps_mode->redraw_canvas = true;
+        if (change < 0.01) {
+            iterating = false;
+            printf ("Finished.\n");
+        }
     }
 
     // I'm still not sure about handling selection here in the future. On one

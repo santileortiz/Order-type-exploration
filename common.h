@@ -412,19 +412,86 @@ void vect2_round (vect2_t *p)
 }
 
 static inline
-vect2_t vect2_add (vect2_t va, vect2_t vb)
+vect2_t vect2_add (vect2_t v1, vect2_t v2)
 {
     vect2_t res;
-    res.x = va.x+vb.x;
-    res.y = va.y+vb.y;
+    res.x = v1.x+v2.x;
+    res.y = v1.y+v2.y;
     return res;
 }
 
 static inline
-void vect2_add_to (vect2_t *va, vect2_t vb)
+void vect2_add_to (vect2_t *v1, vect2_t v2)
 {
-    va->x += vb.x;
-    va->y += vb.y;
+    v1->x += v2.x;
+    v1->y += v2.y;
+}
+
+static inline
+vect2_t vect2_subs (vect2_t v1, vect2_t v2)
+{
+    vect2_t res;
+    res.x = v1.x-v2.x;
+    res.y = v1.y-v2.y;
+    return res;
+}
+
+static inline
+void vect2_subs_to (vect2_t *v1, vect2_t v2)
+{
+    v1->x -= v2.x;
+    v1->y -= v2.y;
+}
+
+static inline
+vect2_t vect2_mult (vect2_t v, double k)
+{
+    vect2_t res;
+    res.x = v.x*k;
+    res.y = v.y*k;
+    return res;
+}
+
+static inline
+void vect2_mult_to (vect2_t *v, double k)
+{
+    v->x *= k;
+    v->y *= k;
+}
+
+static inline
+double vect2_dot (vect2_t v1, vect2_t v2)
+{
+    return v1.x*v2.x + v1.y*v2.y;
+}
+
+static inline
+double vect2_norm (vect2_t v)
+{
+    return sqrt ((v.x)*(v.x) + (v.y)*(v.y));
+}
+
+static inline
+void vect2_normalize (vect2_t *v)
+{
+    double norm = vect2_norm (*v);
+    v->x /= norm;
+    v->y /= norm;
+}
+
+static inline
+double vect2_distance (vect2_t *v1, vect2_t *v2)
+{
+    if (v1->x == v2->x && v1->y == v2->y) {
+        return 0;
+    } else {
+        return sqrt ((v1->x-v2->x)*(v1->x-v2->x) + (v1->y-v2->y)*(v1->y-v2->y));
+    }
+}
+
+void vect2_print (vect2_t *v)
+{
+    printf ("(%f, %f) [%f]\n", v->x, v->y, vect2_norm(*v));
 }
 
 #define BOX_X_Y_W_H(box,n_x,n_y,n_w,n_h) {(box).min.x=(n_x);(box).max.x=(n_x)+(n_w); \
@@ -436,11 +503,6 @@ void vect2_add_to (vect2_t *va, vect2_t vb)
 #define BOX_WIDTH(box) ((box).max.x-(box).min.x)
 #define BOX_HEIGHT(box) ((box).max.y-(box).min.y)
 #define BOX_AR(box) (BOX_WIDTH(box)/BOX_HEIGHT(box))
-
-double vect2_distance (vect2_t *v1, vect2_t *v2)
-{
-    return sqrt ((v1->x-v2->x)*(v1->x-v2->x) + (v1->y-v2->y)*(v1->y-v2->y));
-}
 
 typedef union {
     struct {
@@ -457,6 +519,16 @@ typedef union {
     double E[3];
 } vect3_t;
 #define VECT3(x,y,z) ((vect3_t){{x,y,z}})
+
+static inline
+vect3_t vect3_cross (vect3_t v1, vect3_t v2)
+{
+    vect3_t res;
+    res.x = v1.y*v2.z - v1.z*v2.y;
+    res.y = v1.z*v2.x - v1.x*v2.z;
+    res.z = v1.x*v2.y - v1.y*v2.x;
+    return res;
+}
 
 typedef union {
     struct {
