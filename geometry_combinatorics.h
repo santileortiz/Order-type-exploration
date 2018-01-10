@@ -321,6 +321,77 @@ void get_bounding_box (vect2_t *pts, int n, box_t *res)
     res->max.y = max_y;
 }
 
+// Graham's scan
+//
+// This algorithm runs in O(n) because the database has already all point sets
+// sorted clockwise around p0.
+//
+// NOTE: res MUST have ot->n elements allocated.
+void convex_hull (order_type_t *ot, int *res, int *len)
+{
+    // We know ot->pts[0] and ot->pts[1] must be in the convex hull.
+    res[0] = 0;
+    res[1] = 1;
+    int k = 2;
+
+    int i;
+    for (i=2; i<ot->n; i++) {
+        while (left (ot->pts[res[k-2]], ot->pts[res[k-1]], ot->pts[i])) {
+            k--;
+        }
+        res[k] = i;
+        k++;
+    }
+    *len = k;
+}
+
+// Compares points' a and b radial order around p, assuming that the segment
+// p-->s is equal to 0°, incrementing clockwise.
+// i.e:
+//      return ∠spa < ∠spb;
+bool angle_lt (int a, int b, order_type_t *ot, int p, int s)
+{
+    if (a == b) {
+        return false;
+    }
+
+    // Is there a way to compute this without the call to segments_intersect()?
+    if (segments_intersect (ot->pts[a], ot->pts[b], ot->pts[p], ot->pts[s])) {
+        return left (ot->pts[p], ot->pts[s], ot->pts[b]);
+    } else {
+        return left (ot->pts[p], ot->pts[b], ot->pts[a]);
+    }
+}
+
+struct angle_compare_info_t {
+    order_type_t *ot;
+    int p;
+    int s;
+};
+
+bool compare_angle_around_p_closure (int a, int b, struct angle_compare_info_t *user_data)
+{
+    return angle_lt (a, b, user_data->ot, user_data->p, user_data->s);
+}
+
+templ_sort(radial_sort_ot, int, compare_angle_around_p_closure(*a, *b, user_data))
+
+// Sets res to an array of indices of points radially ordered clockwise around p
+// starting by point s (i.e res[0] == start).
+//
+// NOTE: res MUST be of size ot->n-1
+void sort_all_points_p (order_type_t *ot, int p, int s, int *res)
+{
+    int i;
+    for (i=0; i<ot->n-1; i++) {
+        res[i] = i;
+    }
+    res[p] = i;
+
+    struct angle_compare_info_t info = {ot, p, s};
+    radial_sort_ot_user_data (res, ot->n-1, &info);
+}
+
 uint64_t factorial (int n)
 {
     uint64_t res = 1;

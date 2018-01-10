@@ -810,13 +810,22 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
         //    printf ("vects NOT left\n");
         //}
 
-        if (iterating) {
-            printf ("Finished.\n");
-            iterating = false;
-        } else {
-            printf ("Started\n");
-            iterating = true;
-        }
+        //if (iterating) {
+        //    printf ("Finished.\n");
+        //    iterating = false;
+        //} else {
+        //    printf ("Started\n");
+        //    iterating = true;
+        //}
+
+        int res[ps_mode->n.i];
+        int len;
+        printf ("Convex Hull: ");
+        convex_hull (ps_mode->ot, res, &len);
+        array_print (res, len);
+        printf ("Order from p_3 starting at p_0: ");
+        sort_all_points_p (ps_mode->ot, 3, 0, res);
+        array_print (res, ps_mode->n.i-1);
     }
 
     if (iterating) {
