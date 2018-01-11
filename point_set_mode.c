@@ -138,23 +138,24 @@ void focus_order_type (app_graphics_t *graphics, struct point_set_mode_t *st)
                        VECT2(box.min.x, box.max.y), st->zoom);
 }
 
-//static inline
-//double cost (double d, double h, double r)
-//{
-//    return h*exp(-d/r);
-//}
+// The following is an implementation of an algorithm that positions the points
+// in a point set automatically into a more friendly configuration than the one
+// found in the database. A more in depth discussion about it's design can be
+// found in the file auto_positioning_points.txt.
 
-static inline
-double cost (double d, double h, double r)
+vect2_t angular_force (vect2_t *points, int v, int s_m, int p, int s_p)
 {
-    h /= 255;
-    if (d >= r) {
-        return 0;
-    } else if (d > 0) {
-        return -h*d/r + h;
-    } else {
-        return -100*h*d/r + h;
-    }
+    vect2_t vs_m = vect2_subs (points[s_m], points[v]);
+    vect2_t vp = vect2_subs (points[p], points[v]);
+    vect2_t vs_p = vect2_subs (points[s_p], points[v]);
+
+    double ang_a = vect2_clockwise_angle_between (vs_m, vp);
+    double ang_b = vect2_clockwise_angle_between (vp, vs_p);
+    vect2_t force = VECT2 (vp.y, -vp.x); // Clockwise perpendicular vector to vp
+    vect2_normalize (&force);
+    vect2_mult_to (&force, (ang_b-ang_a)/(ang_a+ang_b));
+
+    return force;
 }
 
 double arrange_points (order_type_t *ot, vect2_t *points, int len, double h)
@@ -165,60 +166,33 @@ double arrange_points (order_type_t *ot, vect2_t *points, int len, double h)
         res[i] = (vect2_t){0};
     }
 
-    // r controls how 'far' the force of each line reaches.
-    double r = 500;
-    int segment_idx[2] = {0,1};
-    for (i=0; i<binomial(len,2); i++) {
-        vect2_t a = points[segment_idx[0]];
-        vect2_t b = points[segment_idx[1]];
+    int sort[len][len-1];
+    for (i=0; i<len; i++) {
+        sort_all_points_p (ot, i, 0, sort[i]);
+    }
 
-        // n => unit vector a --> b
-        vect2_t n = vect2_subs (b, a);
-        double force = vect2_norm (n);
-        vect2_normalize (&n);
+    // Compute the sum of all angular forces on a point p
+    int v;
+    for (v=0; v<len; v++) {
+        int *pts_arnd_v = sort[v];
+
+        vect2_t force = angular_force (points, v, pts_arnd_v[len-2], pts_arnd_v[0], pts_arnd_v[1]);
+        vect2_add_to (&res[0], force);
 
         int j;
-        for (j=0; j<len; j++) {
-            if (j != segment_idx[0] && j != segment_idx[1]) {
-                vect2_t p = points[j];
-
-                // . -> dot product
-                // * -> scalar multiplication
-                // d_v = ((a-p).n)*n - (a-p)  => vector from segment to point,
-                //                               perpendicular to ab
-                vect2_t pa = vect2_subs (a, p);
-                vect2_t d_v = vect2_subs (vect2_mult(n, vect2_dot(pa, n)), pa);
-
-                // Normally d would represent the norm of d_v, but we want the
-                // force to be always applied in the direction given by the
-                // order type, to prevent points 'snapping' over segments.
-#if 0
-                double d = vect2_norm (d_v);
-#else
-                double d;
-                if (left(ot->pts[segment_idx[0]], ot->pts[segment_idx[1]], ot->pts[j]) ==
-                    left_vect (n, d_v)) {
-                    d = vect2_norm (d_v);
-                } else {
-                    d = -vect2_norm (d_v);
-                    vect2_mult_to (&d_v, -1);
-                }
-#endif
-                vect2_normalize (&d_v);
-                vect2_t seg_force = vect2_mult (d_v, cost (d, force, r));
-                if (j==2) {
-                    printf ("[%d, %d]:", segment_idx[0], segment_idx[1]);
-                    vect2_print (&seg_force);
-                }
-
-                vect2_add_to (&res[j], seg_force);
-            }
+        for (j=0; j<len-3; j++) {
+            int s_m = pts_arnd_v[j];
+            int p = pts_arnd_v[j+1];
+            int s_p = pts_arnd_v[j+2];
+            vect2_t force = angular_force (points, v, s_m, p, s_p);
+            vect2_add_to (&res[p], force);
         }
 
-        subset_it_next_explicit (len, 2, segment_idx);
+        force = angular_force (points, v, pts_arnd_v[j], pts_arnd_v[j+1], pts_arnd_v[0]);
+        vect2_add_to (&res[pts_arnd_v[j+1]], force);
     }
-    printf ("\n");
 
+    // Circular boundary
     for (i=0; i<len; i++) {
         vect2_t p = points[i];
         double boundary_r = 128;
@@ -227,20 +201,12 @@ double arrange_points (order_type_t *ot, vect2_t *points, int len, double h)
         vect2_t to_center = vect2_subs (center, p);
         double d = boundary_r - vect2_norm (to_center);
         vect2_normalize (&to_center);
-        vect2_t boundary_force = vect2_mult (to_center, cost (d, 20, r));
+        vect2_t boundary_force = vect2_mult (to_center, -0.01*d);
         vect2_add_to (&res[i], boundary_force);
     }
 
-    // Move the original points by the computed force.
-    //
-    // Also compute an indicator that shows how much points are still moving.
-    // (used to decide if we iterate again or finish).
-    // As indicator we use the maximum change in distance from the first point
-    // to each point.
-    //
-    // NOTE: We previously used the average of the magnitudes of all forces, but
-    // this does not converge to 0. Sometimes the points gather momentum and the
-    // points start to rotate rigidly around some point.
+    // Move the original points by the computed force and compute the change
+    // indicator.
     double change = 0;
     vect2_t old_p_0 = points[0];
     vect2_add_to (&points[0], res[0]);
@@ -781,51 +747,23 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
 
     static bool iterating = false;
     if (btn_state) {
-        //printf ("Test button clicked\n");
-        //vect2i_t *pts = ps_mode->ot->pts;
+        printf ("Test button clicked\n");
+        if (iterating) {
+            printf ("Finished.\n");
+            iterating = false;
+        } else {
+            printf ("Started\n");
+            iterating = true;
+        }
 
-        //vect2i_t p1_i = pts[1];
-        //vect2i_t p2_i = pts[2];
-        //vect2i_t p3_i = pts[3];
-
-        //vect2i_t p1_i = VECT2i(0, 1);
-        //vect2i_t p2_i = VECT2i(0, 2);
-        //vect2i_t p3_i = VECT2i(-1, 3);
-
-        //if (left (p1_i, p2_i, p3_i)) {
-        //    printf ("OT is left\n");
-        //} else {
-        //    printf ("OT NOT left\n");
+        //int i;
+        //for (i=0; i<ps_mode->n.i; i++) {
+        //    vect2_print (&ps_mode->visible_pts[i]);
         //}
-
-        //vect2_t p1 = v2_from_v2i (p1_i);
-        //vect2_t p2 = v2_from_v2i (p2_i);
-        //vect2_t p3 = v2_from_v2i (p3_i);
-
-        //vect2_t a = vect2_subs (p2, p1);
-        //vect2_t p = vect2_subs (p3, p1);
-        //if (left_vect (a, p)) {
-        //    printf ("vects is left\n");
-        //} else {
-        //    printf ("vects NOT left\n");
-        //}
-
-        //if (iterating) {
-        //    printf ("Finished.\n");
-        //    iterating = false;
-        //} else {
-        //    printf ("Started\n");
-        //    iterating = true;
-        //}
-
-        int res[ps_mode->n.i];
-        int len;
-        printf ("Convex Hull: ");
-        convex_hull (ps_mode->ot, res, &len);
-        array_print (res, len);
-        printf ("Order from p_3 starting at p_0: ");
-        sort_all_points_p (ps_mode->ot, 3, 0, res);
-        array_print (res, ps_mode->n.i-1);
+        //printf ("\n");
+        //double change = arrange_points (ps_mode->ot, ps_mode->visible_pts, ps_mode->n.i, 1);
+        //ps_mode->redraw_canvas = true;
+        //printf ("change: %f\n\n", change);
     }
 
     if (iterating) {

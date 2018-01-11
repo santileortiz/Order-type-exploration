@@ -394,6 +394,8 @@ typedef union {
 } vect2i_t;
 #define VECT2i(x,y) ((vect2i_t){{x,y}})
 
+#define vect_equal(v1,v2) ((v1)->x == (v2)->x && (v1)->y == (v2)->y)
+
 typedef struct {
     vect2_t min;
     vect2_t max;
@@ -471,6 +473,34 @@ double vect2_norm (vect2_t v)
     return sqrt ((v.x)*(v.x) + (v.y)*(v.y));
 }
 
+bool left_vect (vect2_t a, vect2_t p);
+
+// Angle from v1 to v2 clockwise.
+//
+// NOTE: The return value is in the range [0, 2*M_PI).
+static inline
+double vect2_clockwise_angle_between (vect2_t v1, vect2_t v2)
+{
+    if (vect_equal (&v1, &v2)) {
+        return 0;
+    } else if (left_vect (v2, v1))
+        return acos (vect2_dot (v1, v2)/(vect2_norm (v1)*vect2_norm(v2)));
+    else
+        return 2*M_PI - acos (vect2_dot (v1, v2)/(vect2_norm (v1)*vect2_norm(v2)));
+}
+
+// Smallest angle between v1 to v2.
+//
+// NOTE: The return value is in the range [0, M_PI].
+static inline
+double vect2_angle_between (vect2_t v1, vect2_t v2)
+{
+    if (vect_equal (&v1, &v2)) {
+        return 0;
+    } else
+        return acos (vect2_dot (v1, v2)/(vect2_norm (v1)*vect2_norm(v2)));
+}
+
 static inline
 void vect2_normalize (vect2_t *v)
 {
@@ -482,7 +512,7 @@ void vect2_normalize (vect2_t *v)
 static inline
 double vect2_distance (vect2_t *v1, vect2_t *v2)
 {
-    if (v1->x == v2->x && v1->y == v2->y) {
+    if (vect_equal(v1, v2)) {
         return 0;
     } else {
         return sqrt ((v1->x-v2->x)*(v1->x-v2->x) + (v1->y-v2->y)*(v1->y-v2->y));
@@ -528,6 +558,15 @@ vect3_t vect3_cross (vect3_t v1, vect3_t v2)
     res.y = v1.z*v2.x - v1.x*v2.z;
     res.z = v1.x*v2.y - v1.y*v2.x;
     return res;
+}
+
+// true if vector p points to the left of vector a
+bool left_vect (vect2_t a, vect2_t p)
+{
+    vect3_t a3 = VECT3 (a.x, a.y, 0);
+    vect3_t p3 = VECT3 (p.x, p.y, 0);
+    vect3_t cross = vect3_cross (a3, p3);
+    return cross.z > 0;
 }
 
 typedef union {

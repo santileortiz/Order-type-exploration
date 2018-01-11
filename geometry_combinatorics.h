@@ -85,15 +85,6 @@ int segments_intersect  (vect2i_t s1p1, vect2i_t s1p2, vect2i_t s2p1, vect2i_t s
         (!left (s2p1, s2p2, s1p1) ^ !left (s2p1, s2p2, s1p2));
 }
 
-// true if vector p points to the left of vector a
-bool left_vect (vect2_t a, vect2_t p)
-{
-    vect3_t a3 = VECT3 (a.x, a.y, 0);
-    vect3_t p3 = VECT3 (p.x, p.y, 0);
-    vect3_t cross = vect3_cross (a3, p3);
-    return cross.z > 0;
-}
-
 int count_common_vertices (triangle_t *a, triangle_t *b)
 {
     int i, j, res=0;
