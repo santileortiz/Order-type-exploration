@@ -1,0 +1,242 @@
+Point set auto positioning
+==========================
+
+  This is a discussion on the development of an algorithm that positions the
+  points in a point set in a way that is more amenable to humans. Several
+  attempts have been made, so here I discuss what has worked and what hasn't.
+  First of all the goals of the algorithm are to have an output that satisfies
+  the following:
+  
+   - It MUST attempt at all cost to not change the order type of the point set.
+     Not even to an equivalent point set with another labeling.
+   - The point set should be as symmetric as possible. This mean favoring
+     regular polygons if we can.
+  
+  The current approach is to iteratively compute a 'force' vector for each
+  point. At the end of the iteration each point is moved by adding the force
+  vector to it's position (maybe delta or distance vector is more
+  appropriate?). We finally compute a number called the 'change indicator' that
+  tells us if the point set is still changing. The bigger the change indicator
+  the grater the impact we had on the original point set in this iteration.
+  Using this framework we iterate until the change indicator goes below some
+  threshold.
+  
+  Several ideas have been tested on how to compute the force of each point and
+  the change indicator. Here is the progress so far.
+
+Force calculation:
+------------------
+
+  IDEA #1:  
+  Iterate all binomial(n,2) segments, in each iteration take one of the points,
+  compute a vector dv perpendicular to the line containing the segment, and whose
+  magnitude represents the distance from the line to the point. Then use this
+  distance d = |dv| as input to a cost function and set this as the magnitude of
+  dv. The final force of each point is the vector sum of all the influences of
+  each segment over it.
+  
+  Three cost functions were tried out. The idea was to use r as a parameter that
+  controls how far from the line the force still has effect. And h controls how
+  many pixels a point will be pushed if it's on top of the line. For all tests
+  the values of h and r were set to constants. These are the 3 cost functions
+  tested:
+  
+   - cost(d, h, r) = h*(r-d)/r  
+       Linear cost. Has value h at distance 0 and value 0 at distance r.  For
+       this one to work r must be set to a number larger than any of the force
+       vectors may be in the end, otherwise things go crazy because the sign
+       changes. This one seems to be the best because it's fast to evaluate, is
+       easy to understand, and maybe lends itself to be analytically studied in
+       the future.
+  
+   - cost(d, h, r) = h*exp(-d/r)  
+       Exponential cost. Has the nice property that is always positive so we
+       don't have to worry about how big force vectors can get. But this is
+       also it's downside, due to the exponential growth things may get crazy
+       really fast.
+  
+   - cost(d, h, r) = h*r/(d+r)  
+       Hyperbolic cost. Tried out by mistake, but still has a nice behavior.
+       Not as slow as the linear, but not as chaotic as the exponential. The
+       downside is it's not defined for d=-r and changes sign for d<-r.
+  
+  Our main goal is to not change the order type, but d is always positive.
+  This means that if by any chance a point crosses a line (changing the
+  order type), then it will be pushed farther away. To prevent this we flip
+  the sign of d so that the point will always be pushed towards it's
+  corresponding cell in the original order type. This works for the linear
+  and exponential costs, but for hyperbolic cost things go crazy if a
+  point goes farther than r in the opposite direction.
+  
+  As described, this idea has the problem that points in the convex hull
+  always have a force pointing outwards. This makes the point set grow
+  indefinitely. To stop this from happening we add an imaginary circular
+  boundary centered on (128,128) with radius 128. The boundary induces a
+  force on each point in the direction of a ray that passes through the
+  point and the center (128,128). The magnitude of the force is the cost
+  applied to the distance between the point and the boundary along the ray.
+  Even though it wasn't tested, one could choose another cost function for
+  the boundary and have their parameters be independent from the ones used
+  for segments.
+  
+  In general IDEA #1 has several pros, cons and characteristics whose
+  impact is still unknown:
+  
+  Pros:
+   - The order type 0 (convex position) always converges to the regular
+     polygon.
+  
+   - The convex hull almost always converges to a somewhat symmetric polygon
+     (but not necessarily regular).
+  
+  Cons:
+   - The order type changes, specially in point sets whose convex hull is a
+     triangle, and for points not in the convex hull but close to it. In
+     this case all segments except for one in the convex hull are pushing
+     it outside and the circular boundary is beyond the convex hull so it
+     won't make enough force in time to stop it from going outside the
+     convex hull and changing the order type.
+  
+   - The result depends highly on the constants h and r chosen for the cost
+     function. Maybe some kind of control loop can be implemented to drive
+     this values, to achieve some end result. Although this would require
+     some kind of 'error' which means establishing formally what our goal
+     point set is.
+  
+   - On point sets with 16 bit coordinates (n>8) the way of handling the
+     boundary centered on (128,128) with radius 128 makes all costs and
+     forces go to infinity.
+  
+  Neutral characteristics:
+   - It seems to be independent from the starting position.
+   - Running time is O(n^3) per iteration because we iterate all O(n^2)
+     segments and for each one, compute n vectors, one for each point.
+    
+  The code used for testing this idea can be found in:
+
+    commit b25b6bab8a769adfe198bf537ae59e6d2614c019
+    Author: Santiago León <santileortiz@gmail.com>
+    Date:   Tue Jan 9 11:22:42 2018 -0600
+
+        Preliminary implementation of auto positioning of points
+
+
+
+  IDEA #2:
+  The main change here is to use angles instead of distances to
+  compute the force vectors. The objective is to keep each point contained
+  between a pair of segments.
+  
+  First we compute for each point v an array S that lists the clockwise order
+  of each other point around v (using n*(n-1) = O(n^2) space and O(n^2
+  log(n)) time). Now in each iteration, we select a point v, and choose 3
+  (clockwise) consecutive points around v from the precomputed array, call
+  them s_m, p and s_p (we cycle around the end of S). Compute the clockwise
+  angle between vectors vs_m and vp, and call it a, do the same for the
+  clockwise angle between vp and vs_p, call it b. Compute a unit vector dv
+  perpendicular to vp pointing clockwise (right of vp), then multiply it by
+  (b-a)/(b+a). This vector dv will be the influence of the segments vs_m
+  and vs_p on the point p. By adding all the influences of all pairs of
+  segments on each point p we get the resulting force on p. All this takes
+  time O(n^2).
+  
+  The rationale behind the value (b-a)/(b+a) is that we want to scale dv
+  by a value in the range [-1,1]. Then if a>b then we push p towards vs_m
+  (i.e. away from the smallest angle), and if p is bisecting the angle,
+  then the influence of this pair of segments over p is 0. The direction of
+  dv is chosen as if v was applying a torque on p.
+  
+  This proposal has the same problem than IDEA #1 of making the point set
+  grow indefinitely. For this we use the same approach as before and
+  create a circular boundary around (128,128) to keep everything in place.
+  But instead of a cost function we multiply the distance to the boundary
+  by a small constant. While testing this I tried the idea of only applying the
+  boundary force to the points in the convex hull but this didn't work as they
+  would be pushed further to the center than the rest of the points, making
+  points inside go out of the convex hull.
+  
+  These are the results of trying out this idea:
+  
+  Pros:
+   - This method is MUCH better at keeping the same order type all the
+     time. Still not perfect, but most of the ones that failed before, now
+     work.
+   - There is no cost function, so there are no parameters to tweak, other
+     than the force of the circular boundary.
+   - Point sets with 16 bit coordinates don't get that much crazy now
+     (nothing goes to infinity). They just start translating towards
+     (128,128).
+   - Runs faster than IDEA #1.
+   - The maximum magnitude of a force over a point is bounded by the number
+     of points.
+  
+  Cons:
+   - The result does not look very symmetric. Even the order type 0 ends up
+     crooked.
+   - Still some point sets change order type.
+   - Sometimes things may appear to start slowing down, and then start
+     accelerating again.
+  
+  Neutral characteristics:
+   - The result seems to be dependent on the initial position of the
+     points. (Which may be good because allows the user to retry by moving
+     points around and running again the algorithm, or bad because the user
+     may get confused).
+
+  The code used to test this is found in:
+
+        commit 490e69e652096eb349133b1cd20a81b25489b0d3
+        Author: Santiago León <santileortiz@gmail.com>
+        Date:   Thu Jan 11 12:56:37 2018 -0600
+
+            Angle based algorithm for point positioning
+
+
+
+  FUTURE IDEAS:
+    These are some new things to try out that have occured to me:
+
+      - Better boundary system that is not fixed on (128,128) but instead in
+        the center of the boundary box of the point set.
+
+      - Use a linear cost with the distance force as described in IDEA #1 but
+        project the vector as a ray perpendicular to the segment, going through
+        the point and intersecting the next line L induced by it's pair segment
+        through a point v as in IDEA #2. Then set the r value to the distance
+        from the point to L.  This has the advantage that the cost will be 0 in
+        the boudary in the case the point was about to go out, but maybe has
+        the drawback of making everything highly dependent on the initial
+        position.
+
+      - The previous idea can also be explored by changing L by the opposite
+        boundary of the cell where the point is located.
+
+
+Change indicator computation:
+-----------------------------
+
+  IDEA #1:
+  Average of the magnitudes of the resulting n force vectors of
+  each point.
+  
+    Cons:
+     - The point set won't converge to a static one. Sometimes forces'
+       norm becomes static in a non 0 value while the points are rotating
+       rigidly around some point.
+  
+  
+  IDEA #2:
+  Average of the change in distance form p0 to each other point.
+  
+    Cons:
+     - If only one point is still changing the the change in distance for
+       this point will be divided by n, making the indicator smaller than
+       the actual change in the point set.
+  
+  IDEA #3:
+  Maximum change in distance from p0 to each other point.
+  
+    Pros:
+     - So far there are no issues with this indicator.
+  
+
