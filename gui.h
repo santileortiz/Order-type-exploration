@@ -671,26 +671,25 @@ void update_selectors (struct gui_state_t *gui_st, layout_box_t *layout_boxes, i
     int i;
     for (i=0; i<num_layout_boxes; i++) {
         layout_box_t *curr_box = layout_boxes + i;
-        // TODO: is_ptr_over should consider z-axis so that only visible boxes are
+        // TODO: is_ptr_inside should consider z-axis so that only visible boxes are
         // triggered.
-        bool is_ptr_over = is_point_in_box (gui_st->input.ptr.x, gui_st->input.ptr.y,
-                                            curr_box->box.min.x, curr_box->box.min.y,
-                                            BOX_WIDTH(curr_box->box), BOX_HEIGHT(curr_box->box));
+        bool is_ptr_inside = is_vect2_in_box (global_gui_st->input.ptr, curr_box->box);
+        bool click_started_inside = is_vect2_in_box (global_gui_st->click_coord[0], curr_box->box);
 
         css_selector_t old = curr_box->active_selectors;
-        if (gui_st->input.mouse_down[0] && is_ptr_over) {
+        if (gui_st->input.mouse_down[0] && is_ptr_inside && click_started_inside) {
             curr_box->active_selectors |= CSS_SEL_ACTIVE;
         } else {
             curr_box->active_selectors &= ~CSS_SEL_ACTIVE;
         }
 
-        if (is_ptr_over) {
+        if (is_ptr_inside) {
             curr_box->active_selectors |= CSS_SEL_HOVER;
         } else {
             curr_box->active_selectors &= ~CSS_SEL_HOVER;
         }
 
-        if (gui_st->mouse_clicked[0] && is_ptr_over) {
+        if (gui_st->mouse_clicked[0] && is_ptr_inside) {
             focus_set (gui_st, curr_box);
         }
 
@@ -698,7 +697,7 @@ void update_selectors (struct gui_state_t *gui_st, layout_box_t *layout_boxes, i
     }
 }
 
-#define update_layout_box_style(gui_st,box,style_id) {box->style=&(gui_st->css_styles[style_id]);}
+#define update_layout_box_style(gui_st,box,style_id) {(box)->style=&((gui_st)->css_styles[style_id]);}
 void init_layout_box_style (struct gui_state_t *gui_st, layout_box_t *box, css_style_t style_id)
 {
     box->base_style_id = style_id;

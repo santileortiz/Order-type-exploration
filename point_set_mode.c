@@ -439,7 +439,9 @@ layout_box_t* next_layout_box_css (struct app_state_t *st, css_style_t style_id)
 bool update_button_state (struct app_state_t *st, layout_box_t *lay_box, bool *update_panel)
 {
     bool retval = false;
-    if (st->gui_st.mouse_clicked[0] && (lay_box->active_selectors & CSS_SEL_HOVER)) {
+    if (st->gui_st.mouse_clicked[0] &&
+        is_vect2_in_box (global_gui_st->click_coord[0], lay_box->box) &&
+        (lay_box->active_selectors & CSS_SEL_HOVER)) {
         retval = true;
     }
     return retval;
