@@ -35,7 +35,6 @@ struct arrange_points_state_t {
     vect2_t centroid;
     vect2_t *tgt_hull;
     double tgt_radius;
-    double units_per_step;
     uint64_t steps;
 };
 

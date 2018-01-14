@@ -189,19 +189,9 @@ void angular_force (vect2_t *points, order_type_t *ot, int v, int s_m, int p, in
     vect2_mult_to (&force_p, (ang_b-ang_a)/(ang_a+ang_b)*h);
     vect2_add_to (&res[p], force_p);
 
-    //vect2_t force_s_m = VECT2 (vs_m.y, -vs_m.x); // Clockwise perpendicular vector to vs_m
-    //vect2_normalize (&force_s_m);
-    //vect2_mult_to (&force_s_m, ang_a/((ang_a+ang_b))*h);
-    //vect2_add_to (&res[s_m], force_s_m);
-
-    //vect2_t force_s_p = VECT2 (vs_p.y, -vs_p.x); // Clockwise perpendicular vector to vs_p
-    //vect2_normalize (&force_s_p);
-    //vect2_mult_to (&force_s_p, -ang_b/((ang_a+ang_b))*h);
-    //vect2_add_to (&res[s_p], force_s_p);
-
     //if (p==0) {
     //    printf ("v: %d, (%d, %d, %d) = ", v, s_m, p, s_p);
-    //    vect2_print (&force);
+    //    vect2_print (&force_p);
     //}
 }
 
@@ -251,20 +241,16 @@ void arrange_points_start (struct arrange_points_state_t *alg_st, order_type_t *
     alg_st->centroid = polygon_centroid (cvx_hull_v2, alg_st->cvx_hull_len);
 
     alg_st->tgt_hull = mem_pool_push_size(&alg_st->pool, sizeof(vect2_t)*alg_st->cvx_hull_len);
-    //convex_point_set (alg_st->cvx_hull_len, 0,
-    //                  points[alg_st->cvx_hull[0]], points[alg_st->cvx_hull[1]],
-    //                  alg_st->tgt_hull);
-
     convex_point_set_radius (alg_st->cvx_hull_len, 0,
                              points[alg_st->cvx_hull[0]], alg_st->centroid,
                              alg_st->tgt_hull);
     alg_st->tgt_radius = vect2_norm (vect2_subs(points[alg_st->cvx_hull[0]], alg_st->centroid));
-    alg_st->units_per_step = alg_st->tgt_radius/1500;
     alg_st->steps = 0;
 }
 
 void arrange_points_end (struct arrange_points_state_t *alg_st)
 {
+    // TODO: check the order type didn't change.
     printf ("Finished.\n");
     printf ("Steps: %"PRIu64"\n", alg_st->steps);
     mem_pool_destroy(&alg_st->pool);
@@ -301,9 +287,8 @@ double arrange_points_step (struct arrange_points_state_t *alg_st, vect2_t *poin
             angular_force (points, ot, v, s_m, p, s_p, magnitude, tmp_forces);
         }
 
-        angular_force (points, ot, v, pts_arnd_v[j],
-                               pts_arnd_v[j+1], pts_arnd_v[0],
-                               magnitude, tmp_forces);
+        angular_force (points, ot, v, pts_arnd_v[j], pts_arnd_v[j+1],
+                       pts_arnd_v[0], magnitude, tmp_forces);
     }
 
     for (i=0; i<len; i++) {
@@ -311,80 +296,21 @@ double arrange_points_step (struct arrange_points_state_t *alg_st, vect2_t *poin
         vect2_add_to (&res[i], tmp_forces[i]);
     }
 
-    //// Circular wall
-    //// NOTE: We know the only points that can colide with it are the ones
-    //// forming the convex hull.
-    //for (i=0; i<alg_st->cvx_hull_len; i++) {
-    //    vect2_t r = vect2_subs (points[alg_st->cvx_hull[i]], alg_st->centroid);
-    //    double dist = vect2_norm(r) - alg_st->tgt_radius;
-    //    if (dist > 0) {
-    //        vect2_normalize (&r);
-    //        double norm = vect2_dot (res[alg_st->cvx_hull[i]], r);
-    //        vect2_mult_to (&r, -(norm + 0.01*dist));
-    //        vect2_add_to (&res[alg_st->cvx_hull[i]], r);
-    //    }
-    //}
-
-    ////for (i=0; i<len; i++) {
-    ////    vect2_print (&res[i]);
-    ////}
-
-#if 1
-    // Circular boundary
-    for (i=0; i<len; i++) {
-        vect2_t p = points[i];
-        double boundary_r = 128;
-        vect2_t center = alg_st->centroid;
-
-        vect2_t to_center = vect2_subs (center, p);
-        double d = boundary_r - vect2_norm (to_center);
-        vect2_normalize_or_0 (&to_center);
-        vect2_t boundary_force = vect2_mult (to_center, (boundary_r-d)/boundary_r);
-        vect2_add_to (&res[i], boundary_force);
-    }
-#else
-    int *cvx_hull = alg_st->cvx_hull;
-
-    max_force = 0;
-    int cvx_hull_idx = 0;
-    vect2_t *tgt_hull = alg_st->tgt_hull;
-    for (i=0; i<len; i++) {
-        tmp_forces[i] = (vect2_t){0};
-    }
-    for (i=0; i<len; i++) {
-        vect2_t force;
-        if (cvx_hull[cvx_hull_idx] == i) {
-            //force = spring_force_pts (points[i], tgt_hull[cvx_hull_idx], 0, 1);
-            //cvx_hull_idx++;
-            vect2_t outside = vect2_subs(res[i], alg_st->centroid);
-            vect2_normalize (&outside);
-            double out_f = vect2_dot (outside, res[i]);
-            if (out_f > 0) {
-                vect2_add_to (&res[i], vect2_mult(outside, -out_f));
-            }
-        } else {
-            //vect2_t p = points[i];
-            //double boundary_r = alg_st->tgt_radius;
-            //vect2_t center = alg_st->centroid;
-
-            //vect2_t to_center = vect2_subs (center, p);
-            //double d = vect2_norm (to_center) - boundary_r;
-            //if (d > 0) {
-            //    force = vect2_mult (to_center, 1);
-            //} else {
-            //    force = VECT2(0,0);
-            //}
+    // Circular wall
+    for (i=0; i<alg_st->cvx_hull_len; i++) {
+        vect2_t r = vect2_subs (points[alg_st->cvx_hull[i]], alg_st->centroid);
+        double dist = vect2_norm(r) - alg_st->tgt_radius;
+        if (dist > 0) {
+            vect2_normalize (&r);
+            double norm = vect2_dot (res[alg_st->cvx_hull[i]], r);
+            vect2_mult_to (&r, -(norm + 0.01*dist));
+            vect2_add_to (&res[alg_st->cvx_hull[i]], r);
         }
-        //vect2_print (&force);
-        max_force = MAX (max_force, vect2_norm(force));
-        vect2_add_to (&tmp_forces[i], force);
     }
 
-    for (i=0; i<len; i++) {
-        vect2_mult_to (&tmp_forces[i], 0.01);
-        vect2_add_to (&res[i], tmp_forces[i]);
-    }
-#endif
+    //for (i=0; i<len; i++) {
+    //    vect2_print (&res[i]);
+    //}
 
     // Move the original points by the computed force and compute the change
     // indicator.
@@ -400,18 +326,6 @@ double arrange_points_step (struct arrange_points_state_t *alg_st, vect2_t *poin
         change = MAX(change, fabs(old_dist-new_dist));
     }
 
-    //double change = vect2_norm (res[0]);
-    //for (i=1; i<len; i++) {
-    //    change = MAX(change, vect2_norm (res[i]));
-
-    //}
-
-    //for (i=0; i<len; i++) {
-    //    printf ("%f\n", vect2_norm(res[i]));
-    //    //vect2_mult_to (&res[i], 1/change);
-    //    vect2_add_to (&points[i], res[i]);
-    //}
-    //printf ("\n\n");
     return change*75/alg_st->tgt_radius;
 }
 
