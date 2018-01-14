@@ -276,7 +276,7 @@ double arrange_points_step (struct arrange_points_state_t *alg_st, vect2_t *poin
     for (v=0; v<len; v++) {
         int *pts_arnd_v = &alg_st->sort[v*(len-1)];
 
-        double magnitude = alg_st->tgt_radius/(50*len);
+        double magnitude = alg_st->tgt_radius/(30*len);
         angular_force (points, ot, v, pts_arnd_v[len-2], pts_arnd_v[0],
                        pts_arnd_v[1], magnitude, tmp_forces);
         int j;
@@ -861,9 +861,7 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
     }
 
     static bool iterating = false;
-    bool draw_debug = false;
     if (btn_state) {
-        draw_debug = true;
 #if 1
         printf ("Test button clicked\n");
         if (iterating) {
@@ -882,7 +880,6 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
         //}
         //printf ("\n");
 
-
         arrange_points_start (&ps_mode->alg_st, ps_mode->ot, ps_mode->visible_pts);
         double change = arrange_points_step (&ps_mode->alg_st, ps_mode->visible_pts, ps_mode->n.i);
         ps_mode->redraw_canvas = true;
@@ -893,7 +890,6 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
     if (iterating) {
         double change = arrange_points_step (&ps_mode->alg_st, ps_mode->visible_pts, ps_mode->n.i);
         ps_mode->redraw_canvas = true;
-        printf ("change: %f\n\n", change);
         if (change < 0.01) {
             arrange_points_end (&ps_mode->alg_st);
             iterating = false;
@@ -1179,29 +1175,6 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
         }
 
         draw_entities (ps_mode, graphics);
-
-        {
-#if 0
-            static vect2_t pts[20];
-            if (draw_debug) {
-                memcpy (pts, ps_mode->alg_st.tgt_hull, sizeof(vect2_t)*ps_mode->alg_st.cvx_hull_len);
-            }
-
-            draw_polygon (graphics->cr, pts, ps_mode->alg_st.cvx_hull_len, &ps_mode->points_to_canvas);
-
-            cairo_set_source_rgb (graphics->cr, 1,0,0);
-#else
-            cairo_new_path (graphics->cr);
-            vect2_t c = ps_mode->alg_st.centroid;
-            apply_transform (&ps_mode->points_to_canvas, &c);
-            vect2_t rad = VECT2(0,ps_mode->alg_st.tgt_radius);
-            apply_transform_distance (&ps_mode->points_to_canvas, &rad);
-            cairo_arc (graphics->cr, c.x, c.y, vect2_norm(rad), 0, 2*M_PI);
-            cairo_stroke (graphics->cr);
-#endif
-            draw_point (graphics->cr, ps_mode->alg_st.centroid, "",
-                        ps_mode->point_radius, &ps_mode->points_to_canvas);
-        }
 
         ps_mode->redraw_panel = true;
         blit_needed = true;
