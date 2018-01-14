@@ -241,6 +241,99 @@ Force calculation:
 
             Improved angular force point auto positioning
 
+  IDEA #4:
+  The next improvement attempt was to get more control over the final position
+  of the points. To do this I tried several things, most of which were
+  unsuccesful, and whose code I won't clean up into a workable commit but can
+  be somewhat found commented in previous commits.
+
+  I tried to create a regular polygon and pull each corresponding point in the
+  convex hull towards it. The polygon could be created in several ways, but the
+  general idea was for it to not be very far away from the current position of
+  the points. For all attempts it was centered around the centroid, with the
+  following diferences:
+      - Given radius, and the direction of the first edge (always p0-->p1).
+      - First edge (always p0-->p1), and the radius was computed to make this
+        an edge.
+      - Direction towards p0 and given radius.
+      - The actual radius vector of the desired polygon.
+
+  There were no significant differences between all the variations of this kind
+  of anchoring, but we experienced several problems because we were adding a
+  new force to points in the convex hull but not to points in the interior.
+  Sometimes the convex hull would rush to it's position and leave behind
+  (outside of the hull) points that should be in the interior.
+
+  To balance this we tried slowing down the points in the convex hull. The
+  problem was this made the algorithm highly dependent on the scale of this
+  force vs the scale of the angular force. This mean more parameters, and it
+  seemed dificult to find a nice relationship between them. Other idea was to
+  normalize the angular force field to the maximum value, and then normalize
+  the convex hull force too, then add both fields together by some kind of
+  factor that chooses which one has more influence. Still, this implied yet
+  another factor to control, and seemed to affect a lot the convergence of the
+  algorithm.
+
+  Another idea was to add some similar force to points in the interior of the
+  convex hull. We could emit a force from the convex hull but I think this
+  would either be computationally expensive or require advanced data structures
+  because we need to compute the closest segment to a point inside the polygon,
+  for every point. Instead a simpler approach was to add a circular force field
+  centered in the centroid that pulled interior points towards it, this seemed
+  to work well enough.
+
+  Still after all this testing most attempts felt hacky because we were adding
+  together 3 different kinds of forces and the interaction between all these
+  force fields could really be unexpected. At least until a proper mathematical
+  analysis is made. And on top of this results were not THAT impressive, points
+  in the convex hull most of the times stopped before reaching their position, they
+  were quite far from reaching the desired radius of the point set, and some
+  points had to travel a lot, and moved worringly quickly, in a way that made
+  me think it was just a matter of time befor I found a point set that crashed
+  all the system.
+
+  Finally I decided to test a rigid circular 'wall' instead of a force field,
+  or forces that pulled specific points. For this we imagine a circle around
+  the centroid of radius equal to the distance from the centroid to p0.
+  Whanever a point's position is outside of the wall, we add a force towards
+  the centroid equal to the projection of it's angular force over the radius.
+  This effectively cancells out the force component that was pulling it
+  outside, and then we add a small force proportional to the distance to the
+  wall which slowly brings it towards it. For the way the angular force is
+  defined I think it's possible to show that the only points that can ever
+  colide with the wall are the ones in the convex hull (although I have not yet
+  done such proof).
+
+  This final option seemed to be the best one in terms of simplicity and
+  controlled behavior of the end results. Which is the reason why it's the
+  one I left for now.
+
+  Pros:
+   - The order type does not change.
+   - Resulting point set is symmetric whan possible.
+   - The radius and position of the resulting point set is very close to the
+     targeted one.
+
+  Cons:
+   - We have some ugly hardcoded values that worry me. Although, choosen values
+     seem to work fine for now.
+   - Slow convergence as the value of n increases Which means I'm still not
+     satisfied by the scaling chossen for the change indicator.
+   - While tweaking the scaling of the angular force it seemed very brittle, and
+     made points oscillate and then go crazy.
+   - Some points en up REALLY close to it's cell bounds, making it harder to
+     visualize (which was the whole point of trying this).
+   - Sometimes points start geting VERY close together. I think there is a case
+     where they get so close, that the point set goes haywire.
+
+  Code:
+
+        commit 8d82d9e2e1d2995a89835da8f80dc2d012752dad
+        Author: Santiago León <santileortiz@gmail.com>
+        Date:   Sat Jan 13 21:53:23 2018 -0600
+
+            Simpler version of auto positioning algorithm
+
   FUTURE IDEAS:
     These are some new things to try out that have occured to me:
 
@@ -255,6 +348,14 @@ Force calculation:
 
       - The previous idea can also be explored by changing L by the opposite
         boundary of the cell where the point is located.
+
+      - What happens if instead of adding angular forces to the middle point we
+        add them to the points forming the cone? I toyed with this but so far
+        it does not look promising. Points seem to want to go to the center
+        instead of outside.
+
+      - If we finally get to a simple enough model, maybe we could properly
+        study the system and try to apply proper optimization methods.
 
 
 Change indicator computation:
