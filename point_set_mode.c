@@ -311,34 +311,37 @@ double arrange_points_step (struct arrange_points_state_t *alg_st, vect2_t *poin
         vect2_add_to (&res[i], tmp_forces[i]);
     }
 
-    for (i=0; i<alg_st->cvx_hull_len; i++) {
-        vect2_t r = vect2_subs (points[alg_st->cvx_hull[i]], alg_st->centroid);
-        double dist = vect2_norm(r) - alg_st->tgt_radius;
-        if (dist > 0) {
-            vect2_normalize (&r);
-            double norm = vect2_dot (res[alg_st->cvx_hull[i]], r);
-            vect2_mult_to (&r, -(norm + 0.01*dist));
-            vect2_add_to (&res[alg_st->cvx_hull[i]], r);
-        }
-    }
-
-    //for (i=0; i<len; i++) {
-    //    vect2_print (&res[i]);
+    //// Circular wall
+    //// NOTE: We know the only points that can colide with it are the ones
+    //// forming the convex hull.
+    //for (i=0; i<alg_st->cvx_hull_len; i++) {
+    //    vect2_t r = vect2_subs (points[alg_st->cvx_hull[i]], alg_st->centroid);
+    //    double dist = vect2_norm(r) - alg_st->tgt_radius;
+    //    if (dist > 0) {
+    //        vect2_normalize (&r);
+    //        double norm = vect2_dot (res[alg_st->cvx_hull[i]], r);
+    //        vect2_mult_to (&r, -(norm + 0.01*dist));
+    //        vect2_add_to (&res[alg_st->cvx_hull[i]], r);
+    //    }
     //}
+
+    ////for (i=0; i<len; i++) {
+    ////    vect2_print (&res[i]);
+    ////}
 
 #if 1
-    //// Circular boundary
-    //for (i=0; i<len; i++) {
-    //    vect2_t p = points[i];
-    //    double boundary_r = 128;
-    //    vect2_t center = alg_st->centroid;
+    // Circular boundary
+    for (i=0; i<len; i++) {
+        vect2_t p = points[i];
+        double boundary_r = 128;
+        vect2_t center = alg_st->centroid;
 
-    //    vect2_t to_center = vect2_subs (center, p);
-    //    double d = boundary_r - vect2_norm (to_center);
-    //    vect2_normalize_or_0 (&to_center);
-    //    vect2_t boundary_force = vect2_mult (to_center, (boundary_r-d)/boundary_r);
-    //    vect2_add_to (&res[i], boundary_force);
-    //}
+        vect2_t to_center = vect2_subs (center, p);
+        double d = boundary_r - vect2_norm (to_center);
+        vect2_normalize_or_0 (&to_center);
+        vect2_t boundary_force = vect2_mult (to_center, (boundary_r-d)/boundary_r);
+        vect2_add_to (&res[i], boundary_force);
+    }
 #else
     int *cvx_hull = alg_st->cvx_hull;
 
