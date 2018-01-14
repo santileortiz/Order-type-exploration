@@ -191,13 +191,58 @@ Force calculation:
 
             Angle based algorithm for point positioning
 
+  IDEA #3:
+  Turns out some of the cons of IDEA #2 were actually implementation bugs, and
+  some easy changes could be implmemented to make the situation better for
+  point sets with 16 bit coordinates.
 
+  This is exactly the same as before, but now the code does not produce crooked
+  point sets when it's obviously possible (like the convex set). This was caused
+  by problems in the comparison function of the angle sorting algorithm added to
+  the fact that we were not adding correctly the force vector on res[0].
+
+  As an improvement we changed the boundary to be centered around the centroid
+  of the convex hull and the radius equal to the distance form the centroid to
+  p0. (Setting the radius fixed to 128 was tried but the behavior of the point
+  set suddenly shrinking for point sets with 16 bit coordinates wasn't nice.
+
+  Also, I tested several values for a scaling factor of the force, and the
+  change indicator. The purpose of it was to try to have the duration of the
+  simulation be similar, as well as the speed at which points move. The last
+  one proved to be quite important in making sure the point set does not enter
+  an oscillatory state There's definiteley more work to be done regarding this
+  parameter and why it cause such erratic behaviors sometimes. The chosen ones
+  seem to work well enough at least for all randomly sampled point sets, but we
+  have no guarantees about this.
+
+  Pros:
+   - The order type does not seem to change, at least for tested point sets.
+   - Resulting point sets look nice and symmetric (if there is symmetry).
+   - There are no input parameters required.
+   - Works well enough for point sets up to n=10.
+   - Equal running time than IDEA #2.
+  
+  Cons:
+   - There is not a lot of control on the size or position of the resulting
+     point set. To actually center and scale the point set the circular force
+     field must be tweaked at compile time.
+   - We have two hardcoded values whose nature is still not well understood.
+     One is a scale factor of the angular force, and the other one is a scale
+     factor of the change indicator. Currently we use constants like the number
+     of points, radius of the circular force field to guess values that work
+     for now. The rationale of choosing them was that we want stable and quick
+     movement of the points.
+
+  Code:
+
+        commit 12c32608b4db5dbb60746d97856835ee511a366f
+        Author: Santiago León <santileortiz@gmail.com>
+        Date:   Sat Jan 13 20:56:04 2018 -0600
+
+            Improved angular force point auto positioning
 
   FUTURE IDEAS:
     These are some new things to try out that have occured to me:
-
-      - Better boundary system that is not fixed on (128,128) but instead in
-        the center of the boundary box of the point set.
 
       - Use a linear cost with the distance force as described in IDEA #1 but
         project the vector as a ray perpendicular to the segment, going through
