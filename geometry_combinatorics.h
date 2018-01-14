@@ -66,23 +66,56 @@ typedef struct {
 } triangle_set_t;
 #define triangle_set_size(n) (sizeof(triangle_set_t)+(n-1)*sizeof(triangle_t))
 
-int64_t area_2 (vect2i_t a, vect2i_t b, vect2i_t c)
+int64_t area_2_i (vect2i_t a, vect2i_t b, vect2i_t c)
 {
     return (b.x-a.x)*(c.y-a.y) - 
            (c.x-a.x)*(b.y-a.y);
 }
 
 // true if point c is to the left of a-->b
-bool left (vect2i_t a, vect2i_t b, vect2i_t c)
+bool left_i (vect2i_t a, vect2i_t b, vect2i_t c)
 {
-    return area_2 (a, b, c) > 0;
+    return area_2_i (a, b, c) > 0;
+}
+
+// true if point c is to the left or on a-->b
+bool left_on_i (vect2i_t a, vect2i_t b, vect2i_t c)
+{
+    return area_2_i (a, b, c) >= 0;
+}
+
+// Returns true if the segment ap is between the cone spanned clockwise between
+// a0, a, and a1, where a is the apex.
+// NOTE: borders of the cone are defined as being inside the cone.
+bool in_cone_i (vect2i_t a0, vect2i_t a, vect2i_t a1, vect2i_t p)
+{
+    if (left_on_i (a, a1, a0)) {
+        // The cone is convex
+        return left_i (a, p, a0) && left_i (p, a, a1);
+    } else {
+        return !(left_on_i (a, p, a1) && left_on_i (p, a, a0));
+    }
 }
 
 int segments_intersect  (vect2i_t s1p1, vect2i_t s1p2, vect2i_t s2p1, vect2i_t s2p2)
 {
     return
-        (!left (s1p1, s1p2, s2p1) ^ !left (s1p1, s1p2, s2p2)) &&
-        (!left (s2p1, s2p2, s1p1) ^ !left (s2p1, s2p2, s1p2));
+        (!left_i (s1p1, s1p2, s2p1) ^ !left_i (s1p1, s1p2, s2p2)) &&
+        (!left_i (s2p1, s2p2, s1p1) ^ !left_i (s2p1, s2p2, s1p2));
+}
+
+// Returns true if the segment ap is between the cone spanned clockwise between
+// a0, a, and a1, where a is the apex.
+// NOTE: borders of the cone are defined as being inside the cone up to some
+// epsilon.
+bool in_cone (vect2_t a0, vect2_t a, vect2_t a1, vect2_t p)
+{
+    if (left_on (a, a1, a0)) {
+        // The cone is convex
+        return left (a, p, a0) && left (p, a, a1);
+    } else {
+        return !(left_on (a, p, a1) && left_on (p, a, a0));
+    }
 }
 
 int count_common_vertices (triangle_t *a, triangle_t *b)
@@ -98,6 +131,112 @@ int count_common_vertices (triangle_t *a, triangle_t *b)
         }
     }
     return res;
+}
+
+// Sets res to an array of points that represent an n sided regular polygon
+// where res[0] = p0, the first edge is in the direction towards p1 and the
+// polygon lies to the right of this first edge. If r==0 then we set it to the
+// value necessary so that p0-->p1 is an edge.
+void convex_point_set (int n, double r, vect2_t p0, vect2_t p1, vect2_t *res)
+{
+    assert (!vect_equal (&p0,&p1));
+    double theta = (2*M_PI)/n;
+
+    vect2_t next_point = p0;
+    vect2_t delta = vect2_subs (p1, p0);
+
+    if (r != 0) {
+        double edge_length = r*sqrt(2*(1-cos(2*M_PI/n)));
+        vect2_normalize (&delta);
+        vect2_mult_to (&delta, edge_length);
+    }
+
+    res[0] = next_point;
+
+    int i;
+    for (i=1; i<n; i++) {
+        vect2_add_to (&next_point, delta);
+        res[i] = next_point;
+        vect2_clockwise_rotate_on (&delta, theta);
+    }
+}
+
+// Sets res to an array of points that represent an n sided regular polygon
+// centered around c where res[0] lies in the direction of c-->p0, but at
+// distance r. The polygon is created clockwise from res[0].
+void convex_point_set_radius (int n, double r, vect2_t p0, vect2_t c, vect2_t *res)
+{
+    assert (!vect_equal (&p0,&c));
+    double theta = (2*M_PI)/n;
+
+    vect2_t next_point;
+    vect2_t r_v = vect2_subs (p0, c);
+    if (r != 0) {
+        vect2_normalize (&r_v);
+        vect2_mult_to (&r_v, r);
+        next_point = vect2_add (c, r_v);
+    } else {
+        r = vect2_norm (r_v);
+        next_point = p0;
+    }
+
+
+    double edge_length = r*sqrt(2*(1-cos(2*M_PI/n)));
+    vect2_clockwise_rotate_on (&r_v, (theta + M_PI)/2);
+    vect2_t delta = vect2_mult (r_v, edge_length/r);
+
+    res[0] = next_point;
+
+    int i;
+    for (i=1; i<n; i++) {
+        vect2_add_to (&next_point, delta);
+        res[i] = next_point;
+        vect2_clockwise_rotate_on (&delta, theta);
+    }
+}
+
+vect2_t polygon_centroid (vect2_t *pts, int len)
+{
+    vect2_t res = VECT2(0,0);
+    double area = 0;
+    int i;
+    for (i=0; i<len-1; i++) {
+        double det = area_2 (VECT2(0,0), pts[i], pts[i+1]);
+        res.x += (pts[i].x + pts[i+1].x) * det;
+        res.y += (pts[i].y + pts[i+1].y) * det;
+        area += det;
+    }
+
+    double det = area_2 (VECT2(0,0), pts[i], pts[0]);
+    res.x += (pts[i].x + pts[0].x) * det;
+    res.y += (pts[i].y + pts[0].y) * det;
+    area += det;
+
+    area /= 2;
+    res.x /= 6*area;
+    res.y /= 6*area;
+    return res;
+}
+
+#define polygon_area(pts,len) fabs(polygon_signed_area(pts,len))
+double polygon_signed_area (vect2_t *pts, int len)
+{
+    double area = 0;
+    int i;
+    for (i=0; i<len-1; i++) {
+        area += area_2 (VECT2(0,0), pts[i], pts[i+1]);
+    }
+    area += area_2 (VECT2(0,0), pts[i], pts[0]);
+
+    return area/2;
+}
+
+void vect2_idx_to_array (vect2_t *src, int *str_idx, vect2_t *dest, int len)
+{
+    while (len > 0) {
+        len--;
+        dest[len] = src[str_idx[len]];
+    }
 }
 
 int have_intersecting_segments (triangle_t *a, triangle_t *b)
@@ -327,7 +466,7 @@ void convex_hull (order_type_t *ot, int *res, int *len)
 
     int i;
     for (i=2; i<ot->n; i++) {
-        while (left (ot->pts[res[k-2]], ot->pts[res[k-1]], ot->pts[i])) {
+        while (left_i (ot->pts[res[k-2]], ot->pts[res[k-1]], ot->pts[i])) {
             k--;
         }
         res[k] = i;
@@ -342,16 +481,19 @@ void convex_hull (order_type_t *ot, int *res, int *len)
 //      return ∠spa < ∠spb;
 bool angle_lt (int a, int b, order_type_t *ot, int p, int s)
 {
+    assert (a != p && b != p && s != p);
     if (a == b) {
         return false;
     }
 
-    // Is there a way to compute this without the call to segments_intersect()?
-    if (segments_intersect (ot->pts[a], ot->pts[b], ot->pts[p], ot->pts[s])) {
-        return left (ot->pts[p], ot->pts[s], ot->pts[b]);
-    } else {
-        return left (ot->pts[p], ot->pts[b], ot->pts[a]);
+    // Check if some angle is 0.
+    if (a == s) {
+        return true;
+    } else if (b == s) {
+        return false;
     }
+
+    return in_cone_i (ot->pts[s], ot->pts[p], ot->pts[b], ot->pts[a]);
 }
 
 struct angle_compare_info_t {
@@ -373,14 +515,23 @@ templ_sort(radial_sort_ot, int, compare_angle_around_p_closure(*a, *b, user_data
 // NOTE: res MUST be of size ot->n-1
 void sort_all_points_p (order_type_t *ot, int p, int s, int *res)
 {
-    int i;
-    for (i=0; i<ot->n-1; i++) {
-        res[i] = i;
-    }
-    res[p] = i;
+    if (p != 0) {
+        int i;
+        for (i=0; i<ot->n-1; i++) {
+            res[i] = i;
+        }
 
-    struct angle_compare_info_t info = {ot, p, s};
-    radial_sort_ot_user_data (res, ot->n-1, &info);
+        res[p] = i;
+        struct angle_compare_info_t info = {ot, p, s};
+        radial_sort_ot_user_data (res, ot->n-1, &info);
+        assert (res[0] == s);
+    } else {
+        // If p==0 then points are already sorted in the database.
+        int i;
+        for (i=0; i<ot->n-1; i++) {
+            res[i] = i+1;
+        }
+    }
 }
 
 uint64_t factorial (int n)

@@ -26,6 +26,19 @@ typedef enum {
     num_focus_options
 } focus_options_t;
 
+struct arrange_points_state_t {
+    mem_pool_t pool;
+    order_type_t *ot;
+    int *sort;
+    int cvx_hull_len;
+    int *cvx_hull;
+    vect2_t centroid;
+    vect2_t *tgt_hull;
+    double tgt_radius;
+    double units_per_step;
+    uint64_t steps;
+};
+
 struct point_set_mode_t {
     uint64_string_t n;
     uint64_string_t ot_id;
@@ -55,6 +68,7 @@ struct point_set_mode_t {
     entity_t entities[300];
 
     bool view_db_ot;
+    struct arrange_points_state_t alg_st;
     vect2_t visible_pts[15];
     double point_radius;
     layout_box_t pts_hitboxes[15];

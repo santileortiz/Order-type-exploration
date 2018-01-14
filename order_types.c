@@ -308,7 +308,7 @@ ot_triples_t *ot_triples_new (order_type_t *ot, mem_pool_t *pool)
                 if (k==j || k==i) {
                     continue;
                 }
-                ret->triples[trip_id] = left(ot->pts[i], ot->pts[j], ot->pts[k]) ? 1 : -1;
+                ret->triples[trip_id] = left_i(ot->pts[i], ot->pts[j], ot->pts[k]) ? 1 : -1;
                 printf ("id:%d (%d, %d, %d) = %d\n", trip_id, i, j, k, ret->triples[trip_id]);
                 trip_id ++;
             }

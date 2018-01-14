@@ -473,7 +473,25 @@ double vect2_norm (vect2_t v)
     return sqrt ((v.x)*(v.x) + (v.y)*(v.y));
 }
 
-bool left_vect (vect2_t a, vect2_t p);
+double area_2 (vect2_t a, vect2_t b, vect2_t c)
+{
+    return (b.x-a.x)*(c.y-a.y) - (c.x-a.x)*(b.y-a.y);
+}
+
+// true if point c is to the left of a-->b
+bool left (vect2_t a, vect2_t b, vect2_t c)
+{
+    return area_2 (a, b, c) > 0;
+}
+
+// true if vector p points to the left of vector a
+#define left_vect(a,p) left(VECT2(0,0),a,p)
+
+// true if point c is to the left or in a-->b
+bool left_on (vect2_t a, vect2_t b, vect2_t c)
+{
+    return area_2 (a, b, c) > -0.01;
+}
 
 // Angle from v1 to v2 clockwise.
 //
@@ -505,8 +523,37 @@ static inline
 void vect2_normalize (vect2_t *v)
 {
     double norm = vect2_norm (*v);
+    assert (norm != 0);
     v->x /= norm;
     v->y /= norm;
+}
+
+static inline
+void vect2_normalize_or_0 (vect2_t *v)
+{
+    double norm = vect2_norm (*v);
+    if (norm == 0) {
+        v->x = 0;
+        v->y = 0;
+    } else {
+        v->x /= norm;
+        v->y /= norm;
+    }
+}
+
+vect2_t vect2_clockwise_rotate (vect2_t v, double rad)
+{
+    vect2_t res;
+    res.x =  v.x*cos(rad) + v.y*sin(rad);
+    res.y = -v.x*sin(rad) + v.y*cos(rad);
+    return res;
+}
+
+void vect2_clockwise_rotate_on (vect2_t *v, double rad)
+{
+    vect2_t tmp = *v;
+    v->x =  tmp.x*cos(rad) + tmp.y*sin(rad);
+    v->y = -tmp.x*sin(rad) + tmp.y*cos(rad);
 }
 
 static inline
@@ -558,15 +605,6 @@ vect3_t vect3_cross (vect3_t v1, vect3_t v2)
     res.y = v1.z*v2.x - v1.x*v2.z;
     res.z = v1.x*v2.y - v1.y*v2.x;
     return res;
-}
-
-// true if vector p points to the left of vector a
-bool left_vect (vect2_t a, vect2_t p)
-{
-    vect3_t a3 = VECT3 (a.x, a.y, 0);
-    vect3_t p3 = VECT3 (p.x, p.y, 0);
-    vect3_t cross = vect3_cross (a3, p3);
-    return cross.z > 0;
 }
 
 typedef union {
