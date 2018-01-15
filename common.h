@@ -23,6 +23,10 @@ typedef enum {false, true} bool;
 #define MAX(a,b) ((a)>(b)?(a):(b))
 #endif
 
+#if !defined(MAX)
+#define CLAMP(a,lower,upper) ((a)>(upper)?(upper):((a)<(lower)?(lower):(a)))
+#endif
+
 #define I_CEIL_DIVIDE(a,b) ((a%b)?(a)/(b)+1:(a)/(b))
 
 #define kilobyte(val) ((val)*1024LL)

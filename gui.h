@@ -6,6 +6,7 @@
 
 #define RGBA VECT4
 #define RGB(r,g,b) VECT4(r,g,b,1)
+#define RGB_HEX(r,g,b) VECT4(((double)(r))/255,((double)(g))/255,((double)(b))/255,1)
 
 #define PLATFORM_SET_CLIPBOARD_STR(name) void name(char *str, size_t len)
 typedef PLATFORM_SET_CLIPBOARD_STR(platform_set_clipboard_str_t);
@@ -85,6 +86,7 @@ typedef enum {
     CSS_NONE,
     CSS_BUTTON,
     CSS_BUTTON_ACTIVE,
+    CSS_BUTTON_DISABLED,
     CSS_BUTTON_SA,
     CSS_BUTTON_SA_ACTIVE,
     CSS_BACKGROUND,
@@ -130,6 +132,7 @@ struct css_box_t {
     css_property_t property_mask;
     struct css_box_t *selector_active;
     struct css_box_t *selector_focus;
+    struct css_box_t *selector_disabled;
     double border_radius;
     vect4_t border_color;
     double border_width;
@@ -148,10 +151,11 @@ struct css_box_t {
 };
 
 typedef enum {
-    CSS_SEL_DEFAULT = 0,
-    CSS_SEL_ACTIVE  = 1<<0,
-    CSS_SEL_HOVER   = 1<<1,
-    CSS_SEL_FOCUS   = 1<<2
+    CSS_SEL_DEFAULT  = 0,
+    CSS_SEL_ACTIVE   = 1<<0,
+    CSS_SEL_HOVER    = 1<<1,
+    CSS_SEL_FOCUS    = 1<<2,
+    CSS_SEL_DISABLED = 1<<3
 } css_selector_t;
 
 typedef struct layout_box_t layout_box_t;
@@ -242,14 +246,23 @@ struct gui_state_t {
 };
 
 struct gui_state_t *global_gui_st;
+vect4_t shade (vect4_t *in, double f);
+vect4_t mix (vect4_t *c1, vect4_t *c2, double f);
 
 // Forward declaration of CSS "stylesheet"
 
+vect4_t BLACK_500 = RGB_HEX(0x33,0x33,0x33);
+
+vect4_t text_color;
+vect4_t base_color = RGB(1,1,1);
+vect4_t bg_color;
 vect4_t selected_bg_color = RGB(0.239216, 0.607843, 0.854902);
 vect4_t selected_fg_color = RGB(1,1,1);
+vect4_t insensitive_color;
 
 void init_button (struct css_box_t *box);
 void init_button_active (struct css_box_t *box);
+void init_button_disabled (struct css_box_t *box);
 void init_suggested_action_button (struct css_box_t *box);
 void init_suggested_action_button_active (struct css_box_t *box);
 void init_background (struct css_box_t *box);
@@ -261,6 +274,10 @@ void init_title_label (struct css_box_t *box);
 void default_gui_init (struct gui_state_t *gui_st)
 {
 
+    text_color = BLACK_500;
+    bg_color = shade (&base_color, 0.96);
+    insensitive_color = mix (&text_color, &bg_color, 0.31);
+
     gui_st->double_click_time = 200;
     gui_st->min_distance_for_drag = 3;
     gui_st->time_since_last_click[0] = gui_st->double_click_time;
@@ -270,6 +287,8 @@ void default_gui_init (struct gui_state_t *gui_st)
     init_button (&gui_st->css_styles[CSS_BUTTON]);
     init_button_active (&gui_st->css_styles[CSS_BUTTON_ACTIVE]);
     gui_st->css_styles[CSS_BUTTON].selector_active = &gui_st->css_styles[CSS_BUTTON_ACTIVE];
+    init_button_active (&gui_st->css_styles[CSS_BUTTON_DISABLED]);
+    gui_st->css_styles[CSS_BUTTON].selector_disabled = &gui_st->css_styles[CSS_BUTTON_DISABLED];
 
     init_suggested_action_button (&gui_st->css_styles[CSS_BUTTON_SA]);
     init_suggested_action_button_active (&gui_st->css_styles[CSS_BUTTON_SA_ACTIVE]);
@@ -734,6 +753,17 @@ void update_layout_boxes (struct gui_state_t *gui_st, layout_box_t *layout_boxes
             }
             *changed = true;
         }
+
+        struct css_box_t *disabled_style =
+            gui_st->css_styles[curr_box->base_style_id].selector_disabled;
+        if (curr_box->changed_selectors & CSS_SEL_DISABLED && active_style != NULL) {
+            if (curr_box->active_selectors & CSS_SEL_DISABLED) {
+                curr_box->style = disabled_style;
+            } else {
+                curr_box->style = &gui_st->css_styles[curr_box->base_style_id];
+            }
+            *changed = true;
+        }
     }
 }
 
@@ -1060,6 +1090,16 @@ vect4_t shade (vect4_t *in, double f)
     return ret;
 }
 
+vect4_t mix (vect4_t *c1, vect4_t *c2, double f)
+{
+    vect4_t ret;
+    int i;
+    for (i=0; i<4; i++) {
+        ret.E[i] = CLAMP (c1->E[i] + (c2->E[i]-c1->E[i])*f, 0, 1);
+    }
+    return ret;
+}
+
 void hsv_to_rgb (vect3_t *hsv, vect3_t *rgb)
 {
     double h = hsv->E[0];
@@ -1208,6 +1248,20 @@ void init_button_active (struct css_box_t *box)
     box->color = RGB(0.2, 0.2, 0.2);
 
     box->background_color = RGBA(0, 0, 0, 0.05);
+}
+
+void init_button_disabled (struct css_box_t *box)
+{
+    *box = (struct css_box_t){0};
+    box->border_radius = 2.5;
+    box->border_width = 1;
+    box->min_height = 20;
+    box->padding_x = 12;
+    box->padding_y = 3;
+    box->border_color = RGBA(0, 0, 0, 0.2);
+    box->color = insensitive_color;
+
+    box->background_color = RGBA(0, 0, 0, 0.0);
 }
 
 void init_suggested_action_button (struct css_box_t *box)

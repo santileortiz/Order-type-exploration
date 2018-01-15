@@ -223,8 +223,8 @@ vect2_t spring_force (vect2_t *points, int a, int b, double length, double h)
 void arrange_points_start (struct arrange_points_state_t *alg_st, order_type_t *ot, vect2_t *points)
 {
     int len = ot->n;
-    alg_st->ot = ot;
     *alg_st = (struct arrange_points_state_t){0};
+    alg_st->ot = ot;
     alg_st->sort = mem_pool_push_size(&alg_st->pool, sizeof(int)*len*(len-1));
     int *sort_ptr = alg_st->sort;
     int i;
@@ -248,12 +248,30 @@ void arrange_points_start (struct arrange_points_state_t *alg_st, order_type_t *
     alg_st->steps = 0;
 }
 
-void arrange_points_end (struct arrange_points_state_t *alg_st)
+// Returns true if the resulting point set is good enough to show to the user.
+bool arrange_points_end (struct arrange_points_state_t *alg_st, vect2_t *points, int len)
 {
-    // TODO: check the order type didn't change.
-    printf ("Finished.\n");
-    printf ("Steps: %"PRIu64"\n", alg_st->steps);
+    bool res = true;
+    int i;
+    for (i=0; i < len; i++) {
+        vect2_round (&points[i]);
+    }
+
+    box_t box;
+    get_bounding_box (points, len, &box);
+
+    for (i=0; i < len; i++) {
+        vect2_subs_to (&points[i], VECT2(box.min.x, box.min.y));
+    }
+
+    ot_triples_t *trip_ot = ot_triples_new (alg_st->ot, &alg_st->pool);
+    ot_triples_t *trip_pts = ps_triples_new (points, len, &alg_st->pool);
+    if (!ot_triples_are_equal (trip_ot, trip_pts)) {
+        res = false;
+    }
+
     mem_pool_destroy(&alg_st->pool);
+    return res;
 }
 
 double arrange_points_step (struct arrange_points_state_t *alg_st, vect2_t *points, int len)
@@ -329,6 +347,19 @@ double arrange_points_step (struct arrange_points_state_t *alg_st, vect2_t *poin
     return change*75/alg_st->tgt_radius;
 }
 
+bool arrange_points (order_type_t *ot, vect2_t *points, int len)
+{
+    struct arrange_points_state_t alg_st;
+
+    double change;
+    arrange_points_start (&alg_st, ot, points);
+    do {
+        change = arrange_points_step (&alg_st, points, len);
+    } while (change > 0.01);
+
+    return arrange_points_end (&alg_st, points, len);
+}
+
 void move_hitbox (struct point_set_mode_t *ps_mode)
 {
     struct gui_state_t *gui_st = global_gui_st;
@@ -366,27 +397,13 @@ void set_ot (struct point_set_mode_t *st)
 
     int n = st->n.i;
     int i;
-    if (!st->view_db_ot) {
-        if (st->ot->id == 0 && n>5) {
-            char ot[order_type_size(n)];
-            order_type_t *cvx_ot = (order_type_t*)ot;
-            cvx_ot->n = st->ot->n;
-            cvx_ot->id = 0;
-            convex_ot (cvx_ot);
-            for (i=0; i<n; i++) {
-                st->visible_pts[i] = v2_from_v2i (cvx_ot->pts[i]);
-            }
-        } else {
-            // TODO: Look for a file with a visualization of the order type
-            for (i=0; i<n; i++) {
-                st->visible_pts[i] = v2_from_v2i (st->ot->pts[i]);
-            }
-        }
-    } else {
-        for (i=0; i<n; i++) {
-            st->visible_pts[i] = v2_from_v2i (st->ot->pts[i]);
-        }
+    for (i=0; i<n; i++) {
+        vect2_t pt = v2_from_v2i (st->ot->pts[i]);
+        st->visible_pts[i] = pt;
+        st->arranged_pts[i] = pt;
     }
+
+    st->ot_arrangeable = arrange_points (st->ot, st->arranged_pts, st->n.i);
 }
 
 void set_k (struct point_set_mode_t *st, int k)
@@ -583,7 +600,7 @@ layout_box_t* labeled_button (char *button_text, bool *target,
     layout_box_t *btn =
         button (button_text, target, gr, button_pos.x, button_pos.y,
                 &layout_state->entry_size.x, &layout_state->entry_size.y, st);
-    init_layout_box_style (&st->gui_st, btn, CSS_BUTTON_SA);
+    init_layout_box_style (&st->gui_st, btn, CSS_BUTTON);
     return btn;
 }
 
@@ -815,7 +832,6 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
 
     // Build layout
     static layout_box_t *panel;
-    static bool btn_state = false;
     if (ps_mode->rebuild_panel) {
         st->num_layout_boxes = 0;
         vect2_t bg_pos = VECT2(10, 10);
@@ -828,9 +844,9 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
 
         char *entry_labels[] = {"n:",
                                 "Order Type:",
+                                "Layout:",
                                 "k:",
-                                "ID:",
-                                "Test:"};
+                                "ID:"};
         labeled_entries_layout_t lay;
         init_labeled_layout (&lay, graphics, x_step, y_step,
                              bg_pos.x+x_margin, bg_pos.y+y_margin, bg_min_size.x,
@@ -839,22 +855,20 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
         title ("Point Set", &lay, st, graphics);
         ps_mode->focus_list[foc_n] = labeled_text_entry (&ps_mode->n, &lay, st);
         ps_mode->focus_list[foc_ot] = labeled_text_entry (&ps_mode->ot_id, &lay, st);
+        ps_mode->arrange_pts_btn = labeled_button ("Arrange",
+                                                        &ps_mode->arrange_pts,
+                                                        &lay, st, graphics);
+        focus_chain_remove (gui_st, ps_mode->arrange_pts_btn);
         {
             layout_box_t *sep = next_layout_box (st);
             BOX_X_Y_W_H(sep->box, lay.x_pos, lay.y_pos, bg_min_size.x-2*x_margin, 2);
             sep->draw = draw_separator;
             lay.y_pos += lay.y_step;
         }
+
         title ("Triangle Set", &lay, st, graphics);
         ps_mode->focus_list[foc_k] = labeled_text_entry (&ps_mode->k, &lay, st);
         ps_mode->focus_list[foc_ts] = labeled_text_entry (&ps_mode->ts_id, &lay, st);
-
-        // NOTE: This is here only so that button code does not bit rot.
-        // TODO: As soon as we have any other button in the GUI remove this one.
-#if 1
-        layout_box_t *test_btn = labeled_button ("Test button", &btn_state, &lay, st, graphics);
-        focus_chain_remove (gui_st, test_btn);
-#endif
 
         panel->box.max.x = st->layout_boxes[0].box.min.x + bg_min_size.x;
         panel->box.max.y = lay.y_pos;
@@ -862,40 +876,13 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
         ps_mode->redraw_panel = true;
     }
 
-    static bool iterating = false;
-    if (btn_state) {
-#if 1
-        printf ("Test button clicked\n");
-        if (iterating) {
-            arrange_points_end (&ps_mode->alg_st);
-            iterating = false;
-        } else {
-            arrange_points_start (&ps_mode->alg_st, ps_mode->ot, ps_mode->visible_pts);
-            printf ("Started\n");
-            iterating = true;
+    if (ps_mode->arrange_pts) {
+        int i;
+        for (i=0; i<ps_mode->n.i; i++) {
+            ps_mode->visible_pts[i] = ps_mode->arranged_pts[i];
         }
-
-#else
-        //int i;
-        //for (i=0; i<ps_mode->n.i; i++) {
-        //    vect2_print (&ps_mode->visible_pts[i]);
-        //}
-        //printf ("\n");
-
-        arrange_points_start (&ps_mode->alg_st, ps_mode->ot, ps_mode->visible_pts);
-        double change = arrange_points_step (&ps_mode->alg_st, ps_mode->visible_pts, ps_mode->n.i);
+        focus_order_type (graphics, ps_mode);
         ps_mode->redraw_canvas = true;
-        printf ("change: %f\n\n", change);
-#endif
-    }
-
-    if (iterating) {
-        double change = arrange_points_step (&ps_mode->alg_st, ps_mode->visible_pts, ps_mode->n.i);
-        ps_mode->redraw_canvas = true;
-        if (change < 0.01) {
-            arrange_points_end (&ps_mode->alg_st);
-            iterating = false;
-        }
     }
 
     // I'm still not sure about handling selection here in the future. On one
@@ -1195,6 +1182,12 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
                 invalid_code_path;
             }
 
+        }
+
+        if (ps_mode->ot_arrangeable) {
+            selector_unset (ps_mode->arrange_pts_btn, CSS_SEL_DISABLED);
+        } else {
+            selector_set (ps_mode->arrange_pts_btn, CSS_SEL_DISABLED);
         }
         blit_needed = true;
     }

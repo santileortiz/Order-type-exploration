@@ -51,6 +51,9 @@ struct point_set_mode_t {
     bool redraw_panel;  // Renders available layout boxes to screen
     bool redraw_canvas;
     bool editing_entry;
+    bool arrange_pts;
+    bool ot_arrangeable;
+    layout_box_t *arrange_pts_btn;
     uint64_string_t bak_number;
 
     int db;
@@ -69,6 +72,7 @@ struct point_set_mode_t {
     bool view_db_ot;
     struct arrange_points_state_t alg_st;
     vect2_t visible_pts[15];
+    vect2_t arranged_pts[15];
     double point_radius;
     layout_box_t pts_hitboxes[15];
     int active_hitbox;

@@ -285,14 +285,34 @@ typedef struct {
     int8_t triples [1];
 } ot_triples_t;
 
+void ot_triples_print (ot_triples_t *tr) {
+    uint32_t trip_id = 0;
+    int i, j, k;
+    for (i=0; i<tr->n; i++) {
+        for (j=0; j<tr->n; j++) {
+            if (j==i) {
+                continue;
+            }
+            for (k=0; k<tr->n; k++) {
+                if (k==j || k==i) {
+                    continue;
+                }
+                printf ("id:%d (%d, %d, %d) = %d\n", trip_id, i, j, k, tr->triples[trip_id]);
+                trip_id ++;
+            }
+        }
+    }
+    printf ("\n");
+}
+
 ot_triples_t *ot_triples_new (order_type_t *ot, mem_pool_t *pool)
 {
     ot_triples_t *ret;
     uint32_t size = ot->n*(ot->n-1)*(ot->n-2);
     if (pool) {
-         ret = mem_pool_push_size (pool, sizeof(ot_triples_t)+(ot->n-1)*sizeof(int8_t));
+         ret = mem_pool_push_size (pool, sizeof(ot_triples_t)+(size-1)*sizeof(int8_t));
     } else {
-        ret = malloc(sizeof(ot_triples_t)+(ot->n-1)*sizeof(int8_t));
+        ret = malloc(sizeof(ot_triples_t)+(size-1)*sizeof(int8_t));
     }
     ret->n = ot->n;
     ret->size = size;
@@ -309,13 +329,56 @@ ot_triples_t *ot_triples_new (order_type_t *ot, mem_pool_t *pool)
                     continue;
                 }
                 ret->triples[trip_id] = left_i(ot->pts[i], ot->pts[j], ot->pts[k]) ? 1 : -1;
-                printf ("id:%d (%d, %d, %d) = %d\n", trip_id, i, j, k, ret->triples[trip_id]);
-                trip_id ++;
+                trip_id++;
             }
         }
     }
-    printf ("\n");
     return ret;
+}
+
+ot_triples_t *ps_triples_new (vect2_t *points, int len, mem_pool_t *pool)
+{
+    ot_triples_t *ret;
+    uint32_t size = len*(len-1)*(len-2);
+    if (pool) {
+         ret = mem_pool_push_size (pool, sizeof(ot_triples_t)+(size-1)*sizeof(int8_t));
+    } else {
+        ret = malloc(sizeof(ot_triples_t)+(size-1)*sizeof(int8_t));
+    }
+    ret->n = len;
+    ret->size = size;
+
+    uint32_t trip_id = 0;
+    int i, j, k;
+    for (i=0; i<len; i++) {
+        for (j=0; j<len; j++) {
+            if (j==i) {
+                continue;
+            }
+            for (k=0; k<len; k++) {
+                if (k==j || k==i) {
+                    continue;
+                }
+                ret->triples[trip_id] = left(points[i], points[j], points[k]) ? 1 : -1;
+                trip_id++;
+            }
+        }
+    }
+    return ret;
+}
+
+bool ot_triples_are_equal (ot_triples_t *tr_1, ot_triples_t *tr_2) {
+    if (tr_1->size != tr_2->size) {
+        return false;
+    }
+
+    int i;
+    for (i=0; i<tr_1->size; i++) {
+        if (tr_1->triples[i] != tr_2->triples[i]) {
+            return false;
+        }
+    }
+    return true;
 }
 
 // TODO: This is very slow.
