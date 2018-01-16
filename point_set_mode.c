@@ -347,19 +347,6 @@ double arrange_points_step (struct arrange_points_state_t *alg_st, vect2_t *poin
     return change*75/alg_st->tgt_radius;
 }
 
-bool arrange_points (order_type_t *ot, vect2_t *points, int len)
-{
-    struct arrange_points_state_t alg_st;
-
-    double change;
-    arrange_points_start (&alg_st, ot, points);
-    do {
-        change = arrange_points_step (&alg_st, points, len);
-    } while (change > 0.01);
-
-    return arrange_points_end (&alg_st, points, len);
-}
-
 void move_hitbox (struct point_set_mode_t *ps_mode)
 {
     struct gui_state_t *gui_st = global_gui_st;
@@ -391,19 +378,65 @@ void move_hitbox_int (struct point_set_mode_t *ps_mode)
     vect2_add_to (&hitbox->box.max, gui_st->ptr_delta);
 }
 
-void set_ot (struct point_set_mode_t *st)
-{
-    int_string_update (&st->ot_id, st->ot->id);
+struct arrange_work_t {
+    struct point_set_mode_t *ps_mode;
+    volatile uint64_t *curr_n;
+    uint64_t n; // n at the time the thread was started.
+    order_type_t *ot;
+};
 
-    int n = st->n.i;
+void* arrange_points_work (void *arg)
+{
+    struct arrange_work_t *wk = (struct arrange_work_t *)arg;
+    struct point_set_mode_t *ps_mode = wk->ps_mode;
+
+    struct arrange_points_state_t alg_st;
+    double change;
+    arrange_points_start (&alg_st, wk->ot, ps_mode->arranged_pts);
+
+    struct timespec start_time, curr_time;
+    clock_gettime (CLOCK_MONOTONIC, &start_time);
+    float time_elapsed;
+    do {
+        change = arrange_points_step (&alg_st, ps_mode->arranged_pts, wk->n);
+        clock_gettime (CLOCK_MONOTONIC, &curr_time);
+        time_elapsed = time_elapsed_in_ms (&start_time, &curr_time);
+    } while (change > 0.01 && time_elapsed < 100 && wk->n == *(wk->curr_n));
+
+    //if (wk->n == *(wk->curr_n)) {
+    //    printf ("Point autopositioning was cancelled\n");
+    //} else if (time_elapsed >= 100) {
+    //    printf ("Point autopositioning timed out.\n");
+    //}
+
+    ps_mode->ot_arrangeable = arrange_points_end (&alg_st, ps_mode->arranged_pts, wk->n);
+    mem_pool_destroy (&global_gui_st->thread_pool);
+    pthread_exit(0);
+}
+
+void set_ot (struct point_set_mode_t *ps_mode)
+{
+    int_string_update (&ps_mode->ot_id, ps_mode->ot->id);
+
+    int n = ps_mode->n.i;
     int i;
     for (i=0; i<n; i++) {
-        vect2_t pt = v2_from_v2i (st->ot->pts[i]);
-        st->visible_pts[i] = pt;
-        st->arranged_pts[i] = pt;
+        vect2_t pt = v2_from_v2i (ps_mode->ot->pts[i]);
+        ps_mode->visible_pts[i] = pt;
+        ps_mode->arranged_pts[i] = pt;
     }
 
-    st->ot_arrangeable = arrange_points (st->ot, st->arranged_pts, st->n.i);
+    pthread_join (global_gui_st->thread, NULL);
+    struct arrange_work_t *wk =
+        mem_pool_push_size (&global_gui_st->thread_pool, sizeof(struct arrange_work_t));
+    wk->ps_mode = ps_mode;
+    wk->n = ps_mode->n.i;
+    wk->curr_n = &ps_mode->n.i;
+    wk->ot = order_type_copy (&global_gui_st->thread_pool, ps_mode->ot);
+
+    ps_mode->ot_arrangeable = false;
+    ps_mode->redraw_panel = true;
+    pthread_create (&global_gui_st->thread, NULL, arrange_points_work, wk);
 }
 
 void set_k (struct point_set_mode_t *st, int k)
@@ -456,7 +489,8 @@ layout_box_t* next_layout_box_css (struct app_state_t *st, css_style_t style_id)
 bool update_button_state (struct app_state_t *st, layout_box_t *lay_box, bool *update_panel)
 {
     bool retval = false;
-    if (st->gui_st.mouse_clicked[0] &&
+    if (!(lay_box->active_selectors & CSS_SEL_DISABLED) &&
+        st->gui_st.mouse_clicked[0] &&
         is_vect2_in_box (global_gui_st->click_coord[0], lay_box->box) &&
         (lay_box->active_selectors & CSS_SEL_HOVER)) {
         retval = true;
@@ -885,6 +919,12 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
         ps_mode->redraw_canvas = true;
     }
 
+    if (ps_mode->ot_arrangeable) {
+        selector_unset (ps_mode->arrange_pts_btn, CSS_SEL_DISABLED);
+    } else {
+        selector_set (ps_mode->arrange_pts_btn, CSS_SEL_DISABLED);
+    }
+
     // I'm still not sure about handling selection here in the future. On one
     // hand it seems like we would want a selection to be a unique thing in
     // gui_st and handle it only once and do the right thing for different kinds
@@ -1182,12 +1222,6 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
                 invalid_code_path;
             }
 
-        }
-
-        if (ps_mode->ot_arrangeable) {
-            selector_unset (ps_mode->arrange_pts_btn, CSS_SEL_DISABLED);
-        } else {
-            selector_set (ps_mode->arrange_pts_btn, CSS_SEL_DISABLED);
         }
         blit_needed = true;
     }

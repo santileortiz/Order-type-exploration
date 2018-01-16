@@ -50,7 +50,6 @@ struct point_set_mode_t {
     bool rebuild_panel; // Computes the state of all layout boxes
     bool redraw_panel;  // Renders available layout boxes to screen
     bool redraw_canvas;
-    bool editing_entry;
     bool arrange_pts;
     bool ot_arrangeable;
     layout_box_t *arrange_pts_btn;

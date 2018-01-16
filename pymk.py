@@ -6,6 +6,7 @@ DEP_FLAGS = '-lcairo ' \
             '-lX11 ' \
             '-lxcb ' \
             '-lxcb-sync ' \
+            '-lpthread ' \
             '-lm '
 
 # NOTE: This is too much just to depend on Pango, maybe move to HarfBuzz?

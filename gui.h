@@ -222,6 +222,9 @@ struct gui_state_t {
     app_graphics_t gr;
 
     struct platform_api_t platform;
+    // TODO: convert this into a work queue.
+    pthread_t thread;
+    mem_pool_t thread_pool;
 
     char dragging[3];
     vect2_t ptr_delta;
@@ -534,14 +537,18 @@ void select_str (struct gui_state_t *gui_st, layout_box_t *lay_box, char* str, i
     (((lay_box)->changed_selectors&sel)&&!((lay_box)->active_selectors&sel))
 void selector_set (struct layout_box_t *lay_box, css_selector_t sel)
 {
-    lay_box->active_selectors |= sel;
-    lay_box->changed_selectors |= sel;
+    if (!(lay_box->active_selectors & sel)) {
+        lay_box->active_selectors |= sel;
+        lay_box->changed_selectors |= sel;
+    }
 }
 
 void selector_unset (struct layout_box_t *lay_box, css_selector_t sel)
 {
-    lay_box->active_selectors &= ~sel;
-    lay_box->changed_selectors |= sel;
+    if (lay_box->active_selectors & sel) {
+        lay_box->active_selectors &= ~sel;
+        lay_box->changed_selectors |= sel;
+    }
 }
 
 void focus_chain_add (struct gui_state_t *gui_st, layout_box_t *lay_box)
@@ -696,10 +703,12 @@ void update_selectors (struct gui_state_t *gui_st, layout_box_t *layout_boxes, i
         bool click_started_inside = is_vect2_in_box (global_gui_st->click_coord[0], curr_box->box);
 
         css_selector_t old = curr_box->active_selectors;
-        if (gui_st->input.mouse_down[0] && is_ptr_inside && click_started_inside) {
-            curr_box->active_selectors |= CSS_SEL_ACTIVE;
-        } else {
-            curr_box->active_selectors &= ~CSS_SEL_ACTIVE;
+        if (!(curr_box->active_selectors & CSS_SEL_DISABLED)) {
+            if (gui_st->input.mouse_down[0] && is_ptr_inside && click_started_inside) {
+                curr_box->active_selectors |= CSS_SEL_ACTIVE;
+            } else {
+                curr_box->active_selectors &= ~CSS_SEL_ACTIVE;
+            }
         }
 
         if (is_ptr_inside) {

@@ -200,14 +200,17 @@ void db_seek (order_type_t *ot, uint64_t id)
 #define order_type_size(n) (sizeof(order_type_t)+(n-1)*sizeof(vect2i_t))
 order_type_t *order_type_new (int n, mem_pool_t *pool)
 {
-    order_type_t *ret;
-    if (pool) {
-         ret = mem_pool_push_size (pool, order_type_size(n));
-    } else {
-        ret = malloc(order_type_size(n));
-    }
+    order_type_t *ret = pom_push_size (pool, order_type_size(n));
     ret->n = n;
     ret->id = -1;
+    return ret;
+}
+
+order_type_t *order_type_copy (mem_pool_t *pool, order_type_t *ot)
+{
+    uint64_t size = order_type_size(ot->n);
+    order_type_t *ret = pom_push_size (pool, size);
+    memcpy (ret, ot, size);
     return ret;
 }
 
