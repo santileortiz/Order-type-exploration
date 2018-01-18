@@ -1180,7 +1180,7 @@ int main (void)
             sleep_ticks.tv_nsec = (long)((target_frame_length_ms-time_elapsed)*1000000);
             nanosleep (&sleep_ticks, NULL);
         } else {
-            printf ("Frame missed! %f ms elapsed\n", time_elapsed);
+            //printf ("Frame missed! %f ms elapsed\n", time_elapsed);
         }
 
         clock_gettime(CLOCK_MONOTONIC, &end_ticks);

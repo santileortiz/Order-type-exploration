@@ -763,11 +763,14 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
     switch (input.keycode) {
         case 33: //KEY_P
             print_order_type (ps_mode->ot);
-            printf ("\n");
-            int i;
-            for (i=0; i<ps_mode->n.i; i++) {
-                vect2_print (&ps_mode->visible_pts[i]);
+            if (ps_mode->ot_arrangeable) {
+                printf ("Arranged points:\n");
+                int i;
+                for (i=0; i<ps_mode->n.i; i++) {
+                    printf ("(%.1f, %.1f)\n", ps_mode->visible_pts[i].x, ps_mode->visible_pts[i].y);
+                }
             }
+            printf ("\n");
             break;
         case 116://KEY_DOWN_ARROW
             break;

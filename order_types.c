@@ -279,7 +279,7 @@ void print_order_type (order_type_t *ot)
         printf ("id: unknown\n");
     }
     while (i < ot->n) {
-        printf ("(%"PRIi64",%"PRIi64")\n", ot->pts[i].x, ot->pts[i].y);
+        printf ("(%"PRIi64", %"PRIi64")\n", ot->pts[i].x, ot->pts[i].y);
         i++;
     }
     printf ("\n");
