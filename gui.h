@@ -6,7 +6,9 @@
 
 #define RGBA VECT4
 #define RGB(r,g,b) VECT4(r,g,b,1)
-#define RGB_HEX(r,g,b) VECT4(((double)(r))/255,((double)(g))/255,((double)(b))/255,1)
+#define RGB_HEX(hex) VECT4(((double)((hex)&0xFF0000))/255, \
+                           ((double)((hex)&0x00FF00))/255, \
+                           ((double)((hex)&0x0000FF))/255, 1)
 
 #define PLATFORM_SET_CLIPBOARD_STR(name) void name(char *str, size_t len)
 typedef PLATFORM_SET_CLIPBOARD_STR(platform_set_clipboard_str_t);
@@ -254,7 +256,7 @@ vect4_t mix (vect4_t *c1, vect4_t *c2, double f);
 
 // Forward declaration of CSS "stylesheet"
 
-vect4_t BLACK_500 = RGB_HEX(0x33,0x33,0x33);
+vect4_t BLACK_500 = RGB_HEX(0x333333);
 
 vect4_t text_color;
 vect4_t base_color = RGB(1,1,1);
