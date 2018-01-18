@@ -18,4 +18,4 @@ In elementaryOS install them with:
     
 Build with:
 
-    ./pymk database_expl
+    ./pymk ot_viewer

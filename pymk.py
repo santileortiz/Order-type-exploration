@@ -26,11 +26,11 @@ cli_mode = get_cli_option('-M,--mode', modes.keys())
 FLAGS = modes[pers('mode', 'debug', cli_mode)]
 
 def default():
-    target = pers ('last_target', 'database_expl')
+    target = pers ('last_target', 'ot_viewer')
     call_user_function(target)
 
-def database_expl ():
-    ex ('gcc {FLAGS} -o bin/database_expl database_expl.c {DEP_FLAGS} {PANGO_FLAGS} -lcurl')
+def ot_viewer ():
+    ex ('gcc {FLAGS} -o bin/ot_viewer ot_viewer.c {DEP_FLAGS} {PANGO_FLAGS} -lcurl')
     return
 
 def search ():

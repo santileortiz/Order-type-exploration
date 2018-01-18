@@ -130,7 +130,30 @@ bool update_and_render (struct app_state_t *st, app_graphics_t *graphics, app_in
     return blit_needed;
 }
 
-// TODO: Make a hasthable here and remove all atoms from x_state
+struct x_state {
+    xcb_connection_t *xcb_c;
+    Display *xlib_dpy;
+
+    xcb_screen_t *screen;
+    xcb_visualtype_t *visual;
+    uint8_t depth;
+
+    xcb_drawable_t window;
+    xcb_pixmap_t backbuffer;
+
+    xcb_gcontext_t gc;
+
+    xcb_timestamp_t last_timestamp; // Last server time received in an event.
+    xcb_sync_counter_t counters[2];
+    xcb_sync_int64_t counter_val;
+    mem_pool_t transient_pool;
+
+    xcb_timestamp_t clipboard_ownership_timestamp;
+    bool have_clipboard_ownership;
+};
+
+struct x_state global_x11_state;
+
 xcb_atom_t get_x11_atom (xcb_connection_t *c, const char *value)
 {
     xcb_atom_t res = XCB_ATOM_NONE;
@@ -144,6 +167,95 @@ xcb_atom_t get_x11_atom (xcb_connection_t *c, const char *value)
     res = reply->atom;
     free(reply);
     return res;
+}
+
+enum cached_atom_names_t {
+    // WM_DELETE_WINDOW protocol
+    LOC_ATOM_WM_DELETE_WINDOW,
+
+    // _NET_WM_SYNC_REQUEST protocol
+    LOC_ATOM__NET_WM_SYNC_REQUEST,
+    LOC_ATOM__NET_WM_SYNC__REQUEST_COUNTER,
+    LOC_ATOM__NET_WM_SYNC,
+    LOC_ATOM__NET_WM_FRAME_DRAWN,
+    LOC_ATOM__NET_WM_FRAME_TIMINGS,
+
+    LOC_ATOM_WM_PROTOCOLS,
+
+    // Related to clipboard management
+    LOC_ATOM_CLIPBOARD,
+    LOC_ATOM__CLIPBOARD_CONTENT,
+    LOC_ATOM_TARGETS,
+    LOC_ATOM_TIMESTAMP,
+    LOC_ATOM_MULTIPLE,
+    LOC_ATOM_UTF8_STRING,
+    LOC_ATOM_TEXT,
+    LOC_ATOM_TEXT_MIME,
+    LOC_ATOM_TEXT_MIME_CHARSET,
+    LOC_ATOM_ATOM_PAIR,
+
+    NUM_ATOMS_CACHE
+};                       
+
+xcb_atom_t xcb_atoms_cache[NUM_ATOMS_CACHE];
+
+// TODO: Batch all these get_x11_atom() requests. Can we generate this
+// automatically with some macro-fu?
+void init_x11_atoms (struct x_state *x_st)
+{
+    xcb_atoms_cache[LOC_ATOM_WM_DELETE_WINDOW] =
+        get_x11_atom (x_st->xcb_c, "WM_DELETE_WINDOW");
+
+
+    xcb_atoms_cache[LOC_ATOM__NET_WM_SYNC_REQUEST] =
+        get_x11_atom (x_st->xcb_c, "_NET_WM_SYNC_REQUEST");
+
+    xcb_atoms_cache[LOC_ATOM__NET_WM_SYNC__REQUEST_COUNTER] =
+        get_x11_atom (x_st->xcb_c, "_NET_WM_SYNC__REQUEST_COUNTER");
+
+    xcb_atoms_cache[LOC_ATOM__NET_WM_SYNC] =
+        get_x11_atom (x_st->xcb_c, "_NET_WM_SYNC");
+
+    xcb_atoms_cache[LOC_ATOM__NET_WM_FRAME_DRAWN] =
+        get_x11_atom (x_st->xcb_c, "_NET_WM_FRAME_DRAWN");
+
+    xcb_atoms_cache[LOC_ATOM__NET_WM_FRAME_TIMINGS] =
+        get_x11_atom (x_st->xcb_c, "_NET_WM_FRAME_TIMINGS");
+
+
+    xcb_atoms_cache[LOC_ATOM_WM_PROTOCOLS] =
+        get_x11_atom (x_st->xcb_c, "WM_PROTOCOLS");
+
+
+    xcb_atoms_cache[LOC_ATOM_CLIPBOARD] =
+        get_x11_atom (x_st->xcb_c, "CLIPBOARD");
+
+    xcb_atoms_cache[LOC_ATOM__CLIPBOARD_CONTENT] =
+        get_x11_atom (x_st->xcb_c, "_CLIPBOARD_CONTENT");
+
+    xcb_atoms_cache[LOC_ATOM_TARGETS] =
+        get_x11_atom (x_st->xcb_c, "TARGETS");
+
+    xcb_atoms_cache[LOC_ATOM_TIMESTAMP] =
+        get_x11_atom (x_st->xcb_c, "TIMESTAMP");
+
+    xcb_atoms_cache[LOC_ATOM_MULTIPLE] =
+        get_x11_atom (x_st->xcb_c, "MULTIPLE");
+
+    xcb_atoms_cache[LOC_ATOM_UTF8_STRING] =
+        get_x11_atom (x_st->xcb_c, "UTF8_STRING");
+
+    xcb_atoms_cache[LOC_ATOM_TEXT] =
+        get_x11_atom (x_st->xcb_c, "TEXT");
+
+    xcb_atoms_cache[LOC_ATOM_TEXT_MIME] =
+        get_x11_atom (x_st->xcb_c, "text/plain");
+
+    xcb_atoms_cache[LOC_ATOM_TEXT_MIME_CHARSET] =
+        get_x11_atom (x_st->xcb_c, "text/plain;charset=utf-8");
+
+    xcb_atoms_cache[LOC_ATOM_ATOM_PAIR] =
+        get_x11_atom (x_st->xcb_c, "ATOM_PAIR");
 }
 
 char* get_x11_atom_name (xcb_connection_t *c, xcb_atom_t atom, mem_pool_t *pool)
@@ -202,10 +314,10 @@ char* get_x11_text_property (xcb_connection_t *c, mem_pool_t *pool,
         return NULL;
     }
 
-    if (reply_1->type != get_x11_atom (c, "UTF8_STRING") &&
+    if (reply_1->type != xcb_atoms_cache[LOC_ATOM_UTF8_STRING] &&
         reply_1->type != XCB_ATOM_STRING && 
-        reply_1->type != get_x11_atom (c, "text/plain;charset=utf-8") &&
-        reply_1->type != get_x11_atom (c, "text/plain")) {
+        reply_1->type != xcb_atoms_cache[LOC_ATOM_TEXT_MIME_CHARSET] &&
+        reply_1->type != xcb_atoms_cache[LOC_ATOM_TEXT_MIME]) {
         mem_pool_t temp_pool = {0};
         printf ("Invalid text property (%s)\n", get_x11_atom_name (c, reply_1->type, &temp_pool));
         mem_pool_destroy (&temp_pool);
@@ -275,9 +387,9 @@ void print_x11_property (xcb_connection_t *c, xcb_drawable_t window, xcb_atom_t 
 
     void * value = get_x11_property (c, &pool, window, property, &len, &type);
     printf ("%s (%s)", get_x11_atom_name(c, property, &pool), get_x11_atom_name(c, type, &pool));
-    if (type == get_x11_atom (c, "UTF8_STRING") ||
-        type == get_x11_atom (c, "text/plain;charset=utf-8") ||
-        type == get_x11_atom (c, "text/plain") ||
+    if (type == xcb_atoms_cache[LOC_ATOM_UTF8_STRING] ||
+        type == xcb_atoms_cache[LOC_ATOM_TEXT_MIME_CHARSET] ||
+        type == xcb_atoms_cache[LOC_ATOM_TEXT_MIME] ||
         type == XCB_ATOM_STRING) {
 
         if (type == XCB_ATOM_STRING) {
@@ -297,7 +409,7 @@ void print_x11_property (xcb_connection_t *c, xcb_drawable_t window, xcb_atom_t 
         } else {
             printf (" = %.*s\n", (int)len, (char*)value);
         }
-    } else if (type == get_x11_atom (c, "ATOM")) {
+    } else if (type == XCB_ATOM_ATOM) {
         xcb_atom_t *atom_list = (xcb_atom_t*)value;
         printf (" = ");
         while (len > sizeof(xcb_atom_t)) {
@@ -390,36 +502,6 @@ Visual* Visual_from_visualid (Display *dpy, xcb_visualid_t visualid)
     return found->visual;
 }
 
-struct x_state {
-    xcb_connection_t *xcb_c;
-    Display *xlib_dpy;
-
-    xcb_screen_t *screen;
-    xcb_visualtype_t *visual;
-    uint8_t depth;
-
-    xcb_drawable_t window;
-    xcb_pixmap_t backbuffer;
-
-    xcb_gcontext_t gc;
-
-    xcb_atom_t wm_protocols_a;
-    xcb_atom_t delete_window_a;
-
-    xcb_timestamp_t last_timestamp; // Last server time received in an event.
-    xcb_sync_counter_t counters[2];
-    xcb_sync_int64_t counter_val;
-    xcb_atom_t net_wm_sync_a;
-    xcb_atom_t net_wm_frame_drawn_a;
-    xcb_atom_t net_wm_frame_timings_a;
-    mem_pool_t transient_pool;
-
-    xcb_timestamp_t clipboard_ownership_timestamp;
-    bool have_clipboard_ownership;
-};
-
-struct x_state global_x11_state;
-
 void x11_change_property (xcb_connection_t *c, xcb_drawable_t window,
                           xcb_atom_t property, xcb_atom_t type,
                           uint32_t len, void *data,
@@ -427,9 +509,9 @@ void x11_change_property (xcb_connection_t *c, xcb_drawable_t window,
 {
     uint8_t format = 32;
     if (type == XCB_ATOM_STRING ||
-        type == get_x11_atom (c, "UTF8_STRING") ||
-        type == get_x11_atom (c, "text/plain") ||
-        type == get_x11_atom (c, "text/plain;charset=utf-8"))
+        type == xcb_atoms_cache[LOC_ATOM_UTF8_STRING] ||
+        type == xcb_atoms_cache[LOC_ATOM_TEXT_MIME] ||
+        type == xcb_atoms_cache[LOC_ATOM_TEXT_MIME_CHARSET])
     {
         format = 8;
     } else if (type == XCB_ATOM_ATOM ||
@@ -530,17 +612,6 @@ void x11_setup_icccm_and_ewmh_protocols (struct x_state *x_st)
 {
     xcb_atom_t net_wm_protocols_value[2];
 
-    /////////////////////////////
-    // WM_DELETE_WINDOW protocol
-    x_st->delete_window_a = get_x11_atom (x_st->xcb_c, "WM_DELETE_WINDOW");
-
-    /////////////////////////////////
-    // _NET_WM_SYNC_REQUEST protocol
-    x_st->net_wm_sync_a = get_x11_atom (x_st->xcb_c, "_NET_WM_SYNC_REQUEST");
-    // NOTE: Following are used to recognize the ClientMessage type.
-    x_st->net_wm_frame_drawn_a = get_x11_atom (x_st->xcb_c, "_NET_WM_FRAME_DRAWN");
-    x_st->net_wm_frame_timings_a = get_x11_atom (x_st->xcb_c, "_NET_WM_FRAME_TIMINGS");
-
     // Set up counters for extended mode
     x_st->counter_val = (xcb_sync_int64_t){0, 0}; //{HI, LO}
     x_st->counters[0] = xcb_generate_id (x_st->xcb_c);
@@ -551,7 +622,7 @@ void x11_setup_icccm_and_ewmh_protocols (struct x_state *x_st)
 
     x11_change_property (x_st->xcb_c,
                          x_st->window,
-                         get_x11_atom (x_st->xcb_c, "_NET_WM_SYNC__REQUEST_COUNTER"),
+                         xcb_atoms_cache[LOC_ATOM__NET_WM_SYNC__REQUEST_COUNTER],
                          XCB_ATOM_CARDINAL,
                          ARRAY_SIZE(x_st->counters),
                          x_st->counters,
@@ -559,13 +630,12 @@ void x11_setup_icccm_and_ewmh_protocols (struct x_state *x_st)
 
     /////////////////////////////
     // Set WM_PROTOCOLS property
-    x_st->wm_protocols_a = get_x11_atom (x_st->xcb_c, "WM_PROTOCOLS");
-    net_wm_protocols_value[0] = x_st->delete_window_a;
-    net_wm_protocols_value[1] = x_st->net_wm_sync_a;
+    net_wm_protocols_value[0] = xcb_atoms_cache[LOC_ATOM_WM_DELETE_WINDOW];
+    net_wm_protocols_value[1] = xcb_atoms_cache[LOC_ATOM__NET_WM_SYNC_REQUEST];
 
     x11_change_property (x_st->xcb_c,
                          x_st->window,
-                         x_st->wm_protocols_a,
+                         xcb_atoms_cache[LOC_ATOM_WM_PROTOCOLS],
                          XCB_ATOM_ATOM,
                          ARRAY_SIZE(net_wm_protocols_value),
                          net_wm_protocols_value,
@@ -651,7 +721,7 @@ void print_selection_notify_event (struct x_state *x_st,
 
 void x11_own_selection (struct x_state *x_st)
 {
-    xcb_atom_t clipboard_atom = get_x11_atom (x_st->xcb_c, "CLIPBOARD");
+    xcb_atom_t clipboard_atom = xcb_atoms_cache[LOC_ATOM_CLIPBOARD];
     xcb_set_selection_owner (x_st->xcb_c, x_st->window, clipboard_atom, x_st->last_timestamp);
     xcb_get_selection_owner_cookie_t ck = xcb_get_selection_owner (x_st->xcb_c, clipboard_atom);
     xcb_generic_error_t *err = NULL;
@@ -684,9 +754,9 @@ PLATFORM_SET_CLIPBOARD_STR (x11_set_clipboard)
 
 void convert_selection_request (struct x_state *x_st, const char *target)
 {
-    xcb_atom_t clipboard_atom = get_x11_atom (x_st->xcb_c, "CLIPBOARD");
+    xcb_atom_t clipboard_atom = xcb_atoms_cache[LOC_ATOM_CLIPBOARD];
     xcb_atom_t target_atom = get_x11_atom (x_st->xcb_c, target);
-    xcb_atom_t my_selection_atom = get_x11_atom (x_st->xcb_c, "_CLIPBOARD_CONTENT");
+    xcb_atom_t my_selection_atom = xcb_atoms_cache[LOC_ATOM__CLIPBOARD_CONTENT];
     xcb_convert_selection (x_st->xcb_c,
                            x_st->window,
                            clipboard_atom,
@@ -709,8 +779,8 @@ void convert_selection_request (struct x_state *x_st, const char *target)
 
 void convert_selection_request_atom (struct x_state *x_st, xcb_atom_t target)
 {
-    xcb_atom_t clipboard_atom = get_x11_atom (x_st->xcb_c, "CLIPBOARD");
-    xcb_atom_t my_selection_atom = get_x11_atom (x_st->xcb_c, "_CLIPBOARD_CONTENT");
+    xcb_atom_t clipboard_atom = xcb_atoms_cache[LOC_ATOM_CLIPBOARD];
+    xcb_atom_t my_selection_atom = xcb_atoms_cache[LOC_ATOM__CLIPBOARD_CONTENT];
     xcb_convert_selection (x_st->xcb_c,
                            x_st->window,
                            clipboard_atom,
@@ -736,7 +806,7 @@ PLATFORM_GET_CLIPBOARD_STR (x11_get_clipboard)
 {
     struct gui_state_t *gui_st = global_gui_st;
     if (!global_x11_state.have_clipboard_ownership) {
-        convert_selection_request (&global_x11_state, "TARGETS");
+        convert_selection_request_atom (&global_x11_state, xcb_atoms_cache[LOC_ATOM_TARGETS]);
         gui_st->clipboard_ready = false;
     } else {
         gui_st->clipboard_ready = true;
@@ -748,13 +818,13 @@ void handle_selection_request_event (struct x_state *x_st,
                                      xcb_selection_notify_event_t *reply)
 {
     xcb_atom_t target = selection_request_ev->target;
-    if (target == get_x11_atom (x_st->xcb_c, "TARGETS")) {
-        xcb_atom_t targets[] = {get_x11_atom (x_st->xcb_c, "TIMESTAMP"),
-                                get_x11_atom (x_st->xcb_c, "TARGETS"),
-                                get_x11_atom (x_st->xcb_c, "MULTIPLE"),
-                                get_x11_atom (x_st->xcb_c, "UTF8_STRING"),
-                                get_x11_atom (x_st->xcb_c, "TEXT"),
-                                get_x11_atom (x_st->xcb_c, "text/plain;charset=utf-8")};
+    if (target == xcb_atoms_cache[LOC_ATOM_TARGETS]) {
+        xcb_atom_t targets[] = {xcb_atoms_cache[LOC_ATOM_TIMESTAMP],
+                                xcb_atoms_cache[LOC_ATOM_TARGETS],
+                                xcb_atoms_cache[LOC_ATOM_MULTIPLE],
+                                xcb_atoms_cache[LOC_ATOM_UTF8_STRING],
+                                xcb_atoms_cache[LOC_ATOM_TEXT],
+                                xcb_atoms_cache[LOC_ATOM_TEXT_MIME_CHARSET]};
 
         x11_change_property (x_st->xcb_c,
                              selection_request_ev->requestor,
@@ -764,7 +834,7 @@ void handle_selection_request_event (struct x_state *x_st,
                              targets,
                              true);
 
-    } else if (target == get_x11_atom (x_st->xcb_c, "TIMESTAMP")) {
+    } else if (target == xcb_atoms_cache[LOC_ATOM_TIMESTAMP]) {
         x11_change_property (x_st->xcb_c,
                              selection_request_ev->requestor,
                              selection_request_ev->property,
@@ -773,12 +843,12 @@ void handle_selection_request_event (struct x_state *x_st,
                              &x_st->clipboard_ownership_timestamp,
                              false);
 
-    } else if (target == get_x11_atom (x_st->xcb_c, "UTF8_STRING") ||
-               target == get_x11_atom (x_st->xcb_c, "TEXT") ||
-               target == get_x11_atom (x_st->xcb_c, "text/plain;charset=utf-8")) {
+    } else if (target == xcb_atoms_cache[LOC_ATOM_UTF8_STRING] ||
+               target == xcb_atoms_cache[LOC_ATOM_TEXT] ||
+               target == xcb_atoms_cache[LOC_ATOM_TEXT_MIME_CHARSET]) {
         xcb_atom_t type;
-        if (selection_request_ev->target == get_x11_atom (x_st->xcb_c, "TEXT")) {
-            type = get_x11_atom (x_st->xcb_c, "UTF8_STRING");
+        if (selection_request_ev->target == xcb_atoms_cache[LOC_ATOM_TEXT]) {
+            type = xcb_atoms_cache[LOC_ATOM_UTF8_STRING];
         } else {
             type = selection_request_ev->target;
         }
@@ -796,7 +866,7 @@ void handle_selection_request_event (struct x_state *x_st,
                              global_gui_st->clipboard_str,
                              false);
 
-    //} else if (target == get_x11_atom (x_st->xcb_c, "MULTIPLE")) {
+    //} else if (target == xcb_atoms_cache[LOC_ATOM_MULTIPLE]) {
     //    bool refuse_request = false;
     //    if (selection_request_ev->property != XCB_ATOM_NONE) {
     //        size_t len;
@@ -806,13 +876,13 @@ void handle_selection_request_event (struct x_state *x_st,
     //                              selection_request_ev->requestor,
     //                              selection_request_ev->property,
     //                              &len, &type);
-    //        if (type == get_x11_atom (x_st->xcb_c, "ATOM_PAIR")) {
+    //        if (type == xcb_atoms_cache[LOC_ATOM_ATOM_PAIR]) {
     //            xcb_atom_t *atom_list = (xcb_atom_t*)value;
     //            xcb_selection_request_event_t dummy_ev = *selection_request_ev;
 
     //            if (len % 2*sizeof(xcb_atom_t) == 0) {
     //                while (len) {
-    //                    if (*atom_list == get_x11_atom (x_st->xcb_c, "MULTIPLE")) {
+    //                    if (*atom_list == xcb_atoms_cache[LOC_ATOM_MULTIPLE]) {
     //                        // NOTE: This would cause infinite recursion.
     //                        refuse_request = true;
     //                        break;
@@ -884,6 +954,8 @@ int main (void)
         return -1;
     }
     XSetEventQueueOwner (x_st->xlib_dpy, XCBOwnsEventQueue);
+
+    init_x11_atoms (x_st);
 
     /* Get the first screen */
     // TODO: Get the default screen instead of assuming it's 0.
@@ -964,45 +1036,48 @@ int main (void)
             switch (event->response_type & ~0x80) {
                 case XCB_SELECTION_REQUEST:
                     {
-                    xcb_selection_request_event_t *selection_request_ev =
-                        (xcb_selection_request_event_t*)event;
+                        xcb_selection_request_event_t *selection_request_ev =
+                            (xcb_selection_request_event_t*)event;
 
 #ifdef DEBUG_X11_SELECTIONS
-                    printf ("\n----SELECTION REQUEST EVENT [RECEIVED]-----\n");
-                    print_selection_request_event (x_st, selection_request_ev);
+                        printf ("\n----SELECTION REQUEST EVENT [RECEIVED]-----\n");
+                        print_selection_request_event (x_st, selection_request_ev);
 #endif
 
-                    xcb_generic_event_t evt = {0};
-                    xcb_selection_notify_event_t *reply = (xcb_selection_notify_event_t*)&evt;
-                    handle_selection_request_event (x_st, selection_request_ev, reply);
+                        xcb_generic_event_t evt = {0};
+                        xcb_selection_notify_event_t *reply = (xcb_selection_notify_event_t*)&evt;
+                        handle_selection_request_event (x_st, selection_request_ev, reply);
 
-                    x11_send_event (x_st->xcb_c, selection_request_ev->requestor, reply);
+                        x11_send_event (x_st->xcb_c, selection_request_ev->requestor, reply);
 
 #ifdef DEBUG_X11_SELECTIONS
-                    printf ("\n------SELECTION NOTIFY EVENT [SENT]------\n");
-                    print_selection_notify_event (x_st, reply);
+                        printf ("\n------SELECTION NOTIFY EVENT [SENT]------\n");
+                        print_selection_notify_event (x_st, reply);
 #endif
                     } break;
                 case XCB_SELECTION_NOTIFY:
                     {
-                    xcb_selection_notify_event_t *selection_notify_ev =
-                        (xcb_selection_notify_event_t*)event;
+                        xcb_selection_notify_event_t *selection_notify_ev =
+                            (xcb_selection_notify_event_t*)event;
 
 #ifdef DEBUG_X11_SELECTIONS
-                    printf ("\n------SELECTION NOTIFY EVENT [RECEIVED]------\n");
-                    print_selection_notify_event (x_st, selection_notify_ev);
+                        printf ("\n------SELECTION NOTIFY EVENT [RECEIVED]------\n");
+                        print_selection_notify_event (x_st, selection_notify_ev);
 #endif
 
-                    if (selection_notify_ev->property != XCB_ATOM_NONE) {
+                        if (selection_notify_ev->property == XCB_ATOM_NONE) {
+                            break;
+                        }
+
                         if (selection_notify_ev->target == XCB_ATOM_STRING) {
                             // TODO: We should convert from latin1 to UTF8 here.
                             printf ("Best target match for selection owner is STRING"
                                     " but we don't support conversion from latin1 to"
                                     " utf8 yet!\n");
 
-                        } else if (selection_notify_ev->target == get_x11_atom (x_st->xcb_c, "UTF8_STRING") ||
-                                   selection_notify_ev->target == get_x11_atom (x_st->xcb_c, "text/plain;charset=utf-8") ||
-                                   selection_notify_ev->target == get_x11_atom (x_st->xcb_c, "text/plain")) {
+                        } else if (selection_notify_ev->target == xcb_atoms_cache[LOC_ATOM_UTF8_STRING] ||
+                                   selection_notify_ev->target == xcb_atoms_cache[LOC_ATOM_TEXT_MIME_CHARSET] ||
+                                   selection_notify_ev->target == xcb_atoms_cache[LOC_ATOM_TEXT_MIME]) {
                             free (st->gui_st.clipboard_str);
                             st->gui_st.clipboard_str =
                                 get_x11_text_property (x_st->xcb_c, NULL,
@@ -1010,7 +1085,7 @@ int main (void)
                                                        selection_notify_ev->property,NULL);
                             st->gui_st.clipboard_ready = true;
 
-                        } else if (selection_notify_ev->target == get_x11_atom (x_st->xcb_c, "TARGETS")) {
+                        } else if (selection_notify_ev->target == xcb_atoms_cache[LOC_ATOM_TARGETS]) {
                             bool invalid_response = false;
                             size_t len;
                             xcb_atom_t type;
@@ -1020,9 +1095,9 @@ int main (void)
                                                              selection_notify_ev->property,
                                                              &len, &type);
 
-                            xcb_atom_t supported_targets[] = {get_x11_atom (x_st->xcb_c, "UTF8_STRING"),
-                                                              get_x11_atom (x_st->xcb_c, "text/plain;charset=utf-8"),
-                                                              get_x11_atom (x_st->xcb_c, "text/plain"), // ASCII
+                            xcb_atom_t supported_targets[] = {xcb_atoms_cache[LOC_ATOM_UTF8_STRING],
+                                                              xcb_atoms_cache[LOC_ATOM_TEXT_MIME_CHARSET],
+                                                              xcb_atoms_cache[LOC_ATOM_TEXT_MIME], // ASCII
                                                               XCB_ATOM_STRING}; // latin1
                             int best_match = ARRAY_SIZE(supported_targets);
 
@@ -1052,92 +1127,103 @@ int main (void)
                                 printf ("Invalid response to TARGETS selection conversion.\n");
                             }
                         }
-                    }
                     } break;
                 case XCB_SELECTION_CLEAR:
-                    x_st->have_clipboard_ownership = false;
-                    free (st->gui_st.clipboard_str);
-                    st->gui_st.clipboard_str = NULL;
-                    st->gui_st.clipboard_ready = false;
-                    break;
-                case XCB_CONFIGURE_NOTIFY: {
-                                               graphics.width = ((xcb_configure_notify_event_t*)event)->width;
-                                               graphics.height = ((xcb_configure_notify_event_t*)event)->height;
-                                           } break;
-                case XCB_MOTION_NOTIFY: {
-                                            x_st->last_timestamp = ((xcb_motion_notify_event_t*)event)->time;
-                                            app_input.ptr.x = ((xcb_motion_notify_event_t*)event)->event_x;
-                                            app_input.ptr.y = ((xcb_motion_notify_event_t*)event)->event_y;
-                                        } break;
+                    {
+                        x_st->have_clipboard_ownership = false;
+                        free (st->gui_st.clipboard_str);
+                        st->gui_st.clipboard_str = NULL;
+                        st->gui_st.clipboard_ready = false;
+                    } break;
+                case XCB_CONFIGURE_NOTIFY:
+                    {
+                        graphics.width = ((xcb_configure_notify_event_t*)event)->width;
+                        graphics.height = ((xcb_configure_notify_event_t*)event)->height;
+                    } break;
+                case XCB_MOTION_NOTIFY:
+                    {
+                        x_st->last_timestamp = ((xcb_motion_notify_event_t*)event)->time;
+                        app_input.ptr.x = ((xcb_motion_notify_event_t*)event)->event_x;
+                        app_input.ptr.y = ((xcb_motion_notify_event_t*)event)->event_y;
+                    } break;
                 case XCB_KEY_PRESS:
-                                        x_st->last_timestamp = ((xcb_key_press_event_t*)event)->time;
-                                        app_input.keycode = ((xcb_key_press_event_t*)event)->detail;
-                                        app_input.modifiers = ((xcb_key_press_event_t*)event)->state;
-                                        break;
+                    {
+                        x_st->last_timestamp = ((xcb_key_press_event_t*)event)->time;
+                        app_input.keycode = ((xcb_key_press_event_t*)event)->detail;
+                        app_input.modifiers = ((xcb_key_press_event_t*)event)->state;
+                    } break;
                 case XCB_EXPOSE:
-                                        // We should tell which areas need exposing
-                                        force_blit = true;
-                                        break;
-                case XCB_BUTTON_PRESS: {
-                                           x_st->last_timestamp = ((xcb_key_press_event_t*)event)->time;
-                                           char button_pressed = ((xcb_key_press_event_t*)event)->detail;
-                                           if (button_pressed == 4) {
-                                               app_input.wheel *= 1.2;
-                                           } else if (button_pressed == 5) {
-                                               app_input.wheel /= 1.2;
-                                           } else if (button_pressed >= 1 && button_pressed <= 3) {
-                                               app_input.mouse_down[button_pressed-1] = 1;
-                                           }
-                                       } break;
-                case XCB_BUTTON_RELEASE: {
-                                             x_st->last_timestamp = ((xcb_key_press_event_t*)event)->time;
-                                             // NOTE: This loses clicks if the button press-release
-                                             // sequence happens in the same batch of events, right now
-                                             // it does not seem to be a problem.
-                                             char button_pressed = ((xcb_key_press_event_t*)event)->detail;
-                                             if (button_pressed >= 1 && button_pressed <= 3) {
-                                                 app_input.mouse_down[button_pressed-1] = 0;
-                                             }
-                                         } break;
-                case XCB_CLIENT_MESSAGE: {
-                                             bool handled = false;
-                                             xcb_client_message_event_t *client_message = ((xcb_client_message_event_t*)event);
-
-                                             // WM_DELETE_WINDOW protocol
-                                             if (client_message->type == x_st->wm_protocols_a) {
-                                                 if (client_message->data.data32[0] == x_st->delete_window_a) {
-                                                     st->end_execution = true;
-                                                 }
-                                                 handled = true;
-                                             }
-
-                    // _NET_WM_SYNC_REQUEST protocol using the extended mode
-                    if (client_message->type == x_st->wm_protocols_a && client_message->data.data32[0] == x_st->net_wm_sync_a) {
-                        x_st->counter_val.lo = client_message->data.data32[2];
-                        x_st->counter_val.hi = client_message->data.data32[3];
-                        if (x_st->counter_val.lo % 2 != 0) {
-                            increment_sync_counter (&x_st->counter_val);
+                    {
+                        // We should tell which areas need exposing
+                        force_blit = true;
+                    } break;
+                case XCB_BUTTON_PRESS:
+                    {
+                       x_st->last_timestamp = ((xcb_key_press_event_t*)event)->time;
+                       char button_pressed = ((xcb_key_press_event_t*)event)->detail;
+                       if (button_pressed == 4) {
+                           app_input.wheel *= 1.2;
+                       } else if (button_pressed == 5) {
+                           app_input.wheel /= 1.2;
+                       } else if (button_pressed >= 1 && button_pressed <= 3) {
+                           app_input.mouse_down[button_pressed-1] = 1;
+                       }
+                    } break;
+                case XCB_BUTTON_RELEASE:
+                    {
+                        x_st->last_timestamp = ((xcb_key_press_event_t*)event)->time;
+                        // NOTE: This loses clicks if the button press-release
+                        // sequence happens in the same batch of events, right now
+                        // it does not seem to be a problem.
+                        char button_pressed = ((xcb_key_press_event_t*)event)->detail;
+                        if (button_pressed >= 1 && button_pressed <= 3) {
+                            app_input.mouse_down[button_pressed-1] = 0;
                         }
-                        handled = true;
-                    } else if (client_message->type == x_st->net_wm_frame_drawn_a) {
-                        handled = true;
-                    } else if (client_message->type == x_st->net_wm_frame_timings_a) {
-                        handled = true;
-                    }
+                    } break;
+                case XCB_CLIENT_MESSAGE:
+                    {
+                        bool handled = false;
+                        xcb_client_message_event_t *client_message = ((xcb_client_message_event_t*)event);
 
-                    if (!handled) {
-                        printf ("Unrecognized Client Message: %s\n",
-                                get_x11_atom_name (x_st->xcb_c,
-                                                   client_message->type,
-                                                   &x_st->transient_pool));
-                    }
+                        // WM_DELETE_WINDOW protocol
+                        if (client_message->type == xcb_atoms_cache[LOC_ATOM_WM_PROTOCOLS]) {
+                            if (client_message->data.data32[0] == xcb_atoms_cache[LOC_ATOM_WM_DELETE_WINDOW]) {
+                                st->end_execution = true;
+                            }
+                            handled = true;
+                        }
+
+                        // _NET_WM_SYNC_REQUEST protocol using the extended mode
+                        if (client_message->type == xcb_atoms_cache[LOC_ATOM_WM_PROTOCOLS] &&
+                            client_message->data.data32[0] == xcb_atoms_cache[LOC_ATOM__NET_WM_SYNC_REQUEST]) {
+
+                            x_st->counter_val.lo = client_message->data.data32[2];
+                            x_st->counter_val.hi = client_message->data.data32[3];
+                            if (x_st->counter_val.lo % 2 != 0) {
+                                increment_sync_counter (&x_st->counter_val);
+                            }
+                            handled = true;
+                        } else if (client_message->type == xcb_atoms_cache[LOC_ATOM__NET_WM_FRAME_DRAWN]) {
+                            handled = true;
+                        } else if (client_message->type == xcb_atoms_cache[LOC_ATOM__NET_WM_FRAME_TIMINGS]) {
+                            handled = true;
+                        }
+
+                        if (!handled) {
+                            printf ("Unrecognized Client Message: %s\n",
+                                    get_x11_atom_name (x_st->xcb_c,
+                                                       client_message->type,
+                                                       &x_st->transient_pool));
+                        }
                     } break;
                 case XCB_PROPERTY_NOTIFY:
-                                         x_st->last_timestamp = ((xcb_property_notify_event_t*)event)->time;
-                                         break;
-                case 0: { // XCB_ERROR
-                    xcb_generic_error_t *error = (xcb_generic_error_t*)event;
-                    printf("Received X11 error %d\n", error->error_code);
+                    {
+                        x_st->last_timestamp = ((xcb_property_notify_event_t*)event)->time;
+                    } break;
+                case 0:
+                    { // XCB_ERROR
+                        xcb_generic_error_t *error = (xcb_generic_error_t*)event;
+                        printf("Received X11 error %d\n", error->error_code);
                     } break;
                 default: 
                     /* Unknown event type, ignore it */
