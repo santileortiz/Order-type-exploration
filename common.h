@@ -1359,5 +1359,77 @@ char* get_extension (char *path)
     return &path[i+1];
 }
 
+#ifdef __CURL_CURL_H
+#define DOWNLOAD_PROGRESS_CALLBACK(name) \
+    int name(void *clientp, curl_off_t dltotal, curl_off_t dlnow, curl_off_t ultotal, curl_off_t ulnow)
+typedef DOWNLOAD_PROGRESS_CALLBACK(download_progress_callback_t);
+
+// NOTE: This function is blocking.
+#define download_file(url,dest) download_file_full(url,dest,NULL,NULL,true)
+#define download_file_cbk(url,dest,cbk,data) download_file_full(url,dest,cbk,data,false)
+bool download_file_full (char *url, char *dest,
+                         download_progress_callback_t callback, void *clientp,
+                         bool progress_meter)
+{
+    CURL *h = curl_easy_init ();
+    if (!h) {
+        printf ("Error downloading: could not create curl handle.\n");
+        return false;
+    }
+
+    char *temp_dest = malloc (strlen(dest) + 5 + 1);
+    sprintf (temp_dest, "%s%s", dest, ".part");
+
+    //curl_easy_setopt (h, CURLOPT_VERBOSE, 1);
+    curl_easy_setopt (h, CURLOPT_WRITEFUNCTION, NULL); // Required on Windows
+
+    if (callback != NULL) {
+        curl_easy_setopt (h, CURLOPT_NOPROGRESS, 0);
+        curl_easy_setopt (h, CURLOPT_XFERINFOFUNCTION, callback);
+        curl_easy_setopt (h, CURLOPT_XFERINFODATA, clientp);
+    } else {
+        if (progress_meter) {
+            printf ("Downloading: %s\n", url);
+            curl_easy_setopt (h, CURLOPT_NOPROGRESS, 0);
+        }
+    }
+
+    FILE *f = fopen (temp_dest, "w");
+    curl_easy_setopt (h, CURLOPT_WRITEDATA, f);
+    curl_easy_setopt (h, CURLOPT_URL, url);
+    CURLcode rc = curl_easy_perform (h);
+    fclose (f);
+    curl_easy_cleanup (h);
+
+    bool retval = true;
+    if (rc != CURLE_OK) {
+        printf ("Error downloading: %s\n", curl_easy_strerror (rc));
+        unlink (temp_dest);
+        retval = false;
+    } else {
+        rename (temp_dest, dest);
+    }
+
+    free (temp_dest);
+    return retval;
+}
+#endif /*__CURL_CURL_H*/
+
+///////////////
+//
+//  THREADING
+
+//  Handmade busywait mutex for GCC
+void start_mutex (volatile int *lock) {
+    while (__sync_val_compare_and_swap (lock, 0, 1) == 1) {
+        // Busy wait
+    }
+}
+
+void end_mutex (volatile int *lock) {
+    *lock = 0;
+}
+
+
 #define COMMON_H
 #endif

@@ -536,6 +536,19 @@ layout_box_t* button (char *label, bool *target, app_graphics_t *gr,
     return curr_box;
 }
 
+layout_box_t* label (char *str, double x, double y, struct app_state_t *st, app_graphics_t *graphics)
+{
+    layout_box_t *downloading_lbl = next_layout_box_css (st, CSS_LABEL);
+
+    downloading_lbl->str.s = str;
+    struct css_box_t *label_style = &st->gui_st.css_styles[CSS_LABEL];
+    sized_string_compute (&downloading_lbl->str, label_style,
+                          graphics->text_layout, downloading_lbl->str.s);
+    BOX_CENTER_X_Y_W_H (downloading_lbl->box, x, y,
+                        downloading_lbl->str.width, downloading_lbl->str.height);
+    return downloading_lbl;
+}
+
 typedef struct {
     double label_align;
     vect2_t label_size;

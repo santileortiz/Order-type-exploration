@@ -51,7 +51,7 @@ void check_database (int missing[10], int *num_missing)
     char *full_path = malloc (strlen(dir_path)+strlen(otdb_names[10])+1);
     char *f_loc = stpcpy (full_path, dir_path);
     int i;
-    for (i=3; i<10; i++) {
+    for (i=3; i<11; i++) {
         strcpy (f_loc, otdb_names[i]);
         if (stat(full_path, &st) == -1 && errno == ENOENT) {
             missing[*num_missing] = i;
@@ -64,53 +64,6 @@ void check_database (int missing[10], int *num_missing)
 
 #ifdef __CURL_CURL_H
 #define OTDB_URL "http://www.ist.tugraz.at/aichholzer/research/rp/triangulations/ordertypes/data/"
-
-#define DOWNLOAD_PROGRESS_CALLBACK(name) \
-    int name(void *clientp, curl_off_t dltotal, curl_off_t dlnow, curl_off_t ultotal, curl_off_t ulnow)
-typedef DOWNLOAD_PROGRESS_CALLBACK(download_progress_callback_t);
-
-// NOTE: This function call blocks until the end.
-#define download_file(url,dest) download_file_full(url,dest,NULL,NULL,true)
-#define download_file_cbk(url,dest,cbk,data) download_file_full(url,dest,cbk,data,false)
-bool download_file_full (char *url, char *dest,
-                         download_progress_callback_t callback, void *clientp,
-                         bool progress_meter)
-{
-    CURL *h = curl_easy_init ();
-    //curl_easy_setopt (h, CURLOPT_VERBOSE, 1);
-    if (h) {
-        curl_easy_setopt (h, CURLOPT_WRITEFUNCTION, NULL); // Required on Windows
-
-        if (callback != NULL) {
-            curl_easy_setopt (h, CURLOPT_NOPROGRESS, 0);
-            curl_easy_setopt (h, CURLOPT_XFERINFOFUNCTION, callback);
-            curl_easy_setopt (h, CURLOPT_XFERINFODATA, clientp);
-        } else {
-            if (progress_meter) {
-                printf ("Downloading: %s\n", url);
-                curl_easy_setopt (h, CURLOPT_NOPROGRESS, 0);
-            }
-        }
-
-        FILE *f = fopen (dest, "w");
-        curl_easy_setopt (h, CURLOPT_WRITEDATA, f);
-        curl_easy_setopt (h, CURLOPT_URL, url);
-        CURLcode rc = curl_easy_perform (h);
-        fclose (f);
-        curl_easy_cleanup (h);
-
-        if (rc != CURLE_OK) {
-            printf ("Error downloading: %s\n", curl_easy_strerror (rc));
-            return false;
-        } else {
-            return true;
-        }
-    } else {
-        printf ("Error downloading: could not create curl handle\n");
-        return false;
-    }
-}
-
 void ensure_full_database ()
 {
     int missing [10];
