@@ -16,10 +16,12 @@ struct app_state_t {
     bool is_initialized;
 
     bool end_execution;
+    bool download_database;
     app_mode_t app_mode;
     struct point_set_mode_t *ps_mode;
     struct grid_mode_state_t *grid_mode;
     struct tree_mode_state_t *tree_mode;
+    struct database_download_t *dl_st;
 
     struct gui_state_t gui_st;
 

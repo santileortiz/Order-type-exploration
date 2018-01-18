@@ -37,59 +37,108 @@ int db_coord_size (int n)
     }
 }
 
-#define DEF_DB_LOCATION "~/.ot_viewer/"
 char* otdb_names [] = { "", "", "",
                        "otypes03.b08", "otypes04.b08", "otypes05.b08", "otypes06.b08",
                        "otypes07.b08", "otypes08.b08", "otypes09.b16", "otypes10.b16"};
 
-#ifdef __CURL_CURL_H
-#define OTDB_URL "http://www.ist.tugraz.at/aichholzer/research/rp/triangulations/ordertypes/data/"
-void ensure_full_database ()
+void check_database (int missing[10], int *num_missing)
 {
-    char *dir_path = sh_expand (DEF_DB_LOCATION, NULL);
+    char *dir_path = sh_expand (APPLICATION_DATA, NULL);
     struct stat st;
 
-    int missing [10];
-    int num_missing = 0;
+    *num_missing = 0;
 
     char *full_path = malloc (strlen(dir_path)+strlen(otdb_names[10])+1);
     char *f_loc = stpcpy (full_path, dir_path);
     int i;
-    for (i=3; i<11; i++) {
+    for (i=3; i<10; i++) {
         strcpy (f_loc, otdb_names[i]);
         if (stat(full_path, &st) == -1 && errno == ENOENT) {
-            missing[num_missing] = i;
-            num_missing++;
+            missing[*num_missing] = i;
+            (*num_missing)++;
         }
     }
+    free (full_path);
+    free (dir_path);
+}
+
+#ifdef __CURL_CURL_H
+#define OTDB_URL "http://www.ist.tugraz.at/aichholzer/research/rp/triangulations/ordertypes/data/"
+
+#define DOWNLOAD_PROGRESS_CALLBACK(name) \
+    int name(void *clientp, curl_off_t dltotal, curl_off_t dlnow, curl_off_t ultotal, curl_off_t ulnow)
+typedef DOWNLOAD_PROGRESS_CALLBACK(download_progress_callback_t);
+
+// NOTE: This function call blocks until the end.
+#define download_file(url,dest) download_file_full(url,dest,NULL,NULL,true)
+#define download_file_cbk(url,dest,cbk,data) download_file_full(url,dest,cbk,data,false)
+bool download_file_full (char *url, char *dest,
+                         download_progress_callback_t callback, void *clientp,
+                         bool progress_meter)
+{
+    CURL *h = curl_easy_init ();
+    //curl_easy_setopt (h, CURLOPT_VERBOSE, 1);
+    if (h) {
+        curl_easy_setopt (h, CURLOPT_WRITEFUNCTION, NULL); // Required on Windows
+
+        if (callback != NULL) {
+            curl_easy_setopt (h, CURLOPT_NOPROGRESS, 0);
+            curl_easy_setopt (h, CURLOPT_XFERINFOFUNCTION, callback);
+            curl_easy_setopt (h, CURLOPT_XFERINFODATA, clientp);
+        } else {
+            if (progress_meter) {
+                printf ("Downloading: %s\n", url);
+                curl_easy_setopt (h, CURLOPT_NOPROGRESS, 0);
+            }
+        }
+
+        FILE *f = fopen (dest, "w");
+        curl_easy_setopt (h, CURLOPT_WRITEDATA, f);
+        curl_easy_setopt (h, CURLOPT_URL, url);
+        CURLcode rc = curl_easy_perform (h);
+        fclose (f);
+        curl_easy_cleanup (h);
+
+        if (rc != CURLE_OK) {
+            printf ("Error downloading: %s\n", curl_easy_strerror (rc));
+            return false;
+        } else {
+            return true;
+        }
+    } else {
+        printf ("Error downloading: could not create curl handle\n");
+        return false;
+    }
+}
+
+void ensure_full_database ()
+{
+    int missing [10];
+    int num_missing = 0;
+    check_database (missing, &num_missing);
 
     if (num_missing > 0) {
         printf ("Missing %i order type databases.\n", num_missing);
+
+        char *dir_path = sh_expand (APPLICATION_DATA, NULL);
+
+        char *full_path = malloc (strlen(dir_path)+strlen(otdb_names[10])+1);
+        char *f_loc = stpcpy (full_path, dir_path);
+
         char *url = malloc(strlen(OTDB_URL)+strlen(otdb_names[10])+1);
         char *u_loc = stpcpy (url, OTDB_URL);
 
-        CURL *h = curl_easy_init ();
-        //curl_easy_setopt (h, CURLOPT_VERBOSE, 1);
-        curl_easy_setopt (h, CURLOPT_WRITEFUNCTION, NULL); // Required on Windows
+        int i;
         for (i=0; i<num_missing; i++) {
-            if (h) {
-                strcpy (f_loc, otdb_names[missing[i]]);
-                FILE *f = fopen (full_path, "w");
-                curl_easy_setopt (h, CURLOPT_WRITEDATA, f);
-
-                strcpy (u_loc, otdb_names[missing[i]]);
-                printf ("Downloading: %s\n", url);
-                curl_easy_setopt (h, CURLOPT_URL, url);
-                curl_easy_perform (h);
-                printf ("Downloaded: %s\n\n", full_path);
-                fclose (f);
-            }
+            strcpy (f_loc, otdb_names[missing[i]]);
+            strcpy (u_loc, otdb_names[missing[i]]);
+            download_file (url, full_path);
         }
-        curl_easy_cleanup (h);
+
         free (url);
+        free (full_path);
+        free (dir_path);
     }
-    free (dir_path);
-    free (full_path);
 }
 #endif /*__CURL_CURL_H*/
 
@@ -105,13 +154,14 @@ int open_database (int n)
     __g_db_data.coord_size = db_coord_size (n);
     __g_db_data.ot_size = 2*n*__g_db_data.coord_size/8;
 
-    char *dir_path = sh_expand (DEF_DB_LOCATION, NULL);
+    char *dir_path = sh_expand (APPLICATION_DATA, NULL);
     char *full_path = malloc (strlen(dir_path)+strlen(otdb_names[10])+1);
     char *f_loc = stpcpy (full_path, dir_path);
     strcpy (f_loc, otdb_names[n]);
 
     __g_db_data.db = open (full_path, O_RDONLY);
     free (full_path);
+    free (dir_path);
     if (__g_db_data.db == -1) {
         invalid_code_path;
         return 0;

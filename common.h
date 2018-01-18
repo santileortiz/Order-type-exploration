@@ -1295,6 +1295,26 @@ void file_read (int file, void *pos,  size_t size)
     }
 }
 
+bool ensure_dir_exists (char *path)
+{
+    char *dir_path = sh_expand (path, NULL);
+
+    struct stat st;
+    int success = 0;
+    if (stat(dir_path, &st) == -1 && errno == ENOENT) {
+        success = mkdir (dir_path, 0777);
+    }
+
+    if (success == -1) {
+        char *expl = strerror (errno);
+        printf ("Could not create %s: %s\n", dir_path, expl);
+        free (expl);
+        return false;
+    }
+
+    return true;
+}
+
 //////////////////////////////
 //
 // PATH/FILENAME MANIPULATIONS

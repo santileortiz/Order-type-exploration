@@ -23,6 +23,8 @@
 #include <assert.h>
 #include <errno.h>
 
+#define APPLICATION_DATA "~/.ot_viewer/"
+
 #include "common.h"
 #include "gui.h"
 #include "slo_timers.h"
@@ -46,6 +48,125 @@
 #define WINDOW_HEIGHT 700
 #define WINDOW_WIDTH 700
 
+struct database_download_t {
+    mem_pool_t mem;
+    bool screen_built;
+    bool redraw;
+    volatile bool *cancel;
+    volatile bool *downloading;
+    volatile bool success;
+    int curr_download;
+    double percentage_completed;
+    int num_missing;
+    int missing[10];
+    char progress_str[40];
+    volatile int writing_str;
+};
+
+DOWNLOAD_PROGRESS_CALLBACK(db_dl_progress)
+{
+    struct database_download_t *dl_st = clientp;
+    if (dltotal == 0) {
+        dl_st->percentage_completed = 0;
+    } else {
+        dl_st->percentage_completed = (double)dlnow*100/(double)dltotal;
+    }
+    dl_st->redraw = true;
+    //printf ("dltotal: %lu, dlnow: %lu\n", dltotal, dlnow);
+    return 0;
+}
+
+void* download_thread (void *arg)
+{
+    struct database_download_t *dl_st = (struct database_download_t*) arg;
+    char *dir_path = sh_expand (APPLICATION_DATA, NULL);
+
+    char *full_path = mem_pool_push_size (&dl_st->mem, strlen(dir_path)+strlen(otdb_names[10])+1);
+    char *f_loc = stpcpy (full_path, dir_path);
+
+    char *url = mem_pool_push_size(&dl_st->mem, strlen(OTDB_URL)+strlen(otdb_names[10])+1);
+    char *u_loc = stpcpy (url, OTDB_URL);
+
+    int i;
+    for (i=0; i<dl_st->num_missing; i++) {
+        strcpy (f_loc, otdb_names[dl_st->missing[i]]);
+        strcpy (u_loc, otdb_names[dl_st->missing[i]]);
+
+        dl_st->curr_download = i+1;
+        dl_st->percentage_completed = 0;
+
+        dl_st->success = download_file_cbk (url, full_path, db_dl_progress, dl_st);
+        if (!dl_st->success) {
+            break;
+        }
+    }
+    *dl_st->downloading = false;
+    free (dir_path);
+    mem_pool_destroy (&dl_st->mem);
+    pthread_exit (0);
+}
+
+layout_box_t* label (char *str, double x, double y, struct app_state_t *st, app_graphics_t *graphics)
+{
+    layout_box_t *downloading_lbl = next_layout_box_css (st, CSS_LABEL);
+
+    downloading_lbl->str.s = str;
+    struct css_box_t *label_style = &st->gui_st.css_styles[CSS_LABEL];
+    sized_string_compute (&downloading_lbl->str, label_style,
+                          graphics->text_layout, downloading_lbl->str.s);
+    BOX_CENTER_X_Y_W_H (downloading_lbl->box, x, y,
+                        downloading_lbl->str.width, downloading_lbl->str.height);
+    return downloading_lbl;
+}
+
+bool download_database_screen (struct app_state_t *st, app_graphics_t *graphics)
+{
+    struct database_download_t *dl_st = st->dl_st;
+    if (!dl_st->screen_built) {
+
+        label ("Downloading database", graphics->width/2, graphics->height/2 - 10, 
+               st, graphics);
+
+        sprintf (dl_st->progress_str, " 1 of %d: %s (  0.0%%) ",
+                 dl_st->num_missing, otdb_names[dl_st->missing[0]]);
+        label (dl_st->progress_str, graphics->width/2, graphics->height/2 + 10,
+               st, graphics);
+
+        dl_st->percentage_completed = 0;
+        dl_st->cancel = &st->end_execution;
+        dl_st->downloading = &st->download_database;
+        dl_st->screen_built = true;
+        dl_st->redraw = true;
+        pthread_t th;
+        pthread_create (&th, NULL, download_thread, dl_st);
+    }
+
+    if (dl_st->redraw) {
+        cairo_t *cr = graphics->cr;
+        cairo_clear (cr);
+        cairo_set_source_rgb (cr, bg_color.r, bg_color.g, bg_color.b);
+        cairo_paint (cr);
+
+        sprintf (dl_st->progress_str, "%d of %d: %s (%.1f%%)",
+                 dl_st->curr_download, dl_st->num_missing,
+                 otdb_names[dl_st->missing[dl_st->curr_download-1]],
+                 dl_st->percentage_completed);
+
+        int i;
+        for (i=0; i<st->num_layout_boxes; i++) {
+            struct css_box_t *style = st->layout_boxes[i].style;
+            layout_box_t *layout = &st->layout_boxes[i];
+            if (layout->style != NULL) {
+                css_box_draw (graphics, style, layout);
+            } else {
+                invalid_code_path;
+            }
+
+        }
+    }
+
+    return dl_st->redraw;
+}
 
 bool update_and_render (struct app_state_t *st, app_graphics_t *graphics, app_input_t input)
 {
@@ -53,48 +174,77 @@ bool update_and_render (struct app_state_t *st, app_graphics_t *graphics, app_in
         st->end_execution = false;
         st->is_initialized = true;
 
+        if (!ensure_dir_exists (APPLICATION_DATA)) {
+            st->end_execution = true;
+            printf ("Couldn't create %s, where the database should be downloaded.", APPLICATION_DATA);
+        }
+
         default_gui_init (&st->gui_st);
         st->focused_layout_box = -1;
         global_gui_st = &st->gui_st;
 
-        st->app_mode = APP_POINT_SET_MODE;
-    }
+        st->download_database = false;
+        int missing[10], num_missing;
+        check_database (missing, &num_missing);
+        if (num_missing != 0) {
+            st->download_database = true;
 
-    mem_pool_destroy (&st->temporary_memory);
-
-    st->gui_st.gr = *graphics;
-    update_input (&st->gui_st, input);
-
-    switch (st->gui_st.input.keycode) {
-        case 58: //KEY_M
-            st->app_mode = (st->app_mode + 1)%NUM_APP_MODES;
-            st->gui_st.input.force_redraw = true;
-            break;
-        case 24: //KEY_Q
-            st->end_execution = 1;
-            return false;
-        default:
-            //if (input.keycode >= 8) {
-            //    printf ("%" PRIu8 "\n", input.keycode);
-            //    //printf ("%" PRIu16 "\n", input.modifiers);
-            //}
-            break;
+            mem_pool_t bootstrap_mem = {0};
+            st->dl_st = mem_pool_push_size_full (&bootstrap_mem,
+                                                 sizeof(struct database_download_t),
+                                                 POOL_ZERO_INIT);
+            st->dl_st->mem = bootstrap_mem;
+            st->dl_st->num_missing = num_missing;
+            int i;
+            for (i=0; i<num_missing; i++) {
+                st->dl_st->missing[i] = missing[i];
+            }
+        }
     }
 
     bool blit_needed = false;
-    switch (st->app_mode) {
-        case APP_POINT_SET_MODE:
-            blit_needed = point_set_mode (st, graphics);
-            break;
-        case APP_GRID_MODE:
-            blit_needed = grid_mode (st, graphics);
-            break;
-        case APP_TREE_MODE:
-            blit_needed = tree_mode (st, graphics);
-            break;
-        default:
-            invalid_code_path;
+    // TODO: If we ever allow more download options then make this a mode, not a
+    // one-time thing.
+    if (st->download_database) {
+        blit_needed = download_database_screen (st, graphics);
+
+    } else {
+        mem_pool_destroy (&st->temporary_memory);
+
+        st->gui_st.gr = *graphics;
+        update_input (&st->gui_st, input);
+
+        switch (st->gui_st.input.keycode) {
+            case 58: //KEY_M
+                st->app_mode = (st->app_mode + 1)%NUM_APP_MODES;
+                st->gui_st.input.force_redraw = true;
+                break;
+            case 24: //KEY_Q
+                st->end_execution = 1;
+                return false;
+            default:
+                //if (input.keycode >= 8) {
+                //    printf ("%" PRIu8 "\n", input.keycode);
+                //    //printf ("%" PRIu16 "\n", input.modifiers);
+                //}
+                break;
+        }
+
+        switch (st->app_mode) {
+            case APP_POINT_SET_MODE:
+                blit_needed = point_set_mode (st, graphics);
+                break;
+            case APP_GRID_MODE:
+                blit_needed = grid_mode (st, graphics);
+                break;
+            case APP_TREE_MODE:
+                blit_needed = tree_mode (st, graphics);
+                break;
+            default:
+                invalid_code_path;
+        }
     }
+
     cairo_surface_flush (cairo_get_target(graphics->cr));
     return blit_needed;
 }
