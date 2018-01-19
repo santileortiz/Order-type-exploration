@@ -160,6 +160,7 @@ void focus_order_type (app_graphics_t *graphics, struct point_set_mode_t *st)
     compute_transform (&st->points_to_canvas,
                        VECT2(WINDOW_MARGIN+x_center, WINDOW_MARGIN+y_center),
                        VECT2(box.min.x, box.max.y), st->zoom);
+    st->redraw_canvas = true;
 }
 
 // The following is an implementation of an algorithm that positions the points
@@ -418,6 +419,7 @@ void set_ot (struct point_set_mode_t *ps_mode)
 {
     int_string_update (&ps_mode->ot_id, ps_mode->ot->id);
 
+    ps_mode->view_db_ot = true;
     int n = ps_mode->n.i;
     int i;
     for (i=0; i<n; i++) {
@@ -730,6 +732,30 @@ bool is_negative (char *str)
     return false;
 }
 
+void view_arranged_points (struct point_set_mode_t *ps_mode, app_graphics_t *graphics)
+{
+    if (ps_mode->ot_arrangeable) {
+        int i;
+        for (i=0; i<ps_mode->n.i; i++) {
+            ps_mode->visible_pts[i] = ps_mode->arranged_pts[i];
+        }
+        focus_order_type (graphics, ps_mode);
+        ps_mode->redraw_canvas = true;
+    }
+}
+
+void view_database_points (struct point_set_mode_t *ps_mode, app_graphics_t *graphics)
+{
+    if (ps_mode->ot_arrangeable) {
+        int i;
+        for (i=0; i<ps_mode->n.i; i++) {
+            ps_mode->visible_pts[i] = v2_from_v2i(ps_mode->ot->pts[i]);
+        }
+        focus_order_type (graphics, ps_mode);
+        ps_mode->redraw_canvas = true;
+    }
+}
+
 bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
 {
     struct point_set_mode_t *ps_mode = st->ps_mode;
@@ -864,10 +890,15 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
             if (XCB_KEY_BUT_MASK_CONTROL & input.modifiers) {
                 gui_st->platform.get_clipboard_str ();
             } else {
-                ps_mode->view_db_ot = !ps_mode->view_db_ot;
-                set_ot (ps_mode);
-                focus_order_type (graphics, ps_mode);
-                ps_mode->redraw_canvas = true;
+                if (ps_mode->ot_arrangeable) {
+                    ps_mode->view_db_ot = !ps_mode->view_db_ot;
+                    if (ps_mode->view_db_ot) {
+                        view_database_points (ps_mode, graphics);
+                    } else {
+                        view_arranged_points (ps_mode, graphics);
+                    }
+                    ps_mode->redraw_canvas = true;
+                }
             }
             break;
         default:
@@ -930,12 +961,7 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
     }
 
     if (ps_mode->arrange_pts) {
-        int i;
-        for (i=0; i<ps_mode->n.i; i++) {
-            ps_mode->visible_pts[i] = ps_mode->arranged_pts[i];
-        }
-        focus_order_type (graphics, ps_mode);
-        ps_mode->redraw_canvas = true;
+        view_arranged_points (ps_mode, graphics);
     }
 
     if (ps_mode->ot_arrangeable) {
@@ -1175,7 +1201,6 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
 
     if (gui_st->mouse_double_clicked[0] && ptr_clicked_in_canvas) {
         focus_order_type (graphics, ps_mode);
-        ps_mode->redraw_canvas = true;
     }
 
     bool blit_needed = false;
