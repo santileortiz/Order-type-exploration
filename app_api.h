@@ -32,8 +32,8 @@ struct app_state_t {
     mem_pool_t memory;
 
     // NOTE: This will be cleared at every frame start
-    // TODO: Should this be inside st->memory?
     mem_pool_t temporary_memory;
+    mem_pool_temp_marker_t temporary_memory_flush;
 };
 
 #define APP_API_H

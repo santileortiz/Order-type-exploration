@@ -63,6 +63,7 @@ bool update_and_render (struct app_state_t *st, app_graphics_t *graphics, app_in
         default_gui_init (&st->gui_st);
         st->focused_layout_box = -1;
         global_gui_st = &st->gui_st;
+        st->temporary_memory_flush = mem_pool_begin_temporary_memory (&st->temporary_memory);
 
         st->download_database = false;
         int missing[10], num_missing;
@@ -90,7 +91,7 @@ bool update_and_render (struct app_state_t *st, app_graphics_t *graphics, app_in
         blit_needed = download_database_screen (st, graphics);
 
     } else {
-        mem_pool_destroy (&st->temporary_memory);
+        mem_pool_end_temporary_memory (st->temporary_memory_flush);
 
         st->gui_st.gr = *graphics;
         update_input (&st->gui_st, input);

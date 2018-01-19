@@ -1152,23 +1152,23 @@ void* mem_pool_push_size_full (mem_pool_t *pool, int size, enum alloc_opts opts)
     return ret;
 }
 
-// NOTE: _pool_ can be reused after this.
+// NOTE: Do NOT use _pool_ again after calling this. We don't reset pool because
+// it could have been bootstrapped into itself. Reusing is better hendled by
+// mem_pool_end_temporary_memory().
 void mem_pool_destroy (mem_pool_t *pool)
 {
     if (pool->base != NULL) {
         bin_info_t *curr_info = (bin_info_t*)((uint8_t*)pool->base + pool->size);
-        while (curr_info->prev_bin_info != NULL) {
-            void *to_free = curr_info->base;
-            curr_info = curr_info->prev_bin_info;
+
+        void *to_free = curr_info->base;
+        curr_info = curr_info->prev_bin_info;
+        while (curr_info != NULL) {
             free (to_free);
+            to_free = curr_info->base;
+            curr_info = curr_info->prev_bin_info;
         }
-        free (curr_info->base);
-        pool->base = NULL;
+        free (to_free);
     }
-    pool->size = 0;
-    pool->used = 0;
-    pool->total_used = 0;
-    pool->num_bins = 0;
 }
 
 uint32_t mem_pool_allocated (mem_pool_t *pool)
@@ -1211,11 +1211,11 @@ typedef struct {
     void* base;
     uint32_t used;
     uint32_t total_used;
-} pool_temp_marker_t;
+} mem_pool_temp_marker_t;
 
-pool_temp_marker_t mem_pool_begin_temporary_memory (mem_pool_t *pool)
+mem_pool_temp_marker_t mem_pool_begin_temporary_memory (mem_pool_t *pool)
 {
-    pool_temp_marker_t res;
+    mem_pool_temp_marker_t res;
     res.total_used = pool->total_used;
     res.used = pool->used;
     res.base = pool->base;
@@ -1223,7 +1223,7 @@ pool_temp_marker_t mem_pool_begin_temporary_memory (mem_pool_t *pool)
     return res;
 }
 
-void mem_pool_end_temporary_memory (pool_temp_marker_t mrkr)
+void mem_pool_end_temporary_memory (mem_pool_temp_marker_t mrkr)
 {
     if (mrkr.base != NULL) {
         bin_info_t *curr_info = (bin_info_t*)((uint8_t*)mrkr.pool->base + mrkr.pool->size);
@@ -1234,13 +1234,19 @@ void mem_pool_end_temporary_memory (pool_temp_marker_t mrkr)
             mrkr.pool->num_bins--;
         }
         mrkr.pool->size = curr_info->size;
-        mrkr.pool->base = curr_info->base;
+        mrkr.pool->base = mrkr.base;
         mrkr.pool->used = mrkr.used;
         mrkr.pool->total_used = mrkr.total_used;
     } else {
         // NOTE: Here mrkr was created before the pool was initialized, so we
         // destroy everything.
         mem_pool_destroy (mrkr.pool);
+
+        // This assumes pool wasn't bootstrapped after taking mrkr
+        mrkr.pool->size = 0;
+        mrkr.pool->base = NULL;
+        mrkr.pool->used = 0;
+        mrkr.pool->total_used = 0;
     }
 }
 

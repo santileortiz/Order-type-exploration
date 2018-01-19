@@ -410,7 +410,7 @@ void* arrange_points_work (void *arg)
     //}
 
     ps_mode->ot_arrangeable = arrange_points_end (&alg_st, ps_mode->arranged_pts, wk->n);
-    mem_pool_destroy (&global_gui_st->thread_pool);
+    mem_pool_end_temporary_memory (global_gui_st->thread_mem_flush);
     pthread_exit(0);
 }
 
@@ -436,6 +436,8 @@ void set_ot (struct point_set_mode_t *ps_mode)
 
     ps_mode->ot_arrangeable = false;
     ps_mode->redraw_panel = true;
+
+    global_gui_st->thread_mem_flush = mem_pool_begin_temporary_memory (&global_gui_st->thread_pool);
     pthread_create (&global_gui_st->thread, NULL, arrange_points_work, wk);
 }
 
@@ -447,7 +449,7 @@ void set_k (struct point_set_mode_t *st, int k)
 
 void set_n (struct point_set_mode_t *st, int n, app_graphics_t *graphics)
 {
-    mem_pool_destroy (&st->memory);
+    mem_pool_end_temporary_memory (st->math_memory_flush);
 
     int_string_update (&st->n, n);
 
@@ -456,13 +458,13 @@ void set_n (struct point_set_mode_t *st, int n, app_graphics_t *graphics)
         initial_k = thrackle_size_lower_bound (n);
     }
 
-    st->ot = order_type_new (10, &st->memory);
+    st->ot = order_type_new (10, &st->math_memory);
     open_database (n);
     st->ot->n = n;
     db_next (st->ot);
     set_ot (st);
 
-    st->triangle_it = subset_it_new (n, 3, &st->memory);
+    st->triangle_it = subset_it_new (n, 3, &st->math_memory);
     subset_it_precompute (st->triangle_it);
     set_k (st, initial_k);
     focus_order_type (graphics, st);
@@ -735,8 +737,9 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
     if (!ps_mode) {
         st->ps_mode =
             mem_pool_push_size_full (&st->memory, sizeof(struct point_set_mode_t), POOL_ZERO_INIT);
-
         ps_mode = st->ps_mode;
+        ps_mode->math_memory_flush = mem_pool_begin_temporary_memory (&ps_mode->math_memory);
+
         int_string_update (&ps_mode->n, 8);
         int_string_update (&ps_mode->k, thrackle_size (ps_mode->n.i));
 

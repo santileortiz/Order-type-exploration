@@ -77,8 +77,8 @@ struct point_set_mode_t {
     int active_hitbox;
     int canvas_state;
 
-    mem_pool_t memory;
-    mem_pool_t pool;
+    mem_pool_t math_memory;
+    mem_pool_temp_marker_t math_memory_flush;
 };
 
 struct app_state_t;

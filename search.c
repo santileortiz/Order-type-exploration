@@ -250,7 +250,7 @@ void search_full_tree_all_ot (int n, enum format_thrackle_count_t fmt)
     }
 
     while (!db_is_eof ()) {
-        pool_temp_marker_t mrk = mem_pool_begin_temporary_memory (&pool);
+        mem_pool_temp_marker_t mrk = mem_pool_begin_temporary_memory (&pool);
         struct sequence_store_t seq = new_sequence_store_opts (NULL, &pool, SEQ_DRY_RUN);
         if (fmt & FIRST_THRACKLE) {
             seq_set_seq_number (&seq, 1);
@@ -343,7 +343,7 @@ void max_thrackle_size_ot_file (int n, char *filename)
     for (i=0; i < num_ot_ids; i++) {
         db_seek (ot, ot_ids[i]);
 
-        pool_temp_marker_t mrk = mem_pool_begin_temporary_memory (&pool);
+        mem_pool_temp_marker_t mrk = mem_pool_begin_temporary_memory (&pool);
         struct sequence_store_t seq = new_sequence_store_opts (NULL, &pool, SEQ_DRY_RUN);
         thrackle_search_tree (n, ot, &seq);
         seq_tree_end (&seq);
@@ -643,7 +643,7 @@ void average_search_nodes (int n, int *triangle_order)
     float nodes = 0;
 
     while (!db_is_eof()) {
-        pool_temp_marker_t mrk = mem_pool_begin_temporary_memory (&temp_pool);
+        mem_pool_temp_marker_t mrk = mem_pool_begin_temporary_memory (&temp_pool);
         struct sequence_store_t seq = new_sequence_store (NULL, &temp_pool);
         thrackle_search_tree_full (n, ot, &seq, triangle_order);
         nodes += seq.num_nodes;

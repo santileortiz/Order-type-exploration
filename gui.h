@@ -227,6 +227,7 @@ struct gui_state_t {
     // TODO: convert this into a work queue.
     pthread_t thread;
     mem_pool_t thread_pool;
+    mem_pool_temp_marker_t thread_mem_flush;
 
     char dragging[3];
     vect2_t ptr_delta;
