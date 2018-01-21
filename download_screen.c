@@ -69,12 +69,12 @@ bool download_database_screen (struct app_state_t *st, app_graphics_t *graphics)
     struct database_download_t *dl_st = st->dl_st;
     if (!dl_st->screen_built) {
 
-        label ("Downloading database", graphics->width/2, graphics->height/2 - 10, 
+        label_centered ("Downloading database", graphics->width/2, graphics->height/2 - 10,
                st, graphics);
 
         sprintf (dl_st->progress_str, " 1 of %d: %s (  0.0%%) ",
                  dl_st->num_missing, otdb_names[dl_st->missing[0]]);
-        label (dl_st->progress_str, graphics->width/2, graphics->height/2 + 10,
+        label_centered (dl_st->progress_str, graphics->width/2, graphics->height/2 + 10,
                st, graphics);
 
         dl_st->percentage_completed = 0;

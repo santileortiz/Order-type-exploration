@@ -854,17 +854,44 @@ void render_text (cairo_t *cr, vect2_t pos, PangoLayout *pango_layout,
     pango_cairo_show_layout (cr, pango_layout);
 }
 
-void layout_size_from_css_content_size (struct css_box_t *css_box,
-                                        vect2_t *css_content_size, vect2_t *layout_size)
+#define css_cont_size_to_lay_size(css_box,cont_size) \
+    css_cont_size_to_lay_size_w_h(css_box, &((cont_size)->x), &((cont_size)->y))
+void css_cont_size_to_lay_size_w_h (struct css_box_t *css_box,
+                                      double *w, double *h)
 {
-    layout_size->x = MAX(css_box->min_width, css_content_size->x)
-                     + 2*(css_box->padding_x + css_box->border_width);
-    layout_size->y = MAX(css_box->min_height, css_content_size->y)
-                     + 2*(css_box->padding_y + css_box->border_width);
+    if (w != NULL) {
+        *w = MAX(css_box->min_width, *w) +
+             2*(css_box->padding_x + css_box->border_width);
+    }
+
+    if (h != NULL) {
+        *h = MAX(css_box->min_height, *h) +
+             2*(css_box->padding_y + css_box->border_width);
+    }
 }
+
+void layout_size_from_css_content_size (struct css_box_t *css_box,
+                                        vect2_t css_content_size, vect2_t *layout_size)
+{
+    *layout_size = css_content_size;
+    css_cont_size_to_lay_size (css_box, layout_size);
+}
+
+void layout_box_uninitialize (layout_box_t *lay)
+{
+    *lay = (layout_box_t){0};
+    lay->box.min = VECT2 (NAN, NAN);
+    lay->box.max = VECT2 (NAN, NAN);
+}
+
+#define is_box_initialized(lay_box) \
+    ((layout)->box.min.x != NAN && (layout)->box.min.y != NAN && \
+     (layout)->box.max.x != NAN && (layout)->box.max.y != NAN)
 
 void css_box_draw (app_graphics_t *gr, struct css_box_t *box, layout_box_t *layout)
 {
+    assert (is_box_initialized(layout) && "Can't draw an uninitialized layout_box_t");
+
     cairo_t *cr = gr->cr;
     cairo_save (cr);
     cairo_translate (cr, layout->box.min.x, layout->box.min.y);
@@ -1232,7 +1259,6 @@ void init_button (struct css_box_t *box)
     *box = (struct css_box_t){0};
     box->border_radius = 2.5;
     box->border_width = 1;
-    box->min_height = 20;
     box->padding_x = 12;
     box->padding_y = 3;
     box->border_color = RGBA(0, 0, 0, 0.27);
@@ -1250,7 +1276,6 @@ void init_button_active (struct css_box_t *box)
     *box = (struct css_box_t){0};
     box->border_radius = 2.5;
     box->border_width = 1;
-    box->min_height = 20;
     box->padding_x = 12;
     box->padding_y = 3;
     box->border_color = RGBA(0, 0, 0, 0.27);
@@ -1264,7 +1289,6 @@ void init_button_disabled (struct css_box_t *box)
     *box = (struct css_box_t){0};
     box->border_radius = 2.5;
     box->border_width = 1;
-    box->min_height = 20;
     box->padding_x = 12;
     box->padding_y = 3;
     box->border_color = RGBA(0, 0, 0, 0.2);
