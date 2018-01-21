@@ -501,44 +501,6 @@ bool update_button_state (struct app_state_t *st, layout_box_t *lay_box, bool *u
     return retval;
 }
 
-layout_box_t* button (char *label, bool *target, app_graphics_t *gr,
-                      double x, double y, double *width, double *height,
-                      struct app_state_t *st)
-{
-    layout_box_t *curr_box = next_layout_box_css (st, CSS_BUTTON);
-
-    curr_box->str.s = label;
-
-    vect2_t layout_size;
-    if (width == NULL || height == NULL) {
-        sized_string_compute (&curr_box->str, curr_box->style, gr->text_layout, label);
-        vect2_t str_size = VECT2(curr_box->str.width, curr_box->str.height);
-
-        layout_size_from_css_content_size (curr_box->style, str_size, &layout_size);
-    }
-    if (width == NULL) {
-        layout_size.x = layout_size.x;
-        *width = layout_size.x;
-    } else {
-        layout_size.x = *width;
-    }
-    if (height == NULL) {
-        layout_size.y = layout_size.y;
-        *height = layout_size.y;
-    } else {
-        layout_size.y = *height;
-    }
-    curr_box->box.min.x = x;
-    curr_box->box.max.x = x + *width;
-    curr_box->box.min.y = y;
-    curr_box->box.max.y = y + *height;
-
-    add_behavior (&st->gui_st, curr_box, BEHAVIOR_BUTTON, target);
-    focus_chain_add (&st->gui_st, curr_box);
-    *target = update_button_state (st, curr_box, NULL);
-    return curr_box;
-}
-
 // TODO: A nicer API would allow the following usecases of layout_box_t
 // positioning to be merged. So far the usecases are:
 //
@@ -556,8 +518,7 @@ label_centered (char *str, double x, double y, struct app_state_t *st, app_graph
     vect2_t layout_size = VECT2 (label->str.width, label->str.height);
     css_cont_size_to_lay_size (label->style, &layout_size);
 
-    BOX_CENTER_X_Y_W_H (label->box, x, y,
-                        label->str.width, label->str.height);
+    BOX_CENTER_X_Y_W_H (label->box, x, y, layout_size.x, layout_size.y);
     return label;
 }
 
@@ -584,6 +545,38 @@ title (char *str, double x, double y, struct app_state_t *st, app_graphics_t *gr
 
     BOX_POS_SIZE (title_box->box, VECT2(x, y), title_size);
     return title_box;
+}
+
+layout_box_t* button (char *label, bool *target, double x, double y,
+                      struct app_state_t *st, app_graphics_t *graphics)
+{
+    layout_box_t *curr_box = next_layout_box_css (st, CSS_BUTTON);
+    focus_chain_add (&st->gui_st, curr_box);
+    add_behavior (&st->gui_st, curr_box, BEHAVIOR_BUTTON, target);
+
+    curr_box->str.s = label;
+    sized_string_compute (&curr_box->str, curr_box->style, graphics->text_layout, label);
+
+    // If we want a fully initialized button then we should do something like:
+    //vect2_t layout_size = VECT2 (curr_box->str.width, curr_box->str.height);
+    //css_cont_size_to_lay_size (curr_box->style, &layout_size);
+
+    //BOX_POS_SIZE (curr_box->box, VECT2(x, y), layout_size);
+    //*target = update_button_state (st, curr_box, NULL);
+    return curr_box;
+}
+
+layout_box_t* text_entry (uint64_string_t *target, double x, double y,
+                          struct app_state_t *st, app_graphics_t *graphics)
+{
+    layout_box_t *curr_box = next_layout_box_css (st, CSS_TEXT_ENTRY);
+    focus_chain_add (&st->gui_st, curr_box);
+    add_behavior (&st->gui_st, curr_box, BEHAVIOR_TEXT_ENTRY, target);
+
+    curr_box->str.s = str_data (&target->str);
+    sized_string_compute (&curr_box->str, curr_box->style,
+                          graphics->text_layout, curr_box->str.s);
+    return curr_box;
 }
 
 struct labeled_layout_row_t {
@@ -652,12 +645,7 @@ layout_box_t* labeled_text_entry (labeled_entries_layout_t *lay,
     double label_height = row->label->str.height;
     css_cont_size_to_lay_size_w_h (row->label->style, NULL, &label_height);
 
-    row->main_layout = next_layout_box_css (st, CSS_TEXT_ENTRY);
-    focus_chain_add (&st->gui_st, row->main_layout);
-    row->main_layout->str.s = str_data (&target->str);
-    sized_string_compute (&row->main_layout->str, row->main_layout->style,
-                          graphics->text_layout, row->main_layout->str.s);
-    add_behavior (&st->gui_st, row->main_layout, BEHAVIOR_TEXT_ENTRY, target);
+    row->main_layout = text_entry (target, NAN, NAN, st, graphics);
 
     double text_entry_height = row->main_layout->str.height;
     css_cont_size_to_lay_size_w_h (row->main_layout->style, NULL, &text_entry_height);
@@ -683,12 +671,7 @@ layout_box_t* labeled_button (labeled_entries_layout_t *lay,
     double label_height = row->label->str.height;
     css_cont_size_to_lay_size_w_h (row->label->style, NULL, &label_height);
 
-    row->main_layout = next_layout_box_css (st, CSS_BUTTON);
-    focus_chain_add (&st->gui_st, row->main_layout);
-    row->main_layout->str.s = button_text;
-    sized_string_compute (&row->main_layout->str, row->main_layout->style,
-                          graphics->text_layout, button_text);
-    add_behavior (&st->gui_st, row->main_layout, BEHAVIOR_BUTTON, target);
+    row->main_layout = button (button_text, target, NAN, NAN, st, graphics);
 
     double button_height = row->main_layout->str.height;
     css_cont_size_to_lay_size_w_h (row->main_layout->style, NULL, &button_height);
@@ -1033,7 +1016,7 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
         ps_mode->focus_list[foc_n] =
             labeled_text_entry (&lay, "n:", &ps_mode->n, st, graphics);
         ps_mode->focus_list[foc_ot] =
-            labeled_text_entry (&lay, "Order Type:", &ps_mode->n, st, graphics);
+            labeled_text_entry (&lay, "Order Type:", &ps_mode->ot_id, st, graphics);
         ps_mode->arrange_pts_btn =
             labeled_button (&lay, "Layout:", "Arrange", &ps_mode->arrange_pts,
                             st, graphics);
