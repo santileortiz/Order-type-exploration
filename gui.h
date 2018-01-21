@@ -76,12 +76,6 @@ typedef struct {
     char *s;
     double width;
     double height;
-
-    // NOTE: This is a vector, that goes from the point where cairo was when the
-    // text was drawn, to the top left corner of the logical rectangle (origin). We
-    // compute position thinking about the origin, and in the end we subtract
-    // pos.
-    vect2_t pos;
 } sized_string_t;
 
 typedef enum {
@@ -160,6 +154,11 @@ typedef enum {
     CSS_SEL_DISABLED = 1<<3
 } css_selector_t;
 
+typedef enum {
+    CSS_RESIZE_NONE,
+    CSS_RESIZE_FIT_CONTENT
+} css_resize_mode_t;
+
 typedef struct layout_box_t layout_box_t;
 #define DRAW_CALLBACK(name) void name(app_graphics_t *gr, layout_box_t *layout)
 typedef DRAW_CALLBACK(draw_callback_t);
@@ -172,6 +171,7 @@ struct layout_box_t {
     struct css_box_t *style;
     draw_callback_t *draw;
 
+    css_resize_mode_t resize_mode;
     bool content_changed;
     struct behavior_t *behavior;
     sized_string_t str;
@@ -826,8 +826,6 @@ void sized_string_compute (sized_string_t *res, struct css_box_t *style, PangoLa
 
     res->width = logical.width;
     res->height = logical.height;
-    res->pos.x = logical.x;
-    res->pos.y = logical.y;
 }
 
 // NOTE: len == -1 means the string is null terminated.
@@ -931,16 +929,15 @@ void css_box_draw (app_graphics_t *gr, struct css_box_t *box, layout_box_t *layo
         }
         switch (effective_text_align) {
             case CSS_TEXT_ALIGN_LEFT:
-                text_pos_x += -layout->str.pos.x;
                 break;
             case CSS_TEXT_ALIGN_RIGHT:
-                text_pos_x += content_width - layout->str.width - layout->str.pos.x;
+                text_pos_x += content_width - layout->str.width;
                 break;
             default: // CSS_TEXT_ALIGN_CENTER
-                text_pos_x += (content_width - layout->str.width)/2 - layout->str.pos.x;
+                text_pos_x += (content_width - layout->str.width)/2;
                 break;
         }
-        text_pos_y += (content_height - layout->str.height)/2 - layout->str.pos.y;
+        text_pos_y += (content_height - layout->str.height)/2;
 
         update_font_description (box, pango_layout);
 
@@ -974,7 +971,7 @@ void css_box_draw (app_graphics_t *gr, struct css_box_t *box, layout_box_t *layo
         cairo_fill (cr);
 
         cairo_set_source_rgba (cr, 0.0, 1.0, 0.0, 0.3);
-        cairo_rectangle (cr, text_pos_x+layout->str.pos.x, text_pos_y+layout->str.pos.y,
+        cairo_rectangle (cr, text_pos_x, text_pos_y,
                          layout->str.width, layout->str.height);
         cairo_fill (cr);
 #endif
@@ -1306,8 +1303,8 @@ void init_background (struct css_box_t *box)
     *box = (struct css_box_t){0};
     box->border_radius = 2.5;
     box->border_width = 1;
-    //box->padding_x = 12;
-    //box->padding_y = 3;
+    box->padding_x = 12;
+    box->padding_y = 12;
     box->background_color = RGB(0.96, 0.96, 0.96);
     box->border_color = RGBA(0, 0, 0, 0.27);
 }

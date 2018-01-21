@@ -405,6 +405,11 @@ typedef struct {
     vect2_t max;
 } box_t;
 
+void box_print (box_t *b)
+{
+    printf ("min: (%f, %f), max: (%f, %f)\n", b->min.x, b->min.y, b->max.x, b->max.y);
+}
+
 void vect2_floor (vect2_t *p)
 {
     p->x = floor (p->x);
