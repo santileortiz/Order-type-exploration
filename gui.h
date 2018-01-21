@@ -52,7 +52,6 @@ typedef struct {
 // that yet.
 typedef struct {
     cairo_t *cr;
-    PangoLayout *text_layout;
     uint16_t width;
     uint16_t height;
 } app_graphics_t;
@@ -140,6 +139,8 @@ struct css_box_t {
     vect4_t color;
 
     css_text_align_t text_align;
+    char *font_family;
+    int font_size;
     css_font_weight_t font_weight;
 
     int num_gradient_stops;
@@ -217,11 +218,21 @@ struct behavior_t {
     struct behavior_t *next;
 };
 
+struct font_style_t {
+    char *family;
+    int size;
+    css_font_weight_t weight;
+};
+#define FONT_STYLE_FSW(family,size,weight) ((struct font_style_t){family,size,weight})
+#define FONT_STYLE_CSS(css_box) \
+    FONT_STYLE_FSW((css_box)->font_family,(css_box)->font_size,(css_box)->font_weight)
+
 struct gui_state_t {
     mem_pool_t pool;
 
     app_input_t input;
     app_graphics_t gr;
+    struct font_style_t default_font_style;
 
     struct platform_api_t platform;
     // TODO: convert this into a work queue.
@@ -279,6 +290,9 @@ void init_title_label (struct css_box_t *box);
 
 void default_gui_init (struct gui_state_t *gui_st)
 {
+    gui_st->default_font_style.family = "Open Sans";
+    gui_st->default_font_style.size = 9;
+    gui_st->default_font_style.weight = CSS_FONT_WEIGHT_NORMAL;
 
     text_color = BLACK_500;
     bg_color = shade (&base_color, 0.96);
@@ -682,19 +696,6 @@ void focus_chain_remove (struct gui_state_t *gui_st, layout_box_t *lay_box)
     }
 }
 
-void update_font_description (struct css_box_t *box, PangoLayout *pango_layout)
-{
-    assert (box != NULL);
-    const PangoFontDescription *orig_font_desc = pango_layout_get_font_description (pango_layout);
-    PangoFontDescription *new_font_desc = pango_font_description_copy (orig_font_desc);
-    if (box->font_weight == CSS_FONT_WEIGHT_NORMAL) {
-        pango_font_description_set_weight (new_font_desc, PANGO_WEIGHT_NORMAL);
-    } else {
-        pango_font_description_set_weight (new_font_desc, PANGO_WEIGHT_BOLD);
-    }
-    pango_layout_set_font_description (pango_layout, new_font_desc);
-}
-
 void update_selectors (struct gui_state_t *gui_st, layout_box_t *layout_boxes, int num_layout_boxes)
 {
     int i;
@@ -809,34 +810,78 @@ void add_behavior (struct gui_state_t *gui_st, layout_box_t *box, enum behavior_
     box->behavior = new_behavior;
 }
 
-void sized_string_compute (sized_string_t *res, struct css_box_t *style, PangoLayout *pango_layout, char *str)
+#define new_pango_layout_from_style_fsw(cr,family,size,weight) \
+    new_pango_layout_from_style(cr, &FONT_STYLE_FSW(family,size,weight))
+PangoLayout* new_pango_layout_from_style (cairo_t *cr, struct font_style_t *font_style)
 {
-    // TODO: Try to refactor code so this fuction does not receive a PangoLayout
-    // but creates it.
-    update_font_description (style, pango_layout);
+    char *font_family;
+    if (font_style->family == NULL) {
+        font_family = global_gui_st->default_font_style.family;
+    } else {
+        font_family = font_style->family;
+    }
+
+    int font_size;
+    if (font_style->size == 0) {
+        font_size = global_gui_st->default_font_style.size;
+    } else {
+        font_size = font_style->size;
+    }
+
+    PangoWeight font_weight;
+    switch (font_style->weight) {
+        case CSS_FONT_WEIGHT_BOLD:
+            font_weight = PANGO_WEIGHT_BOLD;
+            break;
+        case CSS_FONT_WEIGHT_NORMAL:
+            font_weight = PANGO_WEIGHT_NORMAL;
+            break;
+        default:
+            font_weight = global_gui_st->default_font_style.weight;
+            break;
+    }
+
+    PangoFontDescription *font_desc = pango_font_description_new ();
+    pango_font_description_set_family (font_desc, font_family);
+    pango_font_description_set_size (font_desc, font_size*PANGO_SCALE);
+    pango_font_description_set_weight (font_desc, font_weight);
+
+    PangoLayout *text_layout = pango_cairo_create_layout (cr);
+    pango_layout_set_font_description (text_layout, font_desc);
+    pango_font_description_free(font_desc);
+    return text_layout;
+}
+
+void sized_string_compute (sized_string_t *res, struct css_box_t *style, char *str)
+{
+    PangoLayout *text_layout =
+        new_pango_layout_from_style_fsw (global_gui_st->gr.cr,
+                                         style->font_family, style->font_size, style->font_weight);
 
     // NOTE: I have the hunch that calls into Pango will be slow, so we ideally
     // would like to call this function just once for each string that needs to
     // be computed.
     // TODO: Time this function and check if it's really a problem.
-    pango_layout_set_text (pango_layout, str, -1);
+    pango_layout_set_text (text_layout, str, -1);
 
     PangoRectangle logical;
-    pango_layout_get_pixel_extents (pango_layout, NULL, &logical);
+    pango_layout_get_pixel_extents (text_layout, NULL, &logical);
 
     res->width = logical.width;
     res->height = logical.height;
+    g_object_unref (text_layout);
 }
 
 // NOTE: len == -1 means the string is null terminated.
-void render_text (cairo_t *cr, vect2_t pos, PangoLayout *pango_layout,
+void render_text (cairo_t *cr, vect2_t pos, struct font_style_t *font_style,
                   char *str, size_t len, vect4_t *color, vect4_t *bg_color,
                   vect2_t *out_pos)
 {
-    pango_layout_set_text (pango_layout, str, (len==0? -1 : len));
+    PangoLayout *text_layout = new_pango_layout_from_style (cr, font_style);
+    pango_layout_set_text (text_layout, str, len);
 
     PangoRectangle logical;
-    pango_layout_get_pixel_extents (pango_layout, NULL, &logical);
+    pango_layout_get_pixel_extents (text_layout, NULL, &logical);
     vect2_floor (&pos);
     if (bg_color != NULL) {
         cairo_set_source_rgba (cr, bg_color->r, bg_color->g, bg_color->b,
@@ -851,7 +896,8 @@ void render_text (cairo_t *cr, vect2_t pos, PangoLayout *pango_layout,
 
     cairo_set_source_rgba (cr, color->r, color->g, color->b, color->a);
     cairo_move_to (cr, pos.x, pos.y);
-    pango_cairo_show_layout (cr, pango_layout);
+    pango_cairo_show_layout (cr, text_layout);
+    g_object_unref (text_layout);
 }
 
 #define css_cont_size_to_lay_size(css_box,cont_size) \
@@ -944,9 +990,7 @@ void css_box_draw (app_graphics_t *gr, struct css_box_t *box, layout_box_t *layo
 
     if (layout->str.s != NULL) {
 
-        PangoLayout *pango_layout = gr->text_layout;
-        double text_pos_x = box->border_width, text_pos_y = box->border_width;
-        sized_string_compute (&layout->str, box, pango_layout, layout->str.s);
+        sized_string_compute (&layout->str, box, layout->str.s);
 
         css_text_align_t effective_text_align;
         if (layout->text_align_override != CSS_TEXT_ALIGN_INITIAL) {
@@ -954,6 +998,8 @@ void css_box_draw (app_graphics_t *gr, struct css_box_t *box, layout_box_t *layo
         } else {
             effective_text_align = box->text_align;
         }
+
+        double text_pos_x = box->border_width, text_pos_y = box->border_width;
         switch (effective_text_align) {
             case CSS_TEXT_ALIGN_LEFT:
                 break;
@@ -966,10 +1012,9 @@ void css_box_draw (app_graphics_t *gr, struct css_box_t *box, layout_box_t *layo
         }
         text_pos_y += (content_height - layout->str.height)/2;
 
-        update_font_description (box, pango_layout);
-
         struct selection_t *selection = &global_gui_st->selection;
         vect2_t pos = VECT2(text_pos_x, text_pos_y);
+        struct font_style_t font_style = FONT_STYLE_CSS(box);
         if (selection->dest == layout) {
             size_t len = strlen (layout->str.s);
             assert (layout->str.s >= selection->start &&
@@ -977,19 +1022,19 @@ void css_box_draw (app_graphics_t *gr, struct css_box_t *box, layout_box_t *layo
                     "selection->start must point into selection->dest->str.s");
 
             if (selection->start != layout->str.s) {
-                render_text (cr, pos, pango_layout, layout->str.s, selection->start - layout->str.s,
+                render_text (cr, pos, &font_style, layout->str.s, selection->start - layout->str.s,
                              &box->color, NULL, &pos);
             }
 
-            render_text (cr, pos, pango_layout, selection->start, selection->len,
+            render_text (cr, pos, &font_style, selection->start, selection->len,
                          &selection->color, &selection->background_color, &pos);
 
             if (selection->len != -1) {
-                render_text (cr, pos, pango_layout, selection->start+selection->len, -1,
+                render_text (cr, pos, &font_style, selection->start+selection->len, -1,
                              &box->color, NULL, NULL);
             }
         } else {
-            render_text (cr, pos, pango_layout, layout->str.s, 0, &box->color, NULL, NULL);
+            render_text (cr, pos, &font_style, layout->str.s, -1, &box->color, NULL, NULL);
         }
 
 #if 0

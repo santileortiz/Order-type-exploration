@@ -508,12 +508,12 @@ bool update_button_state (struct app_state_t *st, layout_box_t *lay_box, bool *u
 //  2) Position uninitialized, size uninitialized. (labeled_layout labels)
 //  3) Position based in the top left corner, size based on content. (Title)
 layout_box_t*
-label_centered (char *str, double x, double y, struct app_state_t *st, app_graphics_t *graphics)
+label_centered (char *str, double x, double y, struct app_state_t *st)
 {
     layout_box_t *label = next_layout_box_css (st, CSS_LABEL);
     label->str.s = str;
     sized_string_compute (&label->str, &global_gui_st->css_styles[CSS_LABEL],
-                          graphics->text_layout, label->str.s);
+                          label->str.s);
 
     vect2_t layout_size = VECT2 (label->str.width, label->str.height);
     css_cont_size_to_lay_size (label->style, &layout_size);
@@ -523,22 +523,22 @@ label_centered (char *str, double x, double y, struct app_state_t *st, app_graph
 }
 
 layout_box_t*
-label (char *str, double x, double y, struct app_state_t *st, app_graphics_t *graphics)
+label (char *str, double x, double y, struct app_state_t *st)
 {
     layout_box_t *label = next_layout_box_css (st, CSS_LABEL);
     label->str.s = str;
     sized_string_compute (&label->str, &global_gui_st->css_styles[CSS_LABEL],
-                          graphics->text_layout, str);
+                          str);
     return label;
 }
 
 layout_box_t*
-title (char *str, double x, double y, struct app_state_t *st, app_graphics_t *graphics)
+title (char *str, double x, double y, struct app_state_t *st)
 {
     layout_box_t *title_box = next_layout_box_css (st, CSS_TITLE_LABEL);
     title_box->str.s = str;
     sized_string_compute (&title_box->str, title_box->style,
-                          graphics->text_layout, title_box->str.s);
+                          title_box->str.s);
 
     vect2_t title_size = VECT2 (title_box->str.width, title_box->str.height);
     css_cont_size_to_lay_size (title_box->style, &title_size);
@@ -548,14 +548,14 @@ title (char *str, double x, double y, struct app_state_t *st, app_graphics_t *gr
 }
 
 layout_box_t* button (char *label, bool *target, double x, double y,
-                      struct app_state_t *st, app_graphics_t *graphics)
+                      struct app_state_t *st)
 {
     layout_box_t *curr_box = next_layout_box_css (st, CSS_BUTTON);
     focus_chain_add (&st->gui_st, curr_box);
     add_behavior (&st->gui_st, curr_box, BEHAVIOR_BUTTON, target);
 
     curr_box->str.s = label;
-    sized_string_compute (&curr_box->str, curr_box->style, graphics->text_layout, label);
+    sized_string_compute (&curr_box->str, curr_box->style, label);
 
     // If we want a fully initialized button then we should do something like:
     //vect2_t layout_size = VECT2 (curr_box->str.width, curr_box->str.height);
@@ -567,7 +567,7 @@ layout_box_t* button (char *label, bool *target, double x, double y,
 }
 
 layout_box_t* text_entry (uint64_string_t *target, double x, double y,
-                          struct app_state_t *st, app_graphics_t *graphics)
+                          struct app_state_t *st)
 {
     layout_box_t *curr_box = next_layout_box_css (st, CSS_TEXT_ENTRY);
     focus_chain_add (&st->gui_st, curr_box);
@@ -575,7 +575,7 @@ layout_box_t* text_entry (uint64_string_t *target, double x, double y,
 
     curr_box->str.s = str_data (&target->str);
     sized_string_compute (&curr_box->str, curr_box->style,
-                          graphics->text_layout, curr_box->str.s);
+                          curr_box->str.s);
     return curr_box;
 }
 
@@ -633,19 +633,18 @@ struct labeled_layout_row_t* labeled_layout_new_row (labeled_entries_layout_t *l
 layout_box_t* labeled_text_entry (labeled_entries_layout_t *lay,
                                   char * label_str,
                                   uint64_string_t *target,
-                                  struct app_state_t *st,
-                                  app_graphics_t *graphics)
+                                  struct app_state_t *st)
 {
     struct labeled_layout_row_t *row = labeled_layout_new_row (lay);
 
-    row->label = label (label_str, lay->x, lay->y, st, graphics);
+    row->label = label (label_str, lay->x, lay->y, st);
     row->label->text_align_override = CSS_TEXT_ALIGN_RIGHT;
     row->label->box.min = VECT2 (lay->x, lay->y);
 
     double label_height = row->label->str.height;
     css_cont_size_to_lay_size_w_h (row->label->style, NULL, &label_height);
 
-    row->main_layout = text_entry (target, NAN, NAN, st, graphics);
+    row->main_layout = text_entry (target, NAN, NAN, st);
 
     double text_entry_height = row->main_layout->str.height;
     css_cont_size_to_lay_size_w_h (row->main_layout->style, NULL, &text_entry_height);
@@ -659,19 +658,18 @@ layout_box_t* labeled_text_entry (labeled_entries_layout_t *lay,
 layout_box_t* labeled_button (labeled_entries_layout_t *lay,
                               char *label_str,
                               char *button_text, bool *target,
-                              struct app_state_t *st,
-                              app_graphics_t *graphics)
+                              struct app_state_t *st)
 {
     struct labeled_layout_row_t *row = labeled_layout_new_row (lay);
 
-    row->label = label (label_str, lay->x, lay->y, st, graphics);
+    row->label = label (label_str, lay->x, lay->y, st);
     row->label->text_align_override = CSS_TEXT_ALIGN_RIGHT;
     row->label->box.min = VECT2 (lay->x, lay->y);
 
     double label_height = row->label->str.height;
     css_cont_size_to_lay_size_w_h (row->label->style, NULL, &label_height);
 
-    row->main_layout = button (button_text, target, NAN, NAN, st, graphics);
+    row->main_layout = button (button_text, target, NAN, NAN, st);
 
     double button_height = row->main_layout->str.height;
     css_cont_size_to_lay_size_w_h (row->main_layout->style, NULL, &button_height);
@@ -720,7 +718,6 @@ layout_box_t* labeled_layout_separator (labeled_entries_layout_t *lay, struct ap
 
 void end_labeled_layout (labeled_entries_layout_t *lay,
                          double align_pos,
-                         app_graphics_t *graphics, 
                          struct app_state_t *st)
 {
     struct labeled_layout_row_t *curr_row = lay->rows->next;
@@ -1010,28 +1007,27 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
         labeled_entries_layout_t lay =
             begin_labeled_layout (10, 10, 12, 12, panel);
 
-        layout_box_t *tmp = title ("Point Set:", lay.x, lay.y, st, graphics);
+        layout_box_t *tmp = title ("Point Set:", lay.x, lay.y, st);
         labeled_layout_skip (&lay, BOX_HEIGHT (tmp->box));
 
         ps_mode->focus_list[foc_n] =
-            labeled_text_entry (&lay, "n:", &ps_mode->n, st, graphics);
+            labeled_text_entry (&lay, "n:", &ps_mode->n, st);
         ps_mode->focus_list[foc_ot] =
-            labeled_text_entry (&lay, "Order Type:", &ps_mode->ot_id, st, graphics);
+            labeled_text_entry (&lay, "Order Type:", &ps_mode->ot_id, st);
         ps_mode->arrange_pts_btn =
             labeled_button (&lay, "Layout:", "Arrange", &ps_mode->arrange_pts,
-                            st, graphics);
+                            st);
         focus_chain_remove (gui_st, ps_mode->arrange_pts_btn);
 
         labeled_layout_separator (&lay, st);
 
-        tmp = title ("Triangle Set", lay.x, lay.y, st, graphics);
+        tmp = title ("Triangle Set", lay.x, lay.y, st);
         labeled_layout_skip (&lay, BOX_HEIGHT (tmp->box));
 
-        ps_mode->focus_list[foc_k] = labeled_text_entry (&lay, "k:", &ps_mode->k, st,
-                                                         graphics);
+        ps_mode->focus_list[foc_k] = labeled_text_entry (&lay, "k:", &ps_mode->k, st);
         ps_mode->focus_list[foc_ts] = labeled_text_entry (&lay, "ID:", &ps_mode->ts_id,
-                                                          st, graphics);
-        end_labeled_layout (&lay, 0.2, graphics, st);
+                                                          st);
+        end_labeled_layout (&lay, 0.2, st);
     }
 
     if (ps_mode->arrange_pts) {

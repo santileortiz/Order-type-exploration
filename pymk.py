@@ -10,7 +10,8 @@ DEP_FLAGS = '-lcairo ' \
             '-lm '
 
 # NOTE: This is too much just to depend on Pango, maybe move to HarfBuzz?
-PANGO_FLAGS = '-lpango-1.0 ' \
+PANGO_FLAGS = '-lgobject-2.0 ' \
+              '-lpango-1.0 ' \
               '-lpangocairo-1.0 ' \
               '-I/usr/include/pango-1.0 ' \
               '-I/usr/include/cairo ' \

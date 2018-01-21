@@ -51,6 +51,7 @@
 
 bool update_and_render (struct app_state_t *st, app_graphics_t *graphics, app_input_t input)
 {
+    st->gui_st.gr = *graphics;
     if (!st->is_initialized) {
         st->end_execution = false;
         st->is_initialized = true;
@@ -93,7 +94,6 @@ bool update_and_render (struct app_state_t *st, app_graphics_t *graphics, app_in
     } else {
         mem_pool_end_temporary_memory (st->temporary_memory_flush);
 
-        st->gui_st.gr = *graphics;
         update_input (&st->gui_st, input);
 
         switch (st->gui_st.input.keycode) {
@@ -997,18 +997,11 @@ int main (void)
     xcb_map_window (x_st->xcb_c, x_st->window);
     xcb_flush (x_st->xcb_c);
 
-    // PangoLayout for text handling
-    PangoLayout *text_layout = pango_cairo_create_layout (cr);
-    PangoFontDescription *font_desc = pango_font_description_from_string ("Open Sans 9");
-    pango_layout_set_font_description (text_layout, font_desc);
-    pango_font_description_free (font_desc);
-
     // ////////////////
     // Main event loop
     xcb_generic_event_t *event;
     app_graphics_t graphics;
     graphics.cr = cr;
-    graphics.text_layout = text_layout;
     graphics.width = WINDOW_WIDTH;
     graphics.height = WINDOW_HEIGHT;
     bool force_blit = false;
