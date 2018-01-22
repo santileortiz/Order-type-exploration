@@ -69,13 +69,11 @@ bool download_database_screen (struct app_state_t *st, app_graphics_t *graphics)
     struct database_download_t *dl_st = st->dl_st;
     if (!dl_st->screen_built) {
 
-        label_centered ("Downloading database", graphics->width/2, graphics->height/2 - 10,
-               st);
+        label_centered ("Downloading database", graphics->width/2, graphics->height/2 - 10);
 
         sprintf (dl_st->progress_str, " 1 of %d: %s (  0.0%%) ",
                  dl_st->num_missing, otdb_names[dl_st->missing[0]]);
-        label_centered (dl_st->progress_str, graphics->width/2, graphics->height/2 + 10,
-               st);
+        label_centered (dl_st->progress_str, graphics->width/2, graphics->height/2 + 10);
 
         dl_st->percentage_completed = 0;
         dl_st->downloading = &st->download_database;
@@ -99,9 +97,9 @@ bool download_database_screen (struct app_state_t *st, app_graphics_t *graphics)
         end_mutex (&dl_st->lock);
 
         int i;
-        for (i=0; i<st->num_layout_boxes; i++) {
-            struct css_box_t *style = st->layout_boxes[i].style;
-            layout_box_t *layout = &st->layout_boxes[i];
+        for (i=0; i<st->gui_st.num_layout_boxes; i++) {
+            struct css_box_t *style = st->gui_st.layout_boxes[i].style;
+            layout_box_t *layout = &st->gui_st.layout_boxes[i];
             if (layout->style != NULL) {
                 css_box_draw (graphics, style, layout);
             } else {

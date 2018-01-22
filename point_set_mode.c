@@ -472,23 +472,6 @@ void set_n (struct point_set_mode_t *st, int n, app_graphics_t *graphics)
     focus_order_type (graphics, st);
 }
 
-#define next_layout_box(st) next_layout_box_css(st,CSS_NONE)
-layout_box_t* next_layout_box_css (struct app_state_t *st, css_style_t style_id)
-{
-    assert (st->num_layout_boxes+1 < ARRAY_SIZE (st->layout_boxes));
-    layout_box_t *layout_box = &st->layout_boxes[st->num_layout_boxes];
-
-    layout_box_uninitialize(layout_box);
-
-    st->num_layout_boxes++;
-
-    if (style_id != CSS_NONE) {
-        init_layout_box_style (&st->gui_st, layout_box, style_id);
-    }
-
-    return layout_box;
-}
-
 bool update_button_state (struct app_state_t *st, layout_box_t *lay_box, bool *update_panel)
 {
     bool retval = false;
@@ -508,12 +491,11 @@ bool update_button_state (struct app_state_t *st, layout_box_t *lay_box, bool *u
 //  2) Position uninitialized, size uninitialized. (labeled_layout labels)
 //  3) Position based in the top left corner, size based on content. (Title)
 layout_box_t*
-label_centered (char *str, double x, double y, struct app_state_t *st)
+label_centered (char *str, double x, double y)
 {
-    layout_box_t *label = next_layout_box_css (st, CSS_LABEL);
+    layout_box_t *label = next_layout_box (CSS_LABEL);
     label->str.s = str;
-    sized_string_compute (&label->str, &global_gui_st->css_styles[CSS_LABEL],
-                          label->str.s);
+    sized_string_compute (&label->str, label->style, label->str.s);
 
     vect2_t layout_size = VECT2 (label->str.width, label->str.height);
     css_cont_size_to_lay_size (label->style, &layout_size);
@@ -523,22 +505,20 @@ label_centered (char *str, double x, double y, struct app_state_t *st)
 }
 
 layout_box_t*
-label (char *str, double x, double y, struct app_state_t *st)
+label (char *str, double x, double y)
 {
-    layout_box_t *label = next_layout_box_css (st, CSS_LABEL);
+    layout_box_t *label = next_layout_box (CSS_LABEL);
     label->str.s = str;
-    sized_string_compute (&label->str, &global_gui_st->css_styles[CSS_LABEL],
-                          str);
+    sized_string_compute (&label->str, label->style, str);
     return label;
 }
 
 layout_box_t*
-title (char *str, double x, double y, struct app_state_t *st)
+title (char *str, double x, double y)
 {
-    layout_box_t *title_box = next_layout_box_css (st, CSS_TITLE_LABEL);
+    layout_box_t *title_box = next_layout_box (CSS_TITLE_LABEL);
     title_box->str.s = str;
-    sized_string_compute (&title_box->str, title_box->style,
-                          title_box->str.s);
+    sized_string_compute (&title_box->str, title_box->style, title_box->str.s);
 
     vect2_t title_size = VECT2 (title_box->str.width, title_box->str.height);
     css_cont_size_to_lay_size (title_box->style, &title_size);
@@ -547,12 +527,11 @@ title (char *str, double x, double y, struct app_state_t *st)
     return title_box;
 }
 
-layout_box_t* button (char *label, bool *target, double x, double y,
-                      struct app_state_t *st)
+layout_box_t* button (char *label, bool *target, double x, double y)
 {
-    layout_box_t *curr_box = next_layout_box_css (st, CSS_BUTTON);
-    focus_chain_add (&st->gui_st, curr_box);
-    add_behavior (&st->gui_st, curr_box, BEHAVIOR_BUTTON, target);
+    layout_box_t *curr_box = next_layout_box (CSS_BUTTON);
+    focus_chain_add (global_gui_st, curr_box);
+    add_behavior (global_gui_st, curr_box, BEHAVIOR_BUTTON, target);
 
     curr_box->str.s = label;
     sized_string_compute (&curr_box->str, curr_box->style, label);
@@ -566,16 +545,14 @@ layout_box_t* button (char *label, bool *target, double x, double y,
     return curr_box;
 }
 
-layout_box_t* text_entry (uint64_string_t *target, double x, double y,
-                          struct app_state_t *st)
+layout_box_t* text_entry (uint64_string_t *target, double x, double y)
 {
-    layout_box_t *curr_box = next_layout_box_css (st, CSS_TEXT_ENTRY);
-    focus_chain_add (&st->gui_st, curr_box);
-    add_behavior (&st->gui_st, curr_box, BEHAVIOR_TEXT_ENTRY, target);
+    layout_box_t *curr_box = next_layout_box (CSS_TEXT_ENTRY);
+    focus_chain_add (global_gui_st, curr_box);
+    add_behavior (global_gui_st, curr_box, BEHAVIOR_TEXT_ENTRY, target);
 
     curr_box->str.s = str_data (&target->str);
-    sized_string_compute (&curr_box->str, curr_box->style,
-                          curr_box->str.s);
+    sized_string_compute (&curr_box->str, curr_box->style, curr_box->str.s);
     return curr_box;
 }
 
@@ -637,14 +614,14 @@ layout_box_t* labeled_text_entry (labeled_entries_layout_t *lay,
 {
     struct labeled_layout_row_t *row = labeled_layout_new_row (lay);
 
-    row->label = label (label_str, lay->x, lay->y, st);
+    row->label = label (label_str, lay->x, lay->y);
     row->label->text_align_override = CSS_TEXT_ALIGN_RIGHT;
     row->label->box.min = VECT2 (lay->x, lay->y);
 
     double label_height = row->label->str.height;
     css_cont_size_to_lay_size_w_h (row->label->style, NULL, &label_height);
 
-    row->main_layout = text_entry (target, NAN, NAN, st);
+    row->main_layout = text_entry (target, NAN, NAN);
 
     double text_entry_height = row->main_layout->str.height;
     css_cont_size_to_lay_size_w_h (row->main_layout->style, NULL, &text_entry_height);
@@ -662,14 +639,14 @@ layout_box_t* labeled_button (labeled_entries_layout_t *lay,
 {
     struct labeled_layout_row_t *row = labeled_layout_new_row (lay);
 
-    row->label = label (label_str, lay->x, lay->y, st);
+    row->label = label (label_str, lay->x, lay->y);
     row->label->text_align_override = CSS_TEXT_ALIGN_RIGHT;
     row->label->box.min = VECT2 (lay->x, lay->y);
 
     double label_height = row->label->str.height;
     css_cont_size_to_lay_size_w_h (row->label->style, NULL, &label_height);
 
-    row->main_layout = button (button_text, target, NAN, NAN, st);
+    row->main_layout = button (button_text, target, NAN, NAN);
 
     double button_height = row->main_layout->str.height;
     css_cont_size_to_lay_size_w_h (row->main_layout->style, NULL, &button_height);
@@ -706,7 +683,7 @@ layout_box_t* labeled_layout_separator (labeled_entries_layout_t *lay, struct ap
     struct labeled_layout_row_t *row = labeled_layout_new_row (lay);
     row->label = NULL;
 
-    row->main_layout = next_layout_box (st);
+    row->main_layout = next_layout_box (CSS_NONE);
     BOX_X_Y_W_H(row->main_layout->box, lay->x, lay->y, NAN, 2);
     row->main_layout->draw = draw_separator;
     labeled_layout_skip (lay, BOX_HEIGHT (row->main_layout->box));
@@ -721,7 +698,7 @@ void end_labeled_layout (labeled_entries_layout_t *lay,
                          struct app_state_t *st)
 {
     struct labeled_layout_row_t *curr_row = lay->rows->next;
-    double max_label_w, max_main_w;
+    double max_label_w = 0, max_main_w = 0;
     do {
         if (curr_row->label != NULL) {
             layout_box_t *label = curr_row->label;
@@ -1003,11 +980,11 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
     // Build layout
     static layout_box_t *panel;
     if (ps_mode->rebuild_panel) {
-        panel = next_layout_box_css (st, CSS_BACKGROUND);
+        panel = next_layout_box (CSS_BACKGROUND);
         labeled_entries_layout_t lay =
             begin_labeled_layout (10, 10, 12, 12, panel);
 
-        layout_box_t *tmp = title ("Point Set:", lay.x, lay.y, st);
+        layout_box_t *tmp = title ("Point Set:", lay.x, lay.y);
         labeled_layout_skip (&lay, BOX_HEIGHT (tmp->box));
 
         ps_mode->focus_list[foc_n] =
@@ -1021,7 +998,7 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
 
         labeled_layout_separator (&lay, st);
 
-        tmp = title ("Triangle Set", lay.x, lay.y, st);
+        tmp = title ("Triangle Set", lay.x, lay.y);
         labeled_layout_skip (&lay, BOX_HEIGHT (tmp->box));
 
         ps_mode->focus_list[foc_k] = labeled_text_entry (&lay, "k:", &ps_mode->k, st);
@@ -1063,7 +1040,8 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
         }
     }
 
-    update_layout_boxes (&st->gui_st, st->layout_boxes, st->num_layout_boxes,
+    update_layout_boxes (&st->gui_st, st->gui_st.layout_boxes,
+                         st->gui_st.num_layout_boxes,
                          &ps_mode->redraw_panel);
 
     update_layout_boxes (&st->gui_st, ps_mode->pts_hitboxes,
@@ -1325,9 +1303,9 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
 
     if (ps_mode->redraw_panel) {
         int i;
-        for (i=0; i<st->num_layout_boxes; i++) {
-            struct css_box_t *style = st->layout_boxes[i].style;
-            layout_box_t *layout = &st->layout_boxes[i];
+        for (i=0; i<st->gui_st.num_layout_boxes; i++) {
+            struct css_box_t *style = st->gui_st.layout_boxes[i].style;
+            layout_box_t *layout = &st->gui_st.layout_boxes[i];
             if (layout->style != NULL) {
                 css_box_draw (graphics, style, layout);
             } else if (layout->draw != NULL) {
@@ -1340,7 +1318,7 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
         blit_needed = true;
     }
 
-    layout_boxes_end_frame (st->layout_boxes, st->num_layout_boxes);
+    layout_boxes_end_frame (st->gui_st.layout_boxes, st->gui_st.num_layout_boxes);
     layout_boxes_end_frame (ps_mode->pts_hitboxes, ps_mode->n.i);
 
     ps_mode->rebuild_panel = false;

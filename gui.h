@@ -227,6 +227,8 @@ struct font_style_t {
 #define FONT_STYLE_CSS(css_box) \
     FONT_STYLE_FSW((css_box)->font_family,(css_box)->font_size,(css_box)->font_weight)
 
+#define NUM_LAYOUT_BOXES_ALLOCATED 30
+
 struct gui_state_t {
     mem_pool_t pool;
 
@@ -248,6 +250,10 @@ struct gui_state_t {
     float time_since_last_click[3]; // in ms
     float double_click_time; // in ms
     float min_distance_for_drag; // in pixels
+
+    int focused_layout_box;
+    int num_layout_boxes;
+    struct layout_box_t *layout_boxes;
 
     struct selection_t selection;
     struct behavior_t *behaviors;
@@ -290,6 +296,9 @@ void init_title_label (struct css_box_t *box);
 
 void default_gui_init (struct gui_state_t *gui_st)
 {
+    gui_st->layout_boxes = mem_pool_push_array (&gui_st->pool, NUM_LAYOUT_BOXES_ALLOCATED, layout_box_t);
+    gui_st->focused_layout_box = -1;
+
     gui_st->default_font_style.family = "Open Sans";
     gui_st->default_font_style.size = 9;
     gui_st->default_font_style.weight = CSS_FONT_WEIGHT_NORMAL;
@@ -732,8 +741,37 @@ void update_selectors (struct gui_state_t *gui_st, layout_box_t *layout_boxes, i
 #define update_layout_box_style(gui_st,box,style_id) {(box)->style=&((gui_st)->css_styles[style_id]);}
 void init_layout_box_style (struct gui_state_t *gui_st, layout_box_t *box, css_style_t style_id)
 {
-    box->base_style_id = style_id;
-    update_layout_box_style (gui_st, box, style_id);
+    if (style_id != CSS_NONE) {
+        box->base_style_id = style_id;
+        update_layout_box_style (gui_st, box, style_id);
+    }
+}
+
+void layout_box_uninitialize (layout_box_t *lay)
+{
+    *lay = (layout_box_t){0};
+    lay->box.min = VECT2 (NAN, NAN);
+    lay->box.max = VECT2 (NAN, NAN);
+}
+
+#define is_box_initialized(lay_box) \
+    ((layout)->box.min.x != NAN && (layout)->box.min.y != NAN && \
+     (layout)->box.max.x != NAN && (layout)->box.max.y != NAN)
+
+layout_box_t* next_layout_box (css_style_t style_id)
+{
+    assert (global_gui_st->num_layout_boxes+1 < NUM_LAYOUT_BOXES_ALLOCATED);
+
+    struct gui_state_t *gui_st = global_gui_st;
+    layout_box_t *layout_box = &gui_st->layout_boxes[gui_st->num_layout_boxes];
+
+    layout_box_uninitialize(layout_box);
+
+    gui_st->num_layout_boxes++;
+
+    init_layout_box_style (gui_st, layout_box, style_id);
+
+    return layout_box;
 }
 
 void update_layout_boxes (struct gui_state_t *gui_st, layout_box_t *layout_boxes,
@@ -922,17 +960,6 @@ void layout_size_from_css_content_size (struct css_box_t *css_box,
     *layout_size = css_content_size;
     css_cont_size_to_lay_size (css_box, layout_size);
 }
-
-void layout_box_uninitialize (layout_box_t *lay)
-{
-    *lay = (layout_box_t){0};
-    lay->box.min = VECT2 (NAN, NAN);
-    lay->box.max = VECT2 (NAN, NAN);
-}
-
-#define is_box_initialized(lay_box) \
-    ((layout)->box.min.x != NAN && (layout)->box.min.y != NAN && \
-     (layout)->box.max.x != NAN && (layout)->box.max.y != NAN)
 
 void css_box_draw (app_graphics_t *gr, struct css_box_t *box, layout_box_t *layout)
 {

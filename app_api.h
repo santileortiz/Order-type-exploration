@@ -25,10 +25,6 @@ struct app_state_t {
 
     struct gui_state_t gui_st;
 
-    int num_layout_boxes;
-    int focused_layout_box;
-    layout_box_t layout_boxes[30];
-
     mem_pool_t memory;
 
     // NOTE: This will be cleared at every frame start

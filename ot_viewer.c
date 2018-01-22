@@ -62,7 +62,6 @@ bool update_and_render (struct app_state_t *st, app_graphics_t *graphics, app_in
         }
 
         default_gui_init (&st->gui_st);
-        st->focused_layout_box = -1;
         global_gui_st = &st->gui_st;
         st->temporary_memory_flush = mem_pool_begin_temporary_memory (&st->temporary_memory);
 
