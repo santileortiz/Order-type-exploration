@@ -597,6 +597,30 @@ text_entry (uint64_string_t *target, struct positioning_info_t pos_info)
     return curr_box;
 }
 
+DRAW_CALLBACK(draw_separator)
+{
+    cairo_t *cr = gr->cr;
+    box_t *box = &layout->box;
+    cairo_set_line_width (cr, 1);
+    cairo_set_source_rgba (cr, 0, 0, 0, 0.25);
+    cairo_move_to (cr, box->min.x, box->min.y+0.5);
+    cairo_line_to (cr, box->max.x, box->min.y+0.5);
+    cairo_stroke (cr);
+
+    cairo_set_source_rgba (cr, 1, 1, 1, 0.8);
+    cairo_move_to (cr, box->min.x, box->min.y+1.5);
+    cairo_line_to (cr, box->max.x, box->min.y+1.5);
+    cairo_stroke (cr);
+}
+
+layout_box_t* separator (double x, double y, double width)
+{
+    layout_box_t* curr_box = next_layout_box (CSS_NONE);
+    BOX_X_Y_W_H(curr_box->box, x, y, width, 2);
+    curr_box->draw = draw_separator;
+    return curr_box;
+}
+
 struct labeled_layout_row_t {
     // NOTE: label == NULL means main_layout should be made full width.
     layout_box_t *label;
@@ -707,34 +731,15 @@ void labeled_layout_skip (labeled_entries_layout_t *lay, double y_skip)
     lay->y += y_skip + lay->y_step;
 }
 
-DRAW_CALLBACK(draw_separator)
-{
-    cairo_t *cr = gr->cr;
-    box_t *box = &layout->box;
-    cairo_set_line_width (cr, 1);
-    cairo_set_source_rgba (cr, 0, 0, 0, 0.25);
-    cairo_move_to (cr, box->min.x, box->min.y+0.5);
-    cairo_line_to (cr, box->max.x, box->min.y+0.5);
-    cairo_stroke (cr);
-
-    cairo_set_source_rgba (cr, 1, 1, 1, 0.8);
-    cairo_move_to (cr, box->min.x, box->min.y+1.5);
-    cairo_line_to (cr, box->max.x, box->min.y+1.5);
-    cairo_stroke (cr);
-}
-
 layout_box_t* labeled_layout_separator (labeled_entries_layout_t *lay, struct app_state_t *st)
 {
     struct labeled_layout_row_t *row = labeled_layout_new_row (lay);
 
     row->label = NULL;
 
-    row->main_layout = next_layout_box (CSS_NONE);
-    BOX_X_Y_W_H(row->main_layout->box, lay->x, lay->y, NAN, 2);
-    row->main_layout->draw = draw_separator;
-    labeled_layout_skip (lay, BOX_HEIGHT (row->main_layout->box));
-
-    row->row_height = 2;
+    row->main_layout = separator (lay->x, lay->y, NAN);
+    row->row_height = BOX_HEIGHT (row->main_layout->box);
+    labeled_layout_skip (lay, row->row_height);
 
     return row->main_layout;
 }
