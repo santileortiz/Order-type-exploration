@@ -1054,6 +1054,7 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
     }
 
     if (ps_mode->arrange_pts) {
+        ps_mode->view_db_ot = false;
         view_arranged_points (ps_mode, graphics);
     }
 
