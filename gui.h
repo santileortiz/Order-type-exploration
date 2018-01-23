@@ -71,11 +71,21 @@ typedef struct {
     vect2_t ptr;
 } app_input_t;
 
+enum layout_content_type_t {
+    LAYOUT_CONTENT_NONE,
+    LAYOUT_CONTENT_C_STRING
+};
+
 typedef struct {
-    char *s;
+    enum layout_content_type_t type;
+    union {
+        char *str;
+        // image_t *image // Not yet implemented
+    };
+    //vect2_t pos; // Is this useful? so far there are no usecases
     double width;
     double height;
-} sized_string_t;
+} layout_content_t;
 
 typedef enum {
     CSS_NONE,
@@ -175,7 +185,7 @@ struct layout_box_t {
     css_resize_mode_t resize_mode;
     bool content_changed;
     struct behavior_t *behavior;
-    sized_string_t str;
+    layout_content_t content;
 };
 
 typedef struct {
@@ -890,8 +900,15 @@ PangoLayout* new_pango_layout_from_style (cairo_t *cr, struct font_style_t *font
     return text_layout;
 }
 
-void sized_string_compute (sized_string_t *res, struct css_box_t *style, char *str)
+void layout_set_content_str (layout_box_t *lay, char *str)
 {
+    lay->content.type = LAYOUT_CONTENT_C_STRING;
+    lay->content.str = str;
+}
+
+vect2_t compute_string_size (char *str, struct css_box_t *style)
+{
+    vect2_t res;
     PangoLayout *text_layout =
         new_pango_layout_from_style_fsw (global_gui_st->gr.cr,
                                          style->font_family, style->font_size, style->font_weight);
@@ -905,9 +922,26 @@ void sized_string_compute (sized_string_t *res, struct css_box_t *style, char *s
     PangoRectangle logical;
     pango_layout_get_pixel_extents (text_layout, NULL, &logical);
 
-    res->width = logical.width;
-    res->height = logical.height;
+    res.x = logical.width;
+    res.y = logical.height;
     g_object_unref (text_layout);
+    return res;
+}
+
+void compute_content_size (layout_box_t *lay)
+{
+    switch (lay->content.type) {
+        case LAYOUT_CONTENT_C_STRING:
+            {
+                vect2_t size = compute_string_size (lay->content.str, lay->style);
+                lay->content.width = size.x;
+                lay->content.height = size.y;
+            } break;
+        case LAYOUT_CONTENT_NONE:
+            break;
+        default:
+            invalid_code_path;
+    }
 }
 
 // NOTE: len == -1 means the string is null terminated.
@@ -1015,9 +1049,9 @@ void css_box_draw (app_graphics_t *gr, struct css_box_t *box, layout_box_t *layo
     cairo_set_line_width (cr, box->border_width);
     cairo_stroke (cr);
 
-    if (layout->str.s != NULL) {
+    if (layout->content.type != LAYOUT_CONTENT_NONE) {
 
-        sized_string_compute (&layout->str, box, layout->str.s);
+        compute_content_size (layout);
 
         css_text_align_t effective_text_align;
         if (layout->text_align_override != CSS_TEXT_ALIGN_INITIAL) {
@@ -1031,25 +1065,28 @@ void css_box_draw (app_graphics_t *gr, struct css_box_t *box, layout_box_t *layo
             case CSS_TEXT_ALIGN_LEFT:
                 break;
             case CSS_TEXT_ALIGN_RIGHT:
-                text_pos_x += content_width - layout->str.width;
+                text_pos_x += content_width - layout->content.width;
                 break;
-            default: // CSS_TEXT_ALIGN_CENTER
-                text_pos_x += (content_width - layout->str.width)/2;
+            case CSS_TEXT_ALIGN_INITIAL:
+            case CSS_TEXT_ALIGN_CENTER:
+                text_pos_x += (content_width - layout->content.width)/2;
                 break;
+            default:
+                invalid_code_path;
         }
-        text_pos_y += (content_height - layout->str.height)/2;
+        text_pos_y += (content_height - layout->content.height)/2;
 
         struct selection_t *selection = &global_gui_st->selection;
         vect2_t pos = VECT2(text_pos_x, text_pos_y);
         struct font_style_t font_style = FONT_STYLE_CSS(box);
         if (selection->dest == layout) {
-            size_t len = strlen (layout->str.s);
-            assert (layout->str.s >= selection->start &&
-                    selection->start <= layout->str.s + len &&
-                    "selection->start must point into selection->dest->str.s");
+            size_t len = strlen (layout->content.str);
+            assert (layout->content.str >= selection->start &&
+                    selection->start <= layout->content.str + len &&
+                    "selection->start must point into selection->dest->content.str");
 
-            if (selection->start != layout->str.s) {
-                render_text (cr, pos, &font_style, layout->str.s, selection->start - layout->str.s,
+            if (selection->start != layout->content.str) {
+                render_text (cr, pos, &font_style, layout->content.str, selection->start - layout->content.str,
                              &box->color, NULL, &pos);
             }
 
@@ -1061,7 +1098,7 @@ void css_box_draw (app_graphics_t *gr, struct css_box_t *box, layout_box_t *layo
                              &box->color, NULL, NULL);
             }
         } else {
-            render_text (cr, pos, &font_style, layout->str.s, -1, &box->color, NULL, NULL);
+            render_text (cr, pos, &font_style, layout->content.str, -1, &box->color, NULL, NULL);
         }
 
 #if 0

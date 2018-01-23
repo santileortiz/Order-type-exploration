@@ -580,8 +580,12 @@ void vect2_print (vect2_t *v)
     printf ("(%f, %f) [%f]\n", v->x, v->y, vect2_norm(*v));
 }
 
-#define BOX_X_Y_W_H(box,n_x,n_y,n_w,n_h) {(box).min.x=(n_x);(box).max.x=(n_x)+(n_w); \
-                                          (box).min.y=(n_y);(box).max.y=(n_y)+(n_h);}
+// NOTE: W anf H MUST be positive.
+#define BOX_X_Y_W_H(box,n_x,n_y,n_w,n_h) {     \
+    (box).min.x=(n_x);(box).max.x=(n_x)+(n_w); \
+    (box).min.y=(n_y);(box).max.y=(n_y)+(n_h); \
+}
+
 #define BOX_CENTER_X_Y_W_H(box,n_x,n_y,n_w,n_h) {(box).min.x=(n_x)-(n_w)/2;(box).max.x=(n_x)+(n_w)/2; \
                                                  (box).min.y=(n_y)-(n_h)/2;(box).max.y=(n_y)+(n_h)/2;}
 #define BOX_POS_SIZE(box,pos,size) BOX_X_Y_W_H(box,(pos).x,(pos).y,(size).x,(size).y)
