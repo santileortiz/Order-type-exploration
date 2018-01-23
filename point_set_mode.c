@@ -1130,6 +1130,11 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
                                     // selection made by a single click.
                                     //
                                     // Do Nothing.
+                                } else if (22 == input.keycode) { // KEY_BACKSPACE
+                                    unselect (gui_st);
+                                    int_string_clear (beh->target.u64_str);
+                                    ps_mode->redraw_panel = true;
+
                                 } else if (10 <= input.keycode && input.keycode < 20) { // KEY_0-9
                                     unselect (gui_st);
 
@@ -1164,16 +1169,24 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
                                     select_all_str (gui_st, lay_box, lay_box->content.str);
                                     ps_mode->redraw_panel = true;
                                     beh->state = 1;
+
+                                } else if (22 == input.keycode) { // KEY_BACKSPACE
+                                    unselect (gui_st);
+                                    int_string_delete_digit (beh->target.u64_str);
+                                    ps_mode->redraw_panel = true;
+
                                 } else if (10 <= input.keycode && input.keycode < 20) { // KEY_0-9
                                     int digit = (input.keycode+1)%10;
                                     int_string_append_digit (beh->target.u64_str, digit);
                                     ps_mode->redraw_panel = true;
+
                                 } else if (36 == input.keycode || // KEY_ENTER
                                            !(lay_box->active_selectors & CSS_SEL_FOCUS)) {
                                     lay_box->content_changed = true;
                                     lay_box->content.str = str_data (&beh->target.u64_str->str);
                                     ps_mode->redraw_panel = true;
                                     beh->state = 0;
+
                                 } else if (9 == input.keycode) { // KEY_ESC
                                     str_cpy (&beh->target.u64_str->str, &ps_mode->bak_number.str);
                                     ps_mode->redraw_panel = true;

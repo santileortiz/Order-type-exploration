@@ -396,6 +396,12 @@ void int_string_update (uint64_string_t *x, uint64_t i)
     str_set (&x->str, buff);
 }
 
+void int_string_clear (uint64_string_t *x)
+{
+    x->i = 0;
+    str_set (&x->str, "");
+}
+
 void int_string_append_digit (uint64_string_t *x, int digit)
 {
     x->i = x->i*10 + digit;
@@ -403,6 +409,20 @@ void int_string_append_digit (uint64_string_t *x, int digit)
     char digit_c_str[] = {0x30+digit, '\0'};
     string_t str_digit = str_new (digit_c_str);
     str_cat (&x->str, &str_digit);
+    str_free (&str_digit);
+}
+
+void int_string_delete_digit (uint64_string_t *x)
+{
+    if (x->i != 0 && x->i/10 == 0) {
+        int_string_clear (x);
+    } else {
+        x->i = x->i/10;
+
+        char buff[20];
+        snprintf (buff, ARRAY_SIZE(buff), "%ld", x->i);
+        str_set (&x->str, buff);
+    }
 }
 
 void int_string_update_s (uint64_string_t *x, char* str)
