@@ -130,8 +130,28 @@ typedef enum {
     CSS_PROP_COLOR              = 1<<8,
     CSS_PROP_TEXT_ALIGN         = 1<<9,
     CSS_PROP_FONT_WEIGHT        = 1<<10,
-    CSS_PROP_BACKGROUND_IMAGE   = 1<<11 //Only gradients supported for now
+    CSS_PROP_BACKGROUND_IMAGE   = 1<<11, //Only gradients supported for now
+    CSS_PROP_BOX_SHADOW         = 1<<12,
+    CSS_PROP_TEXT_SHADOW        = 1<<13
 } css_property_t;
+
+struct text_shadow_t {
+    struct text_shadow_t *next;
+    double h_offset;
+    double v_offset;
+    double blur_radius;
+    vect4_t color;
+};
+
+// NOTE: The 'inset' field is handled by having  separate lists in css_box_t.
+struct box_shadow_t {
+    struct box_shadow_t *next;
+    double h_offset;
+    double v_offset;
+    double blur_radius;
+    double spread_distance;
+    vect4_t color;
+};
 
 struct css_box_t {
     css_property_t property_mask;
@@ -147,6 +167,10 @@ struct css_box_t {
     double min_height;
     vect4_t background_color;
     vect4_t color;
+
+    struct box_shadow_t *outset_shadows;
+    struct box_shadow_t *inset_shadows;
+    struct text_shadow_t *text_shadow;
 
     css_text_align_t text_align;
     char *font_family;
@@ -292,17 +316,18 @@ vect4_t bg_color;
 vect4_t selected_bg_color = RGB(0.239216, 0.607843, 0.854902);
 vect4_t selected_fg_color = RGB(1,1,1);
 vect4_t insensitive_color;
+vect4_t bg_highlight_color = RGB(1,1,1);
 
-void init_button (struct css_box_t *box);
-void init_button_active (struct css_box_t *box);
-void init_button_disabled (struct css_box_t *box);
-void init_suggested_action_button (struct css_box_t *box);
-void init_suggested_action_button_active (struct css_box_t *box);
-void init_background (struct css_box_t *box);
-void init_text_entry (struct css_box_t *box);
-void init_text_entry_focused (struct css_box_t *box);
-void init_label (struct css_box_t *box);
-void init_title_label (struct css_box_t *box);
+void init_button (mem_pool_t *pool, struct css_box_t *box);
+void init_button_active (mem_pool_t *pool, struct css_box_t *box);
+void init_button_disabled (mem_pool_t *pool, struct css_box_t *box);
+void init_suggested_action_button (mem_pool_t *pool, struct css_box_t *box);
+void init_suggested_action_button_active (mem_pool_t *pool, struct css_box_t *box);
+void init_background (mem_pool_t *pool, struct css_box_t *box);
+void init_text_entry (mem_pool_t *pool, struct css_box_t *box);
+void init_text_entry_focused (mem_pool_t *pool, struct css_box_t *box);
+void init_label (mem_pool_t *pool, struct css_box_t *box);
+void init_title_label (mem_pool_t *pool, struct css_box_t *box);
 
 void default_gui_init (struct gui_state_t *gui_st)
 {
@@ -323,22 +348,22 @@ void default_gui_init (struct gui_state_t *gui_st)
     gui_st->time_since_last_click[1] = gui_st->double_click_time;
     gui_st->time_since_last_click[2] = gui_st->double_click_time;
 
-    init_button (&gui_st->css_styles[CSS_BUTTON]);
-    init_button_active (&gui_st->css_styles[CSS_BUTTON_ACTIVE]);
+    init_button (&gui_st->pool, &gui_st->css_styles[CSS_BUTTON]);
+    init_button_active (&gui_st->pool, &gui_st->css_styles[CSS_BUTTON_ACTIVE]);
     gui_st->css_styles[CSS_BUTTON].selector_active = &gui_st->css_styles[CSS_BUTTON_ACTIVE];
-    init_button_active (&gui_st->css_styles[CSS_BUTTON_DISABLED]);
+    init_button_active (&gui_st->pool, &gui_st->css_styles[CSS_BUTTON_DISABLED]);
     gui_st->css_styles[CSS_BUTTON].selector_disabled = &gui_st->css_styles[CSS_BUTTON_DISABLED];
 
-    init_suggested_action_button (&gui_st->css_styles[CSS_BUTTON_SA]);
-    init_suggested_action_button_active (&gui_st->css_styles[CSS_BUTTON_SA_ACTIVE]);
+    init_suggested_action_button (&gui_st->pool, &gui_st->css_styles[CSS_BUTTON_SA]);
+    init_suggested_action_button_active (&gui_st->pool, &gui_st->css_styles[CSS_BUTTON_SA_ACTIVE]);
     gui_st->css_styles[CSS_BUTTON_SA].selector_active = &gui_st->css_styles[CSS_BUTTON_SA_ACTIVE];
 
-    init_background (&gui_st->css_styles[CSS_BACKGROUND]);
-    init_text_entry (&gui_st->css_styles[CSS_TEXT_ENTRY]);
-    init_text_entry_focused (&gui_st->css_styles[CSS_TEXT_ENTRY_FOCUS]);
+    init_background (&gui_st->pool, &gui_st->css_styles[CSS_BACKGROUND]);
+    init_text_entry (&gui_st->pool, &gui_st->css_styles[CSS_TEXT_ENTRY]);
+    init_text_entry_focused (&gui_st->pool, &gui_st->css_styles[CSS_TEXT_ENTRY_FOCUS]);
     gui_st->css_styles[CSS_TEXT_ENTRY].selector_focus = &gui_st->css_styles[CSS_TEXT_ENTRY_FOCUS];
-    init_label (&gui_st->css_styles[CSS_LABEL]);
-    init_title_label (&gui_st->css_styles[CSS_TITLE_LABEL]);
+    init_label (&gui_st->pool, &gui_st->css_styles[CSS_LABEL]);
+    init_title_label (&gui_st->pool, &gui_st->css_styles[CSS_TITLE_LABEL]);
 
     gui_st->selection.color = selected_fg_color;
     gui_st->selection.background_color = selected_bg_color;
@@ -1015,6 +1040,70 @@ void layout_size_from_css_content_size (struct css_box_t *css_box,
     css_cont_size_to_lay_size (css_box, layout_size);
 }
 
+static inline
+uint64_t rgb_to_uint (vect4_t rgb)
+{
+    return ((uint32_t)(rgb.r*255) << 16) +
+           ((uint32_t)(rgb.g*255) <<  8) +
+           (uint32_t)(rgb.b*255);
+}
+
+void print_inset_box_shadow (struct box_shadow_t *shadow)
+{
+    printf ("inset %.1fpx %.1fpx %.1fpx %.1fpx rgba(%d,%d,%d,%.2f);\n",
+            shadow->h_offset,
+            shadow->v_offset,
+            shadow->blur_radius,
+            shadow->spread_distance,
+            (uint8_t)(shadow->color.r*255),
+            (uint8_t)(shadow->color.g*255),
+            (uint8_t)(shadow->color.b*255),
+            shadow->color.a);
+}
+
+void print_outset_box_shadow (struct box_shadow_t *shadow)
+{
+    printf ("%.1fpx %.1fpx %.1fpx %.1fpx rgba(%d,%d,%d,%.2f);\n",
+            shadow->h_offset,
+            shadow->v_offset,
+            shadow->blur_radius,
+            shadow->spread_distance,
+            (uint8_t)(shadow->color.r*255),
+            (uint8_t)(shadow->color.g*255),
+            (uint8_t)(shadow->color.b*255),
+            shadow->color.a);
+}
+
+void draw_outset_shadows (app_graphics_t *gr, struct css_box_t *css)
+{
+    if (css->outset_shadows == NULL) {
+        return;
+    }
+
+    //cairo_t *cr = gr->cr;
+    struct box_shadow_t *curr_shadow = css->outset_shadows->next;
+
+    do {
+        print_outset_box_shadow (curr_shadow);
+        curr_shadow = curr_shadow->next;
+    } while (curr_shadow != css->outset_shadows->next);
+}
+
+void draw_inset_shadows (app_graphics_t *gr, struct css_box_t *css)
+{
+    if (css->inset_shadows == NULL) {
+        return;
+    }
+
+    //cairo_t *cr = gr->cr;
+    struct box_shadow_t *curr_shadow = css->inset_shadows->next;
+
+    do {
+        print_inset_box_shadow (curr_shadow);
+        curr_shadow = curr_shadow->next;
+    } while (curr_shadow != css->inset_shadows->next);
+}
+
 void css_box_draw (app_graphics_t *gr, struct css_box_t *box, layout_box_t *layout)
 {
     assert (is_box_initialized(layout) && "Can't draw an uninitialized layout_box_t");
@@ -1027,9 +1116,12 @@ void css_box_draw (app_graphics_t *gr, struct css_box_t *box, layout_box_t *layo
     double content_width = BOX_WIDTH(layout->box) - 2*(box->border_width);
     double content_height = BOX_HEIGHT(layout->box) - 2*(box->border_width);
 
+    draw_outset_shadows (gr, box);
     rounded_box_path (cr, 0, 0,content_width+2*box->border_width,
                       content_height+2*box->border_width, box->border_radius);
     cairo_clip (cr);
+
+    draw_inset_shadows (gr, box);
 
     cairo_set_source_rgba (cr, box->background_color.r,
                           box->background_color.g,
@@ -1134,6 +1226,57 @@ void css_box_draw (app_graphics_t *gr, struct css_box_t *box, layout_box_t *layo
     }
 
     cairo_restore (cr);
+}
+
+void css_add_text_shadow (mem_pool_t *pool, struct css_box_t *css,
+                          double h_offset, double v_offset,
+                          double blur_radius, vect4_t color)
+{
+    struct text_shadow_t *new_text_shadow =
+        mem_pool_push_size (pool, sizeof (struct text_shadow_t));
+    new_text_shadow->h_offset = h_offset;
+    new_text_shadow->v_offset = v_offset;
+    new_text_shadow->blur_radius = blur_radius;
+    new_text_shadow->color = color;
+
+    if (css->text_shadow != NULL) {
+        new_text_shadow->next = css->text_shadow;
+        css->text_shadow->next = new_text_shadow;
+    } else {
+        new_text_shadow->next = new_text_shadow;
+    }
+
+    css->text_shadow = new_text_shadow;
+}
+
+void css_add_box_shadow (mem_pool_t *pool, struct css_box_t *css,
+                         bool inset, double h_offset, double v_offset,
+                         double blur_radius, double spread_distance,
+                         vect4_t color)
+{
+    struct box_shadow_t *new_box_shadow =
+        mem_pool_push_size (pool, sizeof (struct box_shadow_t));
+    new_box_shadow->h_offset = h_offset;
+    new_box_shadow->v_offset = v_offset;
+    new_box_shadow->blur_radius = blur_radius;
+    new_box_shadow->spread_distance = spread_distance;
+    new_box_shadow->color = color;
+
+    struct box_shadow_t **box_shadow_list;
+    if (inset) {
+        box_shadow_list = &css->inset_shadows;
+    } else {
+        box_shadow_list = &css->outset_shadows;
+    }
+
+    if (*box_shadow_list != NULL) {
+        new_box_shadow->next = (*box_shadow_list)->next;
+        (*box_shadow_list)->next = new_box_shadow;
+    } else {
+        new_box_shadow->next = new_box_shadow;
+    }
+
+    *box_shadow_list = new_box_shadow;
 }
 
 void css_box_add_gradient_stops (struct css_box_t *box, int num_stops, vect4_t *stops)
@@ -1252,6 +1395,13 @@ vect4_t shade (vect4_t *in, double f)
 
     vect4_t ret;
     hsla_to_rgba (&temp, &ret);
+    return ret;
+}
+
+vect4_t alpha (vect4_t c, double f)
+{
+    vect4_t ret = c;
+    ret.a *= f;
     return ret;
 }
 
@@ -1383,7 +1533,7 @@ void get_next_color (vect3_t *color)
     }
 }
 
-void init_button (struct css_box_t *box)
+void init_button (mem_pool_t *pool, struct css_box_t *box)
 {
     *box = (struct css_box_t){0};
     box->border_radius = 2.5;
@@ -1398,9 +1548,13 @@ void init_button (struct css_box_t *box)
                         RGBA(0,0,0,0),
                         RGBA(0,0,0,0.04)};
     css_box_add_gradient_stops (box, ARRAY_SIZE(stops), stops);
+    css_add_box_shadow (pool, box, true, 0, 0, 0, 1, alpha (bg_highlight_color, 0.05));
+    css_add_box_shadow (pool, box, true, 0, 1, 0, 0, alpha (bg_highlight_color, 0.45));
+    css_add_box_shadow (pool, box, true, 0,-1, 0, 0, alpha (bg_highlight_color, 0.15));
+    css_add_box_shadow (pool, box, false, 0, 1, 0, 0, alpha (bg_highlight_color, 0.15));
 }
 
-void init_button_active (struct css_box_t *box)
+void init_button_active (mem_pool_t *pool, struct css_box_t *box)
 {
     *box = (struct css_box_t){0};
     box->border_radius = 2.5;
@@ -1413,7 +1567,7 @@ void init_button_active (struct css_box_t *box)
     box->background_color = RGBA(0, 0, 0, 0.05);
 }
 
-void init_button_disabled (struct css_box_t *box)
+void init_button_disabled (mem_pool_t *pool, struct css_box_t *box)
 {
     *box = (struct css_box_t){0};
     box->border_radius = 2.5;
@@ -1426,10 +1580,10 @@ void init_button_disabled (struct css_box_t *box)
     box->background_color = RGBA(0, 0, 0, 0.0);
 }
 
-void init_suggested_action_button (struct css_box_t *box)
+void init_suggested_action_button (mem_pool_t *pool, struct css_box_t *box)
 {
     *box = (struct css_box_t){0};
-    init_button (box);
+    init_button (pool, box);
     box->border_color = shade (&selected_bg_color, 0.8);
     box->color = selected_fg_color;
 
@@ -1438,10 +1592,10 @@ void init_suggested_action_button (struct css_box_t *box)
     css_box_add_gradient_stops (box, ARRAY_SIZE(stops), stops);
 }
 
-void init_suggested_action_button_active (struct css_box_t *box)
+void init_suggested_action_button_active (mem_pool_t *pool, struct css_box_t *box)
 {
     *box = (struct css_box_t){0};
-    init_button (box);
+    init_button (pool, box);
     box->border_color = shade (&selected_bg_color, 0.8);
     box->color = selected_fg_color;
 
@@ -1451,7 +1605,7 @@ void init_suggested_action_button_active (struct css_box_t *box)
     css_box_add_gradient_stops (box, ARRAY_SIZE(stops), stops);
 }
 
-void init_background (struct css_box_t *box)
+void init_background (mem_pool_t *pool, struct css_box_t *box)
 {
     *box = (struct css_box_t){0};
     box->border_radius = 2.5;
@@ -1462,7 +1616,7 @@ void init_background (struct css_box_t *box)
     box->border_color = RGBA(0, 0, 0, 0.27);
 }
 
-void init_text_entry (struct css_box_t *box)
+void init_text_entry (mem_pool_t *pool, struct css_box_t *box)
 {
     *box = (struct css_box_t){0};
     box->border_radius = 2.5;
@@ -1478,7 +1632,7 @@ void init_text_entry (struct css_box_t *box)
     box->border_color = RGBA(0, 0, 0, 0.25);
 }
 
-void init_text_entry_focused (struct css_box_t *box)
+void init_text_entry_focused (mem_pool_t *pool, struct css_box_t *box)
 {
     *box = (struct css_box_t){0};
     box->border_radius = 2.5;
@@ -1494,14 +1648,14 @@ void init_text_entry_focused (struct css_box_t *box)
     box->border_color = RGBA(0.239216, 0.607843, 0.854902, 0.8);
 }
 
-void init_label (struct css_box_t *box)
+void init_label (mem_pool_t *pool, struct css_box_t *box)
 {
     *box = (struct css_box_t){0};
     box->background_color = RGBA(0, 0, 0, 0);
     box->color = RGB(0.2, 0.2, 0.2);
 }
 
-void init_title_label (struct css_box_t *box)
+void init_title_label (mem_pool_t *pool, struct css_box_t *box)
 {
     *box = (struct css_box_t){0};
     box->background_color = RGBA(0, 0, 0, 0);
