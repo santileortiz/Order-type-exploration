@@ -489,14 +489,69 @@ void pixel_align_as_line (vect2_t *p, int line_width)
     p->y = floor (p->y)+(double)(line_width%2)/2;
 }
 
-void rounded_box_path (cairo_t *cr, double x, double y, double width, double height, double radius)
+struct rounded_box_t {
+    double h_offset;
+    double v_offset;
+    double x;
+    double y;
+    double width;
+    double height;
+    // TODO: This should turn into an array of 8 doubles.
+    double radius;
+};
+
+void rounded_box_path (cairo_t *cr, struct rounded_box_t *rb)
 {
-    cairo_move_to (cr, x, y+radius);
-    cairo_arc (cr, x+radius, y+radius, radius, M_PI, 3*M_PI/2);
-    cairo_arc (cr, x+width - radius, y+radius, radius, 3*M_PI/2, 0);
-    cairo_arc (cr, x+width - radius, y+height - radius, radius, 0, M_PI/2);
-    cairo_arc (cr, x+radius, y+height - radius, radius, M_PI/2, M_PI);
+    double x = rb->x;
+    double y = rb->y;
+    double r = rb->radius;
+    double w = rb->width;
+    double h = rb->height;
+    cairo_move_to (cr, x, y+r);
+    cairo_arc (cr, x+r, y+r, r, M_PI, 3*M_PI/2);
+    cairo_arc (cr, x+w - r, y+r, r, 3*M_PI/2, 0);
+    cairo_arc (cr, x+w - r, y+h - r, r, 0, M_PI/2);
+    cairo_arc (cr, x+r, y+h - r, r, M_PI/2, M_PI);
     cairo_close_path (cr);
+}
+
+void rounded_box_path_negative (cairo_t *cr, struct rounded_box_t *rb)
+{
+    double x = rb->x;
+    double y = rb->y;
+    double r = rb->radius;
+    double w = rb->width;
+    double h = rb->height;
+    cairo_move_to (cr, x+r, y);
+    cairo_arc_negative (cr, x+r, y+r, r, 3*M_PI/2, M_PI);
+    cairo_arc_negative (cr, x+r, y+h - r, r, M_PI, M_PI/2);
+    cairo_arc_negative (cr, x+w - r, y+h - r, r, M_PI/2, 0);
+    cairo_arc_negative (cr, x+w - r, y+r, r, 0, 3*M_PI/2);
+    cairo_close_path (cr);
+}
+
+static inline
+struct rounded_box_t css_get_border_box (struct css_box_t *css, layout_box_t *layout)
+{
+    struct rounded_box_t res;
+    res.x = 0;
+    res.y = 0;
+    res.width = BOX_WIDTH (layout->box);
+    res.height = BOX_HEIGHT (layout->box);
+    res.radius = css->border_radius;
+    return res;
+}
+
+static inline
+struct rounded_box_t css_get_padding_box (struct css_box_t *css, layout_box_t *layout)
+{
+    struct rounded_box_t res;
+    res.x = css->border_width;
+    res.y = css->border_width;
+    res.width = BOX_WIDTH (layout->box) - 2*css->border_width;
+    res.height = BOX_HEIGHT (layout->box) - 2*css->border_width;
+    res.radius = LOW_CLAMP(css->border_radius - css->border_width, 0);
+    return res;
 }
 
 #define is_vect2_in_box(v2,box) is_point_in_box((v2).x,(v2).y,(box).min.x,\
@@ -1076,7 +1131,8 @@ void print_outset_box_shadow (struct box_shadow_t *shadow)
             shadow->color.a);
 }
 
-void draw_outset_shadows (app_graphics_t *gr, struct css_box_t *css, layout_box_t *layout)
+void draw_outset_shadows (app_graphics_t *gr, struct css_box_t *css, layout_box_t *layout,
+                          struct rounded_box_t *border_box)
 {
     if (css->outset_shadows == NULL) {
         return;
@@ -1093,12 +1149,13 @@ void draw_outset_shadows (app_graphics_t *gr, struct css_box_t *css, layout_box_
     do {
         print_outset_box_shadow (curr_shadow);
 
-        rounded_box_path (cr,
-                          curr_shadow->h_offset - curr_shadow->spread_distance,
-                          curr_shadow->v_offset - curr_shadow->spread_distance,
-                          BOX_WIDTH(layout->box) + 2*curr_shadow->spread_distance,
-                          BOX_HEIGHT(layout->box) + 2*curr_shadow->spread_distance,
-                          LOW_CLAMP(css->border_radius + curr_shadow->spread_distance,0));
+        struct rounded_box_t shadow_box = *border_box;
+        shadow_box.x += curr_shadow->h_offset - curr_shadow->spread_distance;
+        shadow_box.y += curr_shadow->v_offset - curr_shadow->spread_distance;
+        shadow_box.width = LOW_CLAMP (shadow_box.width + 2*curr_shadow->spread_distance, 0);
+        shadow_box.height = LOW_CLAMP (shadow_box.height + 2*curr_shadow->spread_distance, 0);
+        shadow_box.radius = LOW_CLAMP(css->border_radius + curr_shadow->spread_distance,0);
+        rounded_box_path (cr, &shadow_box);
         cairo_set_source_rgba (cr, curr_shadow->color.r, curr_shadow->color.g,
                                curr_shadow->color.b, curr_shadow->color.a);
         cairo_fill (cr);
@@ -1110,10 +1167,7 @@ void draw_outset_shadows (app_graphics_t *gr, struct css_box_t *css, layout_box_
     cairo_push_group (cr);
     cairo_set_source_rgba (cr,0,0,0,1);
     cairo_paint (cr);
-    rounded_box_path (cr, 0, 0,
-                      BOX_WIDTH(layout->box),
-                      BOX_HEIGHT(layout->box),
-                      css->border_radius);
+    rounded_box_path (cr, border_box);
     cairo_set_operator (cr, CAIRO_OPERATOR_CLEAR);
     cairo_fill (cr);
     cairo_pattern_t *mask = cairo_pop_group (cr);
@@ -1122,17 +1176,30 @@ void draw_outset_shadows (app_graphics_t *gr, struct css_box_t *css, layout_box_
     cairo_pattern_destroy (mask);
 }
 
-void draw_inset_shadows (app_graphics_t *gr, struct css_box_t *css, layout_box_t *layout)
+void draw_inset_shadows (app_graphics_t *gr, struct css_box_t *css, layout_box_t *layout,
+                         struct rounded_box_t *padding_box)
 {
     if (css->inset_shadows == NULL) {
         return;
     }
 
-    //cairo_t *cr = gr->cr;
+    cairo_t *cr = gr->cr;
     struct box_shadow_t *curr_shadow = css->inset_shadows->next;
 
     do {
         print_inset_box_shadow (curr_shadow);
+
+        rounded_box_path (cr, padding_box);
+        struct rounded_box_t shadow_box = *padding_box;
+        shadow_box.x += curr_shadow->h_offset + curr_shadow->spread_distance;
+        shadow_box.y += curr_shadow->v_offset + curr_shadow->spread_distance;
+        shadow_box.width = LOW_CLAMP (shadow_box.width - 2*curr_shadow->spread_distance, 0);
+        shadow_box.height = LOW_CLAMP (shadow_box.height - 2*curr_shadow->spread_distance, 0);
+        shadow_box.radius = LOW_CLAMP (shadow_box.radius - curr_shadow->spread_distance, 0);
+        rounded_box_path_negative (cr, &shadow_box);
+        cairo_set_source_rgba (cr, curr_shadow->color.r, curr_shadow->color.g,
+                               curr_shadow->color.b, curr_shadow->color.a);
+        cairo_fill (cr);
         curr_shadow = curr_shadow->next;
     } while (curr_shadow != css->inset_shadows->next);
 }
@@ -1149,18 +1216,30 @@ void css_box_draw (app_graphics_t *gr, struct css_box_t *box, layout_box_t *layo
     double content_width = BOX_WIDTH(layout->box) - 2*(box->border_width);
     double content_height = BOX_HEIGHT(layout->box) - 2*(box->border_width);
 
-    draw_outset_shadows (gr, box, layout);
-    rounded_box_path (cr, 0, 0,content_width+2*box->border_width,
-                      content_height+2*box->border_width, box->border_radius);
-    cairo_clip (cr);
+    struct rounded_box_t border_box = css_get_border_box (box, layout);
+    draw_outset_shadows (gr, box, layout, &border_box);
 
+    rounded_box_path (cr, &border_box);
     cairo_set_source_rgba (cr, box->background_color.r,
                           box->background_color.g,
                           box->background_color.b,
                           box->background_color.a);
-    cairo_paint (cr);
+    cairo_fill (cr);
 
-    draw_inset_shadows (gr, box, layout);
+    // Draw border
+    struct rounded_box_t padding_box = css_get_padding_box (box, layout);
+    rounded_box_path (cr, &border_box);
+    rounded_box_path_negative (cr, &padding_box);
+    cairo_set_source_rgba (cr, box->border_color.r,
+                           box->border_color.g,
+                           box->border_color.b,
+                           box->border_color.a);
+    cairo_fill (cr);
+
+    rounded_box_path (cr, &padding_box);
+    cairo_clip (cr);
+
+    draw_inset_shadows (gr, box, layout, &padding_box);
 
     cairo_pattern_t *patt = cairo_pattern_create_linear (box->border_width, box->border_width,
                                                          0, content_height);
@@ -1184,15 +1263,6 @@ void css_box_draw (app_graphics_t *gr, struct css_box_t *box, layout_box_t *layo
         cairo_paint (cr);
     }
 
-    rounded_box_path (cr, box->border_width/2, box->border_width/2,
-                      content_width+box->border_width, content_height+box->border_width,
-                      box->border_radius-box->border_width/2);
-    cairo_set_source_rgba (cr, box->border_color.r,
-                           box->border_color.g,
-                           box->border_color.b,
-                           box->border_color.a);
-    cairo_set_line_width (cr, box->border_width);
-    cairo_stroke (cr);
 
     if (layout->content.type != LAYOUT_CONTENT_NONE) {
 
@@ -1576,7 +1646,7 @@ void init_button (mem_pool_t *pool, struct css_box_t *box)
     box->border_width = 1;
     box->padding_x = 12;
     box->padding_y = 3;
-    box->border_color = RGBA(0, 0, 0, 0.27);
+    box->border_color = RGBA(0, 0, 0, 1);
     box->color = RGB(0.2, 0.2, 0.2);
 
     //box->background_color = RGB(0.96, 0.96, 0.96);
@@ -1589,9 +1659,9 @@ void init_button (mem_pool_t *pool, struct css_box_t *box)
     //css_add_box_shadow (pool, box, true, 0,-1, 0, 0, alpha (bg_highlight_color, 0.15));
     //css_add_box_shadow (pool, box, false, 0, 1, 0, 0, alpha (bg_highlight_color, 0.15));
 
-    css_add_box_shadow (pool, box, true, 0, 0, 0, 1, RGB(1,0,0));
+    css_add_box_shadow (pool, box, true, 0, 0, 0, 2, RGB(1,0,0));
     css_add_box_shadow (pool, box, true, 0, 1, 0, 0, RGB(0,1,0));
-    css_add_box_shadow (pool, box, true, 0,-1, 0, 0, RGB(0,1,1));
+    css_add_box_shadow (pool, box, true, 0,-1, 0, 0, RGB(0,0,1));
     css_add_box_shadow (pool, box, false, 0, 3, 0, 0, RGB(1,1,0));
     css_add_box_shadow (pool, box, false, 3, 0, 0, 0, RGB(0,1,1));
     css_add_box_shadow (pool, box, false, 0, 0, 0, 10, RGBA(1,0,1,0.2));
