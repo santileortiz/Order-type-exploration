@@ -23,9 +23,11 @@ typedef enum {false, true} bool;
 #define MAX(a,b) ((a)>(b)?(a):(b))
 #endif
 
-#if !defined(MAX)
+#if !defined(CLAMP)
 #define CLAMP(a,lower,upper) ((a)>(upper)?(upper):((a)<(lower)?(lower):(a)))
 #endif
+
+#define LOW_CLAMP(a,lower) ((a)<(lower)?(lower):(a))
 
 #define I_CEIL_DIVIDE(a,b) ((a%b)?(a)/(b)+1:(a)/(b))
 

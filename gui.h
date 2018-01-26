@@ -303,7 +303,9 @@ struct gui_state_t {
 };
 
 struct gui_state_t *global_gui_st;
+static inline
 vect4_t shade (vect4_t *in, double f);
+static inline
 vect4_t mix (vect4_t *c1, vect4_t *c2, double f);
 
 // Forward declaration of CSS "stylesheet"
@@ -1074,22 +1076,53 @@ void print_outset_box_shadow (struct box_shadow_t *shadow)
             shadow->color.a);
 }
 
-void draw_outset_shadows (app_graphics_t *gr, struct css_box_t *css)
+void draw_outset_shadows (app_graphics_t *gr, struct css_box_t *css, layout_box_t *layout)
 {
     if (css->outset_shadows == NULL) {
         return;
     }
 
-    //cairo_t *cr = gr->cr;
+    cairo_t *cr = gr->cr;
     struct box_shadow_t *curr_shadow = css->outset_shadows->next;
 
+    // Draw shadows into a pattern
+    cairo_push_group (cr);
+    cairo_set_operator (cr, CAIRO_OPERATOR_CLEAR);
+    cairo_paint (cr);
+    cairo_set_operator (cr, CAIRO_OPERATOR_OVER);
     do {
         print_outset_box_shadow (curr_shadow);
+
+        rounded_box_path (cr,
+                          curr_shadow->h_offset - curr_shadow->spread_distance,
+                          curr_shadow->v_offset - curr_shadow->spread_distance,
+                          BOX_WIDTH(layout->box) + 2*curr_shadow->spread_distance,
+                          BOX_HEIGHT(layout->box) + 2*curr_shadow->spread_distance,
+                          LOW_CLAMP(css->border_radius + curr_shadow->spread_distance,0));
+        cairo_set_source_rgba (cr, curr_shadow->color.r, curr_shadow->color.g,
+                               curr_shadow->color.b, curr_shadow->color.a);
+        cairo_fill (cr);
         curr_shadow = curr_shadow->next;
     } while (curr_shadow != css->outset_shadows->next);
+    cairo_pop_group_to_source (cr);
+
+    // Apply shadows masking out the border box
+    cairo_push_group (cr);
+    cairo_set_source_rgba (cr,0,0,0,1);
+    cairo_paint (cr);
+    rounded_box_path (cr, 0, 0,
+                      BOX_WIDTH(layout->box),
+                      BOX_HEIGHT(layout->box),
+                      css->border_radius);
+    cairo_set_operator (cr, CAIRO_OPERATOR_CLEAR);
+    cairo_fill (cr);
+    cairo_pattern_t *mask = cairo_pop_group (cr);
+
+    cairo_mask (cr, mask);
+    cairo_pattern_destroy (mask);
 }
 
-void draw_inset_shadows (app_graphics_t *gr, struct css_box_t *css)
+void draw_inset_shadows (app_graphics_t *gr, struct css_box_t *css, layout_box_t *layout)
 {
     if (css->inset_shadows == NULL) {
         return;
@@ -1116,18 +1149,18 @@ void css_box_draw (app_graphics_t *gr, struct css_box_t *box, layout_box_t *layo
     double content_width = BOX_WIDTH(layout->box) - 2*(box->border_width);
     double content_height = BOX_HEIGHT(layout->box) - 2*(box->border_width);
 
-    draw_outset_shadows (gr, box);
+    draw_outset_shadows (gr, box, layout);
     rounded_box_path (cr, 0, 0,content_width+2*box->border_width,
                       content_height+2*box->border_width, box->border_radius);
     cairo_clip (cr);
-
-    draw_inset_shadows (gr, box);
 
     cairo_set_source_rgba (cr, box->background_color.r,
                           box->background_color.g,
                           box->background_color.b,
                           box->background_color.a);
     cairo_paint (cr);
+
+    draw_inset_shadows (gr, box, layout);
 
     cairo_pattern_t *patt = cairo_pattern_create_linear (box->border_width, box->border_width,
                                                          0, content_height);
@@ -1383,6 +1416,7 @@ void hsla_to_rgba (vect4_t *hsla, vect4_t *rgba)
     rgba->a = hsla->a;
 }
 
+static inline
 vect4_t shade (vect4_t *in, double f)
 {
     vect4_t temp;
@@ -1398,6 +1432,7 @@ vect4_t shade (vect4_t *in, double f)
     return ret;
 }
 
+static inline
 vect4_t alpha (vect4_t c, double f)
 {
     vect4_t ret = c;
@@ -1405,6 +1440,7 @@ vect4_t alpha (vect4_t c, double f)
     return ret;
 }
 
+static inline
 vect4_t mix (vect4_t *c1, vect4_t *c2, double f)
 {
     vect4_t ret;
@@ -1543,15 +1579,22 @@ void init_button (mem_pool_t *pool, struct css_box_t *box)
     box->border_color = RGBA(0, 0, 0, 0.27);
     box->color = RGB(0.2, 0.2, 0.2);
 
-    box->background_color = RGB(0.96, 0.96, 0.96);
+    //box->background_color = RGB(0.96, 0.96, 0.96);
     vect4_t stops[3] = {RGBA(0,0,0,0),
                         RGBA(0,0,0,0),
                         RGBA(0,0,0,0.04)};
     css_box_add_gradient_stops (box, ARRAY_SIZE(stops), stops);
-    css_add_box_shadow (pool, box, true, 0, 0, 0, 1, alpha (bg_highlight_color, 0.05));
-    css_add_box_shadow (pool, box, true, 0, 1, 0, 0, alpha (bg_highlight_color, 0.45));
-    css_add_box_shadow (pool, box, true, 0,-1, 0, 0, alpha (bg_highlight_color, 0.15));
-    css_add_box_shadow (pool, box, false, 0, 1, 0, 0, alpha (bg_highlight_color, 0.15));
+    //css_add_box_shadow (pool, box, true, 0, 0, 0, 1, alpha (bg_highlight_color, 0.05));
+    //css_add_box_shadow (pool, box, true, 0, 1, 0, 0, alpha (bg_highlight_color, 0.45));
+    //css_add_box_shadow (pool, box, true, 0,-1, 0, 0, alpha (bg_highlight_color, 0.15));
+    //css_add_box_shadow (pool, box, false, 0, 1, 0, 0, alpha (bg_highlight_color, 0.15));
+
+    css_add_box_shadow (pool, box, true, 0, 0, 0, 1, RGB(1,0,0));
+    css_add_box_shadow (pool, box, true, 0, 1, 0, 0, RGB(0,1,0));
+    css_add_box_shadow (pool, box, true, 0,-1, 0, 0, RGB(0,1,1));
+    css_add_box_shadow (pool, box, false, 0, 3, 0, 0, RGB(1,1,0));
+    css_add_box_shadow (pool, box, false, 3, 0, 0, 0, RGB(0,1,1));
+    css_add_box_shadow (pool, box, false, 0, 0, 0, 10, RGBA(1,0,1,0.2));
 }
 
 void init_button_active (mem_pool_t *pool, struct css_box_t *box)
