@@ -1231,8 +1231,6 @@ void draw_outset_shadows (app_graphics_t *gr, struct css_box_t *css, layout_box_
     cairo_paint (cr);
     cairo_set_operator (cr, CAIRO_OPERATOR_OVER);
     do {
-        print_outset_box_shadow (curr_shadow);
-
         struct rounded_box_t shadow_box = *border_box;
         shadow_box.width = LOW_CLAMP (shadow_box.width + 2*curr_shadow->spread_distance, 0);
         shadow_box.height = LOW_CLAMP (shadow_box.height + 2*curr_shadow->spread_distance, 0);
@@ -1296,8 +1294,6 @@ void draw_inset_shadows (app_graphics_t *gr, struct css_box_t *css, layout_box_t
     struct box_shadow_t *curr_shadow = css->inset_shadows->next;
 
     do {
-        print_inset_box_shadow (curr_shadow);
-
         struct rounded_box_t shadow_box = *padding_box;
         shadow_box.x += curr_shadow->h_offset + curr_shadow->spread_distance;
         shadow_box.y += curr_shadow->v_offset + curr_shadow->spread_distance;
@@ -1780,7 +1776,7 @@ void init_button (mem_pool_t *pool, struct css_box_t *box)
     box->border_width = 1;
     box->padding_x = 12;
     box->padding_y = 3;
-    box->border_color = RGBA(0, 0, 0, 1);
+    box->border_color = RGBA(0, 0, 0, 0.2);
     box->color = RGB(0.2, 0.2, 0.2);
 
     //box->background_color = RGB(0.96, 0.96, 0.96);
@@ -1788,17 +1784,10 @@ void init_button (mem_pool_t *pool, struct css_box_t *box)
                         RGBA(0,0,0,0),
                         RGBA(0,0,0,0.04)};
     css_box_add_gradient_stops (box, ARRAY_SIZE(stops), stops);
-    //css_add_box_shadow (pool, box, true, 0, 0, 0, 1, alpha (bg_highlight_color, 0.05));
-    //css_add_box_shadow (pool, box, true, 0, 1, 0, 0, alpha (bg_highlight_color, 0.45));
-    //css_add_box_shadow (pool, box, true, 0,-1, 0, 0, alpha (bg_highlight_color, 0.15));
-    //css_add_box_shadow (pool, box, false, 0, 1, 0, 0, alpha (bg_highlight_color, 0.15));
-
-    css_add_box_shadow (pool, box, true, 5, 5, 10, 5, RGB(1,0,0));
-    css_add_box_shadow (pool, box, true, 0, 1, 0, 0, RGB(0,1,0));
-    css_add_box_shadow (pool, box, true, 0,-1, 0, 0, RGB(0,0,1));
-    css_add_box_shadow (pool, box, false, 0, 3, 0, 0, RGB(1,1,0));
-    css_add_box_shadow (pool, box, false, 3, 0, 0, 0, RGB(0,1,1));
-    css_add_box_shadow (pool, box, false, 0, 0, 5, 10, RGBA(1,0,1,0.2));
+    css_add_box_shadow (pool, box, true, 0, 0, 0, 1, alpha (bg_highlight_color, 0.05));
+    css_add_box_shadow (pool, box, true, 0, 1, 0, 0, alpha (bg_highlight_color, 0.45));
+    css_add_box_shadow (pool, box, true, 0,-1, 0, 0, alpha (bg_highlight_color, 0.15));
+    css_add_box_shadow (pool, box, false, 0, 1, 0, 0, alpha (bg_highlight_color, 0.15));
 }
 
 void init_button_active (mem_pool_t *pool, struct css_box_t *box)
