@@ -1287,17 +1287,42 @@ void draw_inset_shadows (app_graphics_t *gr, struct css_box_t *css, layout_box_t
     do {
         print_inset_box_shadow (curr_shadow);
 
-        rounded_box_path (cr, padding_box);
         struct rounded_box_t shadow_box = *padding_box;
         shadow_box.x += curr_shadow->h_offset + curr_shadow->spread_distance;
         shadow_box.y += curr_shadow->v_offset + curr_shadow->spread_distance;
         shadow_box.width = LOW_CLAMP (shadow_box.width - 2*curr_shadow->spread_distance, 0);
         shadow_box.height = LOW_CLAMP (shadow_box.height - 2*curr_shadow->spread_distance, 0);
         shadow_box.radius = LOW_CLAMP (shadow_box.radius - curr_shadow->spread_distance, 0);
-        rounded_box_path_negative (cr, &shadow_box);
-        cairo_set_source_rgba (cr, curr_shadow->color.r, curr_shadow->color.g,
-                               curr_shadow->color.b, curr_shadow->color.a);
-        cairo_fill (cr);
+
+        // TODO: How different is the performance of these paths?
+        if (curr_shadow->blur_radius == 0) {
+            rounded_box_path (cr, padding_box);
+            rounded_box_path_negative (cr, &shadow_box);
+            cairo_set_source_rgba (cr, curr_shadow->color.r, curr_shadow->color.g,
+                                   curr_shadow->color.b, curr_shadow->color.a);
+            cairo_fill (cr);
+        } else {
+            shadow_box.x += curr_shadow->blur_radius;
+            shadow_box.y += curr_shadow->blur_radius;
+
+            cairo_surface_t *single_shadow =
+                cairo_image_surface_create (CAIRO_FORMAT_ARGB32,
+                                            padding_box->width + 2*curr_shadow->blur_radius,
+                                            padding_box->height + 2*curr_shadow->blur_radius);
+            cairo_t *shadow_cr = cairo_create (single_shadow);
+            cairo_set_source_rgba (shadow_cr, curr_shadow->color.r, curr_shadow->color.g,
+                                   curr_shadow->color.b, curr_shadow->color.a);
+            cairo_paint (shadow_cr);
+            rounded_box_path (shadow_cr, &shadow_box);
+            cairo_set_operator (shadow_cr, CAIRO_OPERATOR_CLEAR);
+            cairo_fill (shadow_cr);
+
+            css_gaussian_blur (single_shadow, curr_shadow->blur_radius);
+
+            cairo_set_source_surface (cr, single_shadow, -curr_shadow->blur_radius, -curr_shadow->blur_radius);
+            cairo_paint (cr);
+
+        }
         curr_shadow = curr_shadow->next;
     } while (curr_shadow != css->inset_shadows->next);
 }
@@ -1757,7 +1782,7 @@ void init_button (mem_pool_t *pool, struct css_box_t *box)
     //css_add_box_shadow (pool, box, true, 0,-1, 0, 0, alpha (bg_highlight_color, 0.15));
     //css_add_box_shadow (pool, box, false, 0, 1, 0, 0, alpha (bg_highlight_color, 0.15));
 
-    css_add_box_shadow (pool, box, true, 0, 0, 0, 2, RGB(1,0,0));
+    css_add_box_shadow (pool, box, true, 5, 5, 10, 5, RGB(1,0,0));
     css_add_box_shadow (pool, box, true, 0, 1, 0, 0, RGB(0,1,0));
     css_add_box_shadow (pool, box, true, 0,-1, 0, 0, RGB(0,0,1));
     css_add_box_shadow (pool, box, false, 0, 3, 0, 0, RGB(1,1,0));
