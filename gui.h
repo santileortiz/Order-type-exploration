@@ -1131,6 +1131,90 @@ void print_outset_box_shadow (struct box_shadow_t *shadow)
             shadow->color.a);
 }
 
+void css_gaussian_blur (cairo_surface_t *image, double r)
+{
+    assert (cairo_surface_get_type (image) == CAIRO_SURFACE_TYPE_IMAGE);
+    assert (cairo_image_surface_get_format (image) == CAIRO_FORMAT_ARGB32);
+
+    if (r == 0) {
+        return;
+    }
+
+    int size = 2*r+1;
+    uint8_t kernel[size];
+    int i;
+    uint32_t area = 0;
+    double mu = ARRAY_SIZE(kernel)/2;
+    for (i=0; i<ARRAY_SIZE(kernel); i++) {
+        kernel[i] = (uint32_t)(255*exp(-(i-mu)*(i-mu)/(2*(r/2)*(r/2))));
+        area += kernel[i];
+    }
+
+    uint32_t *src = (uint32_t*)cairo_image_surface_get_data (image);
+    int src_width = cairo_image_surface_get_width (image);
+    int src_height = cairo_image_surface_get_height (image);
+    cairo_surface_t *tmp_surface =
+        cairo_image_surface_create (CAIRO_FORMAT_ARGB32, src_width, src_height);
+    uint32_t *tmp = (uint32_t*)cairo_image_surface_get_data (tmp_surface);
+
+    for (i=0; i<src_height; i++) {
+        int j;
+        for (j=0; j<src_width; j++) {
+            int k;
+            uint32_t a = 0, r = 0, g = 0, b = 0;
+            for (k=0; k<ARRAY_SIZE(kernel); k++) {
+                if (j - ARRAY_SIZE(kernel)/2 + k < 0) {
+                    continue;
+                } else if (j - ARRAY_SIZE(kernel)/2 + k >= src_width) {
+                    continue;
+                }
+
+                uint8_t *src_px = (uint8_t*)(src + j - ARRAY_SIZE(kernel)/2 + k + i*src_width);
+                a += src_px[0]*kernel[k];
+                r += src_px[1]*kernel[k];
+                g += src_px[2]*kernel[k];
+                b += src_px[3]*kernel[k];
+            }
+            uint8_t *dest_px = (uint8_t*)(tmp + j + i*src_width);
+            dest_px[0] = a/area;
+            dest_px[1] = r/area;
+            dest_px[2] = g/area;
+            dest_px[3] = b/area;
+
+        }
+    }
+
+    int j;
+    for (j=0; j<src_width; j++) {
+        int i;
+        for (i=0; i<src_height; i++) {
+            int k;
+            uint32_t a = 0, r = 0, g = 0, b = 0;
+            for (k=0; k<ARRAY_SIZE(kernel); k++) {
+                if (i - ARRAY_SIZE(kernel)/2 + k < 0) {
+                    continue;
+                } else if (i - ARRAY_SIZE(kernel)/2 + k >= src_height) {
+                    continue;
+                }
+
+                uint8_t *src_px = (uint8_t*)(tmp + j + (i - ARRAY_SIZE(kernel)/2 + k)*src_width);
+                a += src_px[0]*kernel[k];
+                r += src_px[1]*kernel[k];
+                g += src_px[2]*kernel[k];
+                b += src_px[3]*kernel[k];
+            }
+            uint8_t *dest_px = (uint8_t*)(src + j + i*src_width);
+            dest_px[0] = a/area;
+            dest_px[1] = r/area;
+            dest_px[2] = g/area;
+            dest_px[3] = b/area;
+        }
+    }
+
+    cairo_surface_destroy (tmp_surface);
+    cairo_surface_mark_dirty (image);
+}
+
 void draw_outset_shadows (app_graphics_t *gr, struct css_box_t *css, layout_box_t *layout,
                           struct rounded_box_t *border_box)
 {
@@ -1150,15 +1234,29 @@ void draw_outset_shadows (app_graphics_t *gr, struct css_box_t *css, layout_box_
         print_outset_box_shadow (curr_shadow);
 
         struct rounded_box_t shadow_box = *border_box;
-        shadow_box.x += curr_shadow->h_offset - curr_shadow->spread_distance;
-        shadow_box.y += curr_shadow->v_offset - curr_shadow->spread_distance;
+        shadow_box.x = curr_shadow->blur_radius;
+        shadow_box.y = curr_shadow->blur_radius;
         shadow_box.width = LOW_CLAMP (shadow_box.width + 2*curr_shadow->spread_distance, 0);
         shadow_box.height = LOW_CLAMP (shadow_box.height + 2*curr_shadow->spread_distance, 0);
         shadow_box.radius = LOW_CLAMP(css->border_radius + curr_shadow->spread_distance,0);
-        rounded_box_path (cr, &shadow_box);
-        cairo_set_source_rgba (cr, curr_shadow->color.r, curr_shadow->color.g,
+
+        cairo_surface_t *single_shadow =
+            cairo_image_surface_create (CAIRO_FORMAT_ARGB32,
+                                        shadow_box.width + 2*curr_shadow->blur_radius,
+                                        shadow_box.height + 2*curr_shadow->blur_radius);
+        cairo_t *shadow_cr = cairo_create (single_shadow);
+        rounded_box_path (shadow_cr, &shadow_box);
+        cairo_set_source_rgba (shadow_cr, curr_shadow->color.r, curr_shadow->color.g,
                                curr_shadow->color.b, curr_shadow->color.a);
-        cairo_fill (cr);
+        cairo_fill (shadow_cr);
+        css_gaussian_blur (single_shadow, curr_shadow->blur_radius);
+
+        cairo_set_source_surface (cr, single_shadow,
+                                  curr_shadow->h_offset - curr_shadow->spread_distance - curr_shadow->blur_radius,
+                                  curr_shadow->v_offset - curr_shadow->spread_distance - curr_shadow->blur_radius);
+        cairo_paint (cr);
+        cairo_surface_destroy (single_shadow);
+
         curr_shadow = curr_shadow->next;
     } while (curr_shadow != css->outset_shadows->next);
     cairo_pop_group_to_source (cr);
@@ -1664,7 +1762,7 @@ void init_button (mem_pool_t *pool, struct css_box_t *box)
     css_add_box_shadow (pool, box, true, 0,-1, 0, 0, RGB(0,0,1));
     css_add_box_shadow (pool, box, false, 0, 3, 0, 0, RGB(1,1,0));
     css_add_box_shadow (pool, box, false, 3, 0, 0, 0, RGB(0,1,1));
-    css_add_box_shadow (pool, box, false, 0, 0, 0, 10, RGBA(1,0,1,0.2));
+    css_add_box_shadow (pool, box, false, 0, 0, 5, 10, RGBA(1,0,1,0.2));
 }
 
 void init_button_active (mem_pool_t *pool, struct css_box_t *box)
