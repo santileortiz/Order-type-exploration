@@ -1234,28 +1234,39 @@ void draw_outset_shadows (app_graphics_t *gr, struct css_box_t *css, layout_box_
         print_outset_box_shadow (curr_shadow);
 
         struct rounded_box_t shadow_box = *border_box;
-        shadow_box.x = curr_shadow->blur_radius;
-        shadow_box.y = curr_shadow->blur_radius;
         shadow_box.width = LOW_CLAMP (shadow_box.width + 2*curr_shadow->spread_distance, 0);
         shadow_box.height = LOW_CLAMP (shadow_box.height + 2*curr_shadow->spread_distance, 0);
         shadow_box.radius = LOW_CLAMP(css->border_radius + curr_shadow->spread_distance,0);
 
-        cairo_surface_t *single_shadow =
-            cairo_image_surface_create (CAIRO_FORMAT_ARGB32,
-                                        shadow_box.width + 2*curr_shadow->blur_radius,
-                                        shadow_box.height + 2*curr_shadow->blur_radius);
-        cairo_t *shadow_cr = cairo_create (single_shadow);
-        rounded_box_path (shadow_cr, &shadow_box);
-        cairo_set_source_rgba (shadow_cr, curr_shadow->color.r, curr_shadow->color.g,
-                               curr_shadow->color.b, curr_shadow->color.a);
-        cairo_fill (shadow_cr);
-        css_gaussian_blur (single_shadow, curr_shadow->blur_radius);
+        // TODO: How different is the performance of these paths?
+        if (curr_shadow->blur_radius == 0) {
+            shadow_box.x = curr_shadow->h_offset - curr_shadow->spread_distance;
+            shadow_box.y = curr_shadow->v_offset - curr_shadow->spread_distance;
+            rounded_box_path (cr, &shadow_box);
+            cairo_set_source_rgba (cr, curr_shadow->color.r, curr_shadow->color.g,
+                                   curr_shadow->color.b, curr_shadow->color.a);
+            cairo_fill (cr);
+        } else {
+            shadow_box.x = curr_shadow->blur_radius;
+            shadow_box.y = curr_shadow->blur_radius;
 
-        cairo_set_source_surface (cr, single_shadow,
-                                  curr_shadow->h_offset - curr_shadow->spread_distance - curr_shadow->blur_radius,
-                                  curr_shadow->v_offset - curr_shadow->spread_distance - curr_shadow->blur_radius);
-        cairo_paint (cr);
-        cairo_surface_destroy (single_shadow);
+            cairo_surface_t *single_shadow =
+                cairo_image_surface_create (CAIRO_FORMAT_ARGB32,
+                                            shadow_box.width + 2*curr_shadow->blur_radius,
+                                            shadow_box.height + 2*curr_shadow->blur_radius);
+            cairo_t *shadow_cr = cairo_create (single_shadow);
+            rounded_box_path (shadow_cr, &shadow_box);
+            cairo_set_source_rgba (shadow_cr, curr_shadow->color.r, curr_shadow->color.g,
+                                   curr_shadow->color.b, curr_shadow->color.a);
+            cairo_fill (shadow_cr);
+            css_gaussian_blur (single_shadow, curr_shadow->blur_radius);
+
+            double xpos = curr_shadow->h_offset - curr_shadow->spread_distance - curr_shadow->blur_radius;
+            double ypos = curr_shadow->v_offset - curr_shadow->spread_distance - curr_shadow->blur_radius;
+            cairo_set_source_surface (cr, single_shadow, xpos, ypos);
+            cairo_paint (cr);
+            cairo_surface_destroy (single_shadow);
+        }
 
         curr_shadow = curr_shadow->next;
     } while (curr_shadow != css->outset_shadows->next);
