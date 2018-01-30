@@ -506,8 +506,6 @@ void pixel_align_as_line (vect2_t *p, int line_width)
 }
 
 struct rounded_box_t {
-    double h_offset;
-    double v_offset;
     double x;
     double y;
     double width;
@@ -1146,6 +1144,9 @@ void print_outset_box_shadow (struct box_shadow_t *shadow)
             shadow->color.a);
 }
 
+// TODO: How are we impacted by the slow performance of this?
+// An easy way to speed up this would be to receive a box where we can skip the
+// computation.
 void css_gaussian_blur (cairo_surface_t *image, double r)
 {
     assert (cairo_surface_get_type (image) == CAIRO_SURFACE_TYPE_IMAGE);
@@ -1388,6 +1389,8 @@ void draw_inset_shadows (app_graphics_t *gr, struct css_box_t *css, layout_box_t
     } while (curr_shadow != css->inset_shadows->next);
 }
 
+// NOTE: We draw assuming the option box-sizing: border-box. Which means
+// BOX_WIDTH(layout->box) includes the content width, x_padding and border_width.
 void css_box_draw (app_graphics_t *gr, struct css_box_t *box, layout_box_t *layout)
 {
     assert (is_box_initialized(layout) && "Can't draw an uninitialized layout_box_t");
@@ -1407,20 +1410,31 @@ void css_box_draw (app_graphics_t *gr, struct css_box_t *box, layout_box_t *layo
     cairo_set_source_rgba (cr, ARGS_RGBA(box->background_color));
     cairo_fill (cr);
 
-    // Draw border
     struct rounded_box_t padding_box = css_get_padding_box (box, layout);
-    rounded_box_path (cr, &border_box);
-    rounded_box_path_negative (cr, &padding_box);
-    cairo_set_source_rgba (cr, ARGS_RGBA(box->border_color));
-    cairo_fill (cr);
 
+    // Draw border
+    if (box->border_width != 0) {
+        rounded_box_path (cr, &border_box);
+        rounded_box_path_negative (cr, &padding_box);
+        cairo_set_source_rgba (cr, ARGS_RGBA(box->border_color));
+        cairo_fill (cr);
+    }
+
+    // FIXME: There seems to be a bug in Cairo where setting a clip with arcs
+    // disables RGB antialiasing of text drawn with Pango. For now we can set
+    // the clip region to be a rectangle or have no antialiasing on boxes with
+    // border_radius != 0.
+#if 0
     rounded_box_path (cr, &padding_box);
+#else
+    cairo_rectangle (cr, padding_box.x, padding_box.y, padding_box.width, padding_box.height);
+#endif
     cairo_clip (cr);
 
-    cairo_pattern_t *patt = cairo_pattern_create_linear (box->border_width, box->border_width,
-                                                         0, content_height);
-
     if (box->num_gradient_stops > 0) {
+        cairo_pattern_t *patt =
+            cairo_pattern_create_linear (padding_box.x, padding_box.y,
+                                         padding_box.x, padding_box.y + padding_box.height);
         double position;
         double step = 1.0/((double)box->num_gradient_stops-1);
         int stop_idx = 0;
@@ -1486,7 +1500,7 @@ void css_box_draw (app_graphics_t *gr, struct css_box_t *box, layout_box_t *layo
                              &box->color, NULL, NULL);
             }
         } else {
-            render_text (cr, pos, &font_style, layout->content.str, -1, &box->color, NULL, NULL);
+          render_text (cr, pos, &font_style, layout->content.str, -1, &box->color, NULL, NULL);
         }
 
 #if 0
