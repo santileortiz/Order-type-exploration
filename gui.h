@@ -309,6 +309,8 @@ static inline
 vect4_t shade (vect4_t *in, double f);
 static inline
 vect4_t mix (vect4_t *c1, vect4_t *c2, double f);
+static inline
+vect4_t alpha (vect4_t c, double f);
 
 // Forward declaration of CSS "stylesheet"
 
@@ -318,6 +320,8 @@ vect4_t SILVER_300 = RGB_HEX(0xd4d4d4);
 
 vect4_t text_color;
 vect4_t text_color_primary;
+vect4_t text_shadow_color = RGBA (1, 1, 1, 0.4);
+vect4_t text_color_primary_shadw;
 vect4_t titlebar_color;
 vect4_t base_color = RGB(1,1,1);
 vect4_t bg_color;
@@ -354,6 +358,7 @@ void default_gui_init (struct gui_state_t *gui_st)
     insensitive_color = mix (&text_color, &bg_color, 0.31);
     titlebar_color = mix (&SILVER_300, &SILVER_100, 0.25);
     text_color_primary = shade (&titlebar_color, 0.5);
+    text_color_primary_shadw = alpha (shade (&titlebar_color, 1.4), 0.4);
 
     gui_st->double_click_time = 200;
     gui_st->min_distance_for_drag = 3;
@@ -1821,7 +1826,8 @@ void init_button (mem_pool_t *pool, struct css_box_t *box)
                         RGBA(0,0,0,0),
                         RGBA(0,0,0,0.04)};
     css_box_add_gradient_stops (box, ARRAY_SIZE(stops), stops);
-    css_add_text_shadow (pool, box, 5, 5, 10, RGB(1,0,0));
+
+    css_add_text_shadow (pool, box, 0, 1, 0, text_shadow_color);
 
     css_add_box_shadow (pool, box, true, 0, 0, 0, 1, alpha (bg_highlight_color, 0.05));
     css_add_box_shadow (pool, box, true, 0, 1, 0, 0, alpha (bg_highlight_color, 0.45));
@@ -1840,7 +1846,8 @@ void init_button_active (mem_pool_t *pool, struct css_box_t *box)
     box->color = text_color;
 
     box->background_color = RGBA (0, 0, 0, 0.05);
-    //css_add_box_shadow (pool, box, true, 0, 0, 0, 5, RGB(1,1,0));
+
+    css_add_text_shadow (pool, box, 0, 1, 0, text_shadow_color);
     css_add_box_shadow (pool, box, true, 0, 0, 0, 1, RGBA (0, 0, 0, 0.05));
     css_add_box_shadow (pool, box, false, 0, 1, 0, 0, alpha (bg_highlight_color, 0.3));
 }
@@ -1878,6 +1885,9 @@ void init_suggested_action_button (mem_pool_t *pool, struct css_box_t *box)
     vect4_t stops[2] = {shade(&selected_bg_color,1.1),
                         shade(&selected_bg_color,0.9)};
     css_box_add_gradient_stops (box, ARRAY_SIZE(stops), stops);
+
+    css_add_text_shadow (pool, box, 0, 1, 0, RGBA (0, 0, 0, 0.3));
+
     css_add_box_shadow (pool, box, true, 0, 0, 0, 1, alpha (bg_highlight_color, 0.05));
     css_add_box_shadow (pool, box, true, 0, 1, 0, 0, alpha (bg_highlight_color, 0.45));
     css_add_box_shadow (pool, box, true, 0,-1, 0, 0, alpha (bg_highlight_color, 0.15));
@@ -1892,6 +1902,8 @@ void init_suggested_action_button_active (mem_pool_t *pool, struct css_box_t *bo
     box->border_width = 1;
     box->padding_x = 12;
     box->padding_y = 3;
+
+    css_add_text_shadow (pool, box, 0, 1, 0, RGBA (0, 0, 0, 0.3));
 
     // Actual style
     box->border_color = shade (&selected_bg_color, 0.8);
@@ -1927,6 +1939,8 @@ void init_text_entry (mem_pool_t *pool, struct css_box_t *box)
 
     box->border_color = border_color;
 
+    css_add_text_shadow (pool, box, 0, 1, 0, text_shadow_color);
+
     css_add_box_shadow (pool, box, true, 0, 1, 0, 0, alpha (inset_dark_color, 0.7));
     css_add_box_shadow (pool, box, true, 0, 0, 0, 1, alpha (inset_dark_color, 0.3));
     css_add_box_shadow (pool, box, false, 0, 1, 0, 0, alpha (bg_highlight_color, 0.3));
@@ -1944,6 +1958,8 @@ void init_text_entry_focused (mem_pool_t *pool, struct css_box_t *box)
     vect4_t stops[2] = {shade (&base_color, 0.93),
                         shade (&base_color, 0.97)};
     css_box_add_gradient_stops (box, ARRAY_SIZE(stops), stops);
+
+    css_add_text_shadow (pool, box, 0, 1, 0, text_shadow_color);
 
     // Actual style
     box->border_color = alpha (color_accent, 0.8);
@@ -1965,6 +1981,8 @@ void init_title_label (mem_pool_t *pool, struct css_box_t *box)
     box->background_color = RGBA(0, 0, 0, 0);
     box->color = text_color_primary;
     box->font_weight = CSS_FONT_WEIGHT_BOLD;
+
+    css_add_text_shadow (pool, box, 0, 1, 0, text_color_primary_shadw);
 }
 
 #define GUI_H
