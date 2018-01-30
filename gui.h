@@ -172,7 +172,7 @@ struct css_box_t {
 
     struct box_shadow_t *outset_shadows;
     struct box_shadow_t *inset_shadows;
-    struct text_shadow_t *text_shadow;
+    struct text_shadow_t *text_shadows;
 
     css_text_align_t text_align;
     char *font_family;
@@ -1150,6 +1150,7 @@ void css_gaussian_blur (cairo_surface_t *image, double r)
         return;
     }
 
+    cairo_surface_flush (image);
     int size = 2*r+1;
     uint8_t kernel[size];
     int i;
@@ -1291,6 +1292,47 @@ void draw_outset_shadows (app_graphics_t *gr, struct css_box_t *css, layout_box_
     cairo_pattern_destroy (mask);
 }
 
+void draw_text_shadows (app_graphics_t *gr, struct css_box_t *css,
+                        vect2_t pos, char *str, int len)
+{
+    if (css->text_shadows == NULL) {
+        return;
+    }
+
+    cairo_t *cr = gr->cr;
+    struct text_shadow_t *curr_shadow = css->text_shadows->next;
+
+    struct font_style_t font_style = FONT_STYLE_CSS(css);
+    do {
+        vect2_t shadow_pos = pos;
+        if (curr_shadow->blur_radius == 0) {
+            shadow_pos.x += curr_shadow->h_offset;
+            shadow_pos.y += curr_shadow->v_offset;
+            render_text (cr, shadow_pos, &font_style, str, len, &curr_shadow->color, NULL, NULL);
+        } else {
+            PangoLayout *text_layout = new_pango_layout_from_style (cr, &font_style);
+            PangoRectangle logical;
+            pango_layout_set_text (text_layout, str, len);
+            pango_layout_get_pixel_extents (text_layout, NULL, &logical);
+
+            cairo_surface_t *single_shadow = 
+                cairo_image_surface_create (CAIRO_FORMAT_ARGB32,
+                                            logical.width + 2*curr_shadow->blur_radius,
+                                            logical.height + 2*curr_shadow->blur_radius);
+            cairo_t *shadow_cr = cairo_create (single_shadow);
+            vect2_t tmp_pos = VECT2(curr_shadow->blur_radius, curr_shadow->blur_radius);
+            render_text (shadow_cr, tmp_pos, &font_style, str, len, &curr_shadow->color, NULL, NULL);
+            css_gaussian_blur (single_shadow, curr_shadow->blur_radius);
+
+            shadow_pos.x += curr_shadow->h_offset - curr_shadow->blur_radius;
+            shadow_pos.y += curr_shadow->v_offset - curr_shadow->blur_radius;
+            cairo_set_source_surface (cr, single_shadow, shadow_pos.x, shadow_pos.y);
+            cairo_paint (cr);
+        }
+        curr_shadow = curr_shadow->next;
+    } while (curr_shadow != css->text_shadows->next);
+}
+
 void draw_inset_shadows (app_graphics_t *gr, struct css_box_t *css, layout_box_t *layout,
                          struct rounded_box_t *padding_box)
 {
@@ -1417,6 +1459,8 @@ void css_box_draw (app_graphics_t *gr, struct css_box_t *box, layout_box_t *layo
 
         struct selection_t *selection = &global_gui_st->selection;
         vect2_t pos = VECT2(text_pos_x, text_pos_y);
+        draw_text_shadows (gr, box, pos, layout->content.str, -1);
+
         struct font_style_t font_style = FONT_STYLE_CSS(box);
         if (selection->dest == layout) {
             size_t len = strlen (layout->content.str);
@@ -1466,14 +1510,14 @@ void css_add_text_shadow (mem_pool_t *pool, struct css_box_t *css,
     new_text_shadow->blur_radius = blur_radius;
     new_text_shadow->color = color;
 
-    if (css->text_shadow != NULL) {
-        new_text_shadow->next = css->text_shadow;
-        css->text_shadow->next = new_text_shadow;
+    if (css->text_shadows != NULL) {
+        new_text_shadow->next = css->text_shadows;
+        css->text_shadows->next = new_text_shadow;
     } else {
         new_text_shadow->next = new_text_shadow;
     }
 
-    css->text_shadow = new_text_shadow;
+    css->text_shadows = new_text_shadow;
 }
 
 void css_add_box_shadow (mem_pool_t *pool, struct css_box_t *css,
@@ -1777,6 +1821,8 @@ void init_button (mem_pool_t *pool, struct css_box_t *box)
                         RGBA(0,0,0,0),
                         RGBA(0,0,0,0.04)};
     css_box_add_gradient_stops (box, ARRAY_SIZE(stops), stops);
+    css_add_text_shadow (pool, box, 5, 5, 10, RGB(1,0,0));
+
     css_add_box_shadow (pool, box, true, 0, 0, 0, 1, alpha (bg_highlight_color, 0.05));
     css_add_box_shadow (pool, box, true, 0, 1, 0, 0, alpha (bg_highlight_color, 0.45));
     css_add_box_shadow (pool, box, true, 0,-1, 0, 0, alpha (bg_highlight_color, 0.15));
