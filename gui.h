@@ -1144,6 +1144,18 @@ void print_outset_box_shadow (struct box_shadow_t *shadow)
             shadow->color.a);
 }
 
+void print_text_shadow (struct text_shadow_t *shadow)
+{
+    printf ("%.1fpx %.1fpx %.1fpx rgba(%d,%d,%d,%.2f);\n",
+            shadow->h_offset,
+            shadow->v_offset,
+            shadow->blur_radius,
+            (uint8_t)(shadow->color.r*255),
+            (uint8_t)(shadow->color.g*255),
+            (uint8_t)(shadow->color.b*255),
+            shadow->color.a);
+}
+
 // TODO: How are we impacted by the slow performance of this?
 // An easy way to speed up this would be to receive a box where we can skip the
 // computation.
