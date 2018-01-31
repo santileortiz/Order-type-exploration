@@ -1240,14 +1240,15 @@ void draw_outset_shadows (app_graphics_t *gr, struct css_box_t *css, layout_box_
     }
 
     cairo_t *cr = gr->cr;
-    struct box_shadow_t *curr_shadow = css->outset_shadows->next;
+    struct box_shadow_t *curr_shadow = css->outset_shadows;
 
     // Draw shadows into a pattern
     cairo_push_group (cr);
     cairo_set_operator (cr, CAIRO_OPERATOR_CLEAR);
     cairo_paint (cr);
     cairo_set_operator (cr, CAIRO_OPERATOR_OVER);
-    do {
+
+    while (curr_shadow != NULL) {
         struct rounded_box_t shadow_box = *border_box;
         shadow_box.width = LOW_CLAMP (shadow_box.width + 2*curr_shadow->spread_distance, 0);
         shadow_box.height = LOW_CLAMP (shadow_box.height + 2*curr_shadow->spread_distance, 0);
@@ -1282,7 +1283,7 @@ void draw_outset_shadows (app_graphics_t *gr, struct css_box_t *css, layout_box_
         }
 
         curr_shadow = curr_shadow->next;
-    } while (curr_shadow != css->outset_shadows->next);
+    }
     cairo_pop_group_to_source (cr);
 
     // Apply shadows masking out the border box
@@ -1298,47 +1299,6 @@ void draw_outset_shadows (app_graphics_t *gr, struct css_box_t *css, layout_box_
     cairo_pattern_destroy (mask);
 }
 
-void draw_text_shadows (app_graphics_t *gr, struct css_box_t *css,
-                        vect2_t pos, char *str, int len)
-{
-    if (css->text_shadows == NULL) {
-        return;
-    }
-
-    cairo_t *cr = gr->cr;
-    struct text_shadow_t *curr_shadow = css->text_shadows->next;
-
-    struct font_style_t font_style = FONT_STYLE_CSS(css);
-    do {
-        vect2_t shadow_pos = pos;
-        if (curr_shadow->blur_radius == 0) {
-            shadow_pos.x += curr_shadow->h_offset;
-            shadow_pos.y += curr_shadow->v_offset;
-            render_text (cr, shadow_pos, &font_style, str, len, &curr_shadow->color, NULL, NULL);
-        } else {
-            PangoLayout *text_layout = new_pango_layout_from_style (cr, &font_style);
-            PangoRectangle logical;
-            pango_layout_set_text (text_layout, str, len);
-            pango_layout_get_pixel_extents (text_layout, NULL, &logical);
-
-            cairo_surface_t *single_shadow = 
-                cairo_image_surface_create (CAIRO_FORMAT_ARGB32,
-                                            logical.width + 2*curr_shadow->blur_radius,
-                                            logical.height + 2*curr_shadow->blur_radius);
-            cairo_t *shadow_cr = cairo_create (single_shadow);
-            vect2_t tmp_pos = VECT2(curr_shadow->blur_radius, curr_shadow->blur_radius);
-            render_text (shadow_cr, tmp_pos, &font_style, str, len, &curr_shadow->color, NULL, NULL);
-            css_gaussian_blur (single_shadow, curr_shadow->blur_radius);
-
-            shadow_pos.x += curr_shadow->h_offset - curr_shadow->blur_radius;
-            shadow_pos.y += curr_shadow->v_offset - curr_shadow->blur_radius;
-            cairo_set_source_surface (cr, single_shadow, shadow_pos.x, shadow_pos.y);
-            cairo_paint (cr);
-        }
-        curr_shadow = curr_shadow->next;
-    } while (curr_shadow != css->text_shadows->next);
-}
-
 void draw_inset_shadows (app_graphics_t *gr, struct css_box_t *css, layout_box_t *layout,
                          struct rounded_box_t *padding_box)
 {
@@ -1347,9 +1307,9 @@ void draw_inset_shadows (app_graphics_t *gr, struct css_box_t *css, layout_box_t
     }
 
     cairo_t *cr = gr->cr;
-    struct box_shadow_t *curr_shadow = css->inset_shadows->next;
+    struct box_shadow_t *curr_shadow = css->inset_shadows;
 
-    do {
+    while (curr_shadow != NULL) {
         struct rounded_box_t shadow_box = *padding_box;
         shadow_box.x += curr_shadow->h_offset + curr_shadow->spread_distance;
         shadow_box.y += curr_shadow->v_offset + curr_shadow->spread_distance;
@@ -1386,7 +1346,48 @@ void draw_inset_shadows (app_graphics_t *gr, struct css_box_t *css, layout_box_t
 
         }
         curr_shadow = curr_shadow->next;
-    } while (curr_shadow != css->inset_shadows->next);
+    }
+}
+
+void draw_text_shadows (app_graphics_t *gr, struct css_box_t *css,
+                        vect2_t pos, char *str, int len)
+{
+    if (css->text_shadows == NULL) {
+        return;
+    }
+
+    cairo_t *cr = gr->cr;
+    struct text_shadow_t *curr_shadow = css->text_shadows;
+
+    struct font_style_t font_style = FONT_STYLE_CSS(css);
+    while (curr_shadow != NULL) {
+        vect2_t shadow_pos = pos;
+        if (curr_shadow->blur_radius == 0) {
+            shadow_pos.x += curr_shadow->h_offset;
+            shadow_pos.y += curr_shadow->v_offset;
+            render_text (cr, shadow_pos, &font_style, str, len, &curr_shadow->color, NULL, NULL);
+        } else {
+            PangoLayout *text_layout = new_pango_layout_from_style (cr, &font_style);
+            PangoRectangle logical;
+            pango_layout_set_text (text_layout, str, len);
+            pango_layout_get_pixel_extents (text_layout, NULL, &logical);
+
+            cairo_surface_t *single_shadow = 
+                cairo_image_surface_create (CAIRO_FORMAT_ARGB32,
+                                            logical.width + 2*curr_shadow->blur_radius,
+                                            logical.height + 2*curr_shadow->blur_radius);
+            cairo_t *shadow_cr = cairo_create (single_shadow);
+            vect2_t tmp_pos = VECT2(curr_shadow->blur_radius, curr_shadow->blur_radius);
+            render_text (shadow_cr, tmp_pos, &font_style, str, len, &curr_shadow->color, NULL, NULL);
+            css_gaussian_blur (single_shadow, curr_shadow->blur_radius);
+
+            shadow_pos.x += curr_shadow->h_offset - curr_shadow->blur_radius;
+            shadow_pos.y += curr_shadow->v_offset - curr_shadow->blur_radius;
+            cairo_set_source_surface (cr, single_shadow, shadow_pos.x, shadow_pos.y);
+            cairo_paint (cr);
+        }
+        curr_shadow = curr_shadow->next;
+    }
 }
 
 // NOTE: We draw assuming the option box-sizing: border-box. Which means
@@ -1529,13 +1530,7 @@ void css_add_text_shadow (mem_pool_t *pool, struct css_box_t *css,
     new_text_shadow->blur_radius = blur_radius;
     new_text_shadow->color = color;
 
-    if (css->text_shadows != NULL) {
-        new_text_shadow->next = css->text_shadows;
-        css->text_shadows->next = new_text_shadow;
-    } else {
-        new_text_shadow->next = new_text_shadow;
-    }
-
+    new_text_shadow->next = css->text_shadows;
     css->text_shadows = new_text_shadow;
 }
 
@@ -1559,13 +1554,7 @@ void css_add_box_shadow (mem_pool_t *pool, struct css_box_t *css,
         box_shadow_list = &css->outset_shadows;
     }
 
-    if (*box_shadow_list != NULL) {
-        new_box_shadow->next = (*box_shadow_list)->next;
-        (*box_shadow_list)->next = new_box_shadow;
-    } else {
-        new_box_shadow->next = new_box_shadow;
-    }
-
+    new_box_shadow->next = *box_shadow_list;
     *box_shadow_list = new_box_shadow;
 }
 
