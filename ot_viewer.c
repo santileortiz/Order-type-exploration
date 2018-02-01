@@ -163,6 +163,7 @@ xcb_atom_t get_x11_atom (xcb_connection_t *c, const char *value)
     if (err != NULL) {
         printf ("Error while requesting atom.\n");
         free (err);
+        return res;
     }
     res = reply->atom;
     free(reply);
@@ -199,63 +200,52 @@ enum cached_atom_names_t {
 
 xcb_atom_t xcb_atoms_cache[NUM_ATOMS_CACHE];
 
-// TODO: Batch all these get_x11_atom() requests. Can we generate this
-// automatically with some macro-fu?
+struct atom_enum_name_t {
+    enum cached_atom_names_t id;
+    char *name;
+};
+
 void init_x11_atoms (struct x_state *x_st)
 {
-    xcb_atoms_cache[LOC_ATOM_WM_DELETE_WINDOW] =
-        get_x11_atom (x_st->xcb_c, "WM_DELETE_WINDOW");
+    struct atom_enum_name_t atom_arr[] = {
+        {LOC_ATOM_WM_DELETE_WINDOW, "WM_DELETE_WINDOW"},
+        {LOC_ATOM__NET_WM_SYNC_REQUEST, "_NET_WM_SYNC_REQUEST"},
+        {LOC_ATOM__NET_WM_SYNC__REQUEST_COUNTER, "_NET_WM_SYNC__REQUEST_COUNTER"},
+        {LOC_ATOM__NET_WM_SYNC, "_NET_WM_SYNC"},
+        {LOC_ATOM__NET_WM_FRAME_DRAWN, "_NET_WM_FRAME_DRAWN"},
+        {LOC_ATOM__NET_WM_FRAME_TIMINGS, "_NET_WM_FRAME_TIMINGS"},
+        {LOC_ATOM_WM_PROTOCOLS, "WM_PROTOCOLS"},
+        {LOC_ATOM_CLIPBOARD, "CLIPBOARD"},
+        {LOC_ATOM__CLIPBOARD_CONTENT, "_CLIPBOARD_CONTENT"},
+        {LOC_ATOM_TARGETS, "TARGETS"},
+        {LOC_ATOM_TIMESTAMP, "TIMESTAMP"},
+        {LOC_ATOM_MULTIPLE, "MULTIPLE"},
+        {LOC_ATOM_UTF8_STRING, "UTF8_STRING"},
+        {LOC_ATOM_TEXT, "TEXT"},
+        {LOC_ATOM_TEXT_MIME, "text/plain"},
+        {LOC_ATOM_TEXT_MIME_CHARSET, "text/plain;charset=utf-8"},
+        {LOC_ATOM_ATOM_PAIR, "ATOM_PAIR"}
+    };
 
+    xcb_intern_atom_cookie_t cookies[ARRAY_SIZE(atom_arr)];
 
-    xcb_atoms_cache[LOC_ATOM__NET_WM_SYNC_REQUEST] =
-        get_x11_atom (x_st->xcb_c, "_NET_WM_SYNC_REQUEST");
+    int i;
+    for (i=0; i<ARRAY_SIZE(atom_arr); i++) {
+        char *name = atom_arr[i].name;
+        cookies[i] = xcb_intern_atom (x_st->xcb_c, 0, strlen(name), name);
+    }
 
-    xcb_atoms_cache[LOC_ATOM__NET_WM_SYNC__REQUEST_COUNTER] =
-        get_x11_atom (x_st->xcb_c, "_NET_WM_SYNC__REQUEST_COUNTER");
-
-    xcb_atoms_cache[LOC_ATOM__NET_WM_SYNC] =
-        get_x11_atom (x_st->xcb_c, "_NET_WM_SYNC");
-
-    xcb_atoms_cache[LOC_ATOM__NET_WM_FRAME_DRAWN] =
-        get_x11_atom (x_st->xcb_c, "_NET_WM_FRAME_DRAWN");
-
-    xcb_atoms_cache[LOC_ATOM__NET_WM_FRAME_TIMINGS] =
-        get_x11_atom (x_st->xcb_c, "_NET_WM_FRAME_TIMINGS");
-
-
-    xcb_atoms_cache[LOC_ATOM_WM_PROTOCOLS] =
-        get_x11_atom (x_st->xcb_c, "WM_PROTOCOLS");
-
-
-    xcb_atoms_cache[LOC_ATOM_CLIPBOARD] =
-        get_x11_atom (x_st->xcb_c, "CLIPBOARD");
-
-    xcb_atoms_cache[LOC_ATOM__CLIPBOARD_CONTENT] =
-        get_x11_atom (x_st->xcb_c, "_CLIPBOARD_CONTENT");
-
-    xcb_atoms_cache[LOC_ATOM_TARGETS] =
-        get_x11_atom (x_st->xcb_c, "TARGETS");
-
-    xcb_atoms_cache[LOC_ATOM_TIMESTAMP] =
-        get_x11_atom (x_st->xcb_c, "TIMESTAMP");
-
-    xcb_atoms_cache[LOC_ATOM_MULTIPLE] =
-        get_x11_atom (x_st->xcb_c, "MULTIPLE");
-
-    xcb_atoms_cache[LOC_ATOM_UTF8_STRING] =
-        get_x11_atom (x_st->xcb_c, "UTF8_STRING");
-
-    xcb_atoms_cache[LOC_ATOM_TEXT] =
-        get_x11_atom (x_st->xcb_c, "TEXT");
-
-    xcb_atoms_cache[LOC_ATOM_TEXT_MIME] =
-        get_x11_atom (x_st->xcb_c, "text/plain");
-
-    xcb_atoms_cache[LOC_ATOM_TEXT_MIME_CHARSET] =
-        get_x11_atom (x_st->xcb_c, "text/plain;charset=utf-8");
-
-    xcb_atoms_cache[LOC_ATOM_ATOM_PAIR] =
-        get_x11_atom (x_st->xcb_c, "ATOM_PAIR");
+    for (i=0; i<ARRAY_SIZE(atom_arr); i++) {
+        xcb_generic_error_t *err = NULL;
+        xcb_intern_atom_reply_t *reply = xcb_intern_atom_reply (x_st->xcb_c, cookies[i], &err);
+        if (err != NULL) {
+            printf ("Error while requesting atom in batch.\n");
+            free (err);
+            continue;
+        }
+        xcb_atoms_cache[atom_arr[i].id] = reply->atom;
+        free (reply);
+    }
 }
 
 char* get_x11_atom_name (xcb_connection_t *c, xcb_atom_t atom, mem_pool_t *pool)
