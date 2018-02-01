@@ -146,6 +146,7 @@ struct x_state {
     xcb_timestamp_t last_timestamp; // Last server time received in an event.
     xcb_sync_counter_t counters[2];
     xcb_sync_int64_t counter_val;
+    mem_pool_temp_marker_t transient_pool_flush;
     mem_pool_t transient_pool;
 
     xcb_timestamp_t clipboard_ownership_timestamp;
@@ -856,54 +857,54 @@ void handle_selection_request_event (struct x_state *x_st,
                              global_gui_st->clipboard_str,
                              false);
 
-    //} else if (target == xcb_atoms_cache[LOC_ATOM_MULTIPLE]) {
-    //    bool refuse_request = false;
-    //    if (selection_request_ev->property != XCB_ATOM_NONE) {
-    //        size_t len;
-    //        xcb_atom_t type;
-    //        void * value =
-    //            get_x11_property (x_st->xcb_c, &x_st->transient_pool,
-    //                              selection_request_ev->requestor,
-    //                              selection_request_ev->property,
-    //                              &len, &type);
-    //        if (type == xcb_atoms_cache[LOC_ATOM_ATOM_PAIR]) {
-    //            xcb_atom_t *atom_list = (xcb_atom_t*)value;
-    //            xcb_selection_request_event_t dummy_ev = *selection_request_ev;
+    } else if (target == xcb_atoms_cache[LOC_ATOM_MULTIPLE]) {
+        bool refuse_request = false;
+        if (selection_request_ev->property != XCB_ATOM_NONE) {
+            size_t len;
+            xcb_atom_t type;
+            void * value =
+                get_x11_property (x_st->xcb_c, &x_st->transient_pool,
+                                  selection_request_ev->requestor,
+                                  selection_request_ev->property,
+                                  &len, &type);
+            if (type == xcb_atoms_cache[LOC_ATOM_ATOM_PAIR]) {
+                xcb_atom_t *atom_list = (xcb_atom_t*)value;
+                xcb_selection_request_event_t dummy_ev = *selection_request_ev;
 
-    //            if (len % 2*sizeof(xcb_atom_t) == 0) {
-    //                while (len) {
-    //                    if (*atom_list == xcb_atoms_cache[LOC_ATOM_MULTIPLE]) {
-    //                        // NOTE: This would cause infinite recursion.
-    //                        refuse_request = true;
-    //                        break;
-    //                    } else {
-    //                        dummy_ev.target = *atom_list;
-    //                    }
-    //                    atom_list++;
+                if (len % 2*sizeof(xcb_atom_t) == 0) {
+                    while (len) {
+                        if (*atom_list == xcb_atoms_cache[LOC_ATOM_MULTIPLE]) {
+                            // NOTE: This would cause infinite recursion.
+                            refuse_request = true;
+                            break;
+                        } else {
+                            dummy_ev.target = *atom_list;
+                        }
+                        atom_list++;
 
-    //                    if (*atom_list == XCB_ATOM_NONE) {
-    //                        refuse_request = true;
-    //                        break;
-    //                    } else {
-    //                        dummy_ev.property = *atom_list;
-    //                    }
-    //                    atom_list++;
+                        if (*atom_list == XCB_ATOM_NONE) {
+                            refuse_request = true;
+                            break;
+                        } else {
+                            dummy_ev.property = *atom_list;
+                        }
+                        atom_list++;
 
-    //                    handle_selection_request_event (x_st, &dummy_ev, NULL);
-    //                    atom_list += 2;
-    //                    len -= 2*sizeof(xcb_atom_t);
-    //                }
-    //            } else {
-    //                refuse_request = true;
-    //            }
-    //        }
-    //    } else {
-    //        refuse_request = true;
-    //    }
+                        handle_selection_request_event (x_st, &dummy_ev, NULL);
+                        atom_list += 2;
+                        len -= 2*sizeof(xcb_atom_t);
+                    }
+                } else {
+                    refuse_request = true;
+                }
+            }
+        } else {
+            refuse_request = true;
+        }
 
-    //    if (refuse_request) {
-    //        selection_request_ev->property = XCB_ATOM_NONE;
-    //    }
+        if (refuse_request) {
+            selection_request_ev->property = XCB_ATOM_NONE;
+        }
     } else {
         // NOTE: Unknown target.
         selection_request_ev->property = XCB_ATOM_NONE;
@@ -920,6 +921,113 @@ void handle_selection_request_event (struct x_state *x_st,
     }
 }
 
+void x11_handle_selections (struct x_state *x_st, struct gui_state_t *gui_st, xcb_generic_event_t *event)
+{
+    switch (event->response_type & ~0x80) {
+        case XCB_SELECTION_REQUEST:
+            {
+                xcb_selection_request_event_t *selection_request_ev =
+                    (xcb_selection_request_event_t*)event;
+
+#ifdef DEBUG_X11_SELECTIONS
+                printf ("\n----SELECTION REQUEST EVENT [RECEIVED]-----\n");
+                print_selection_request_event (x_st, selection_request_ev);
+#endif
+
+                xcb_generic_event_t evt = {0};
+                xcb_selection_notify_event_t *reply = (xcb_selection_notify_event_t*)&evt;
+                handle_selection_request_event (x_st, selection_request_ev, reply);
+
+                x11_send_event (x_st->xcb_c, selection_request_ev->requestor, reply);
+
+#ifdef DEBUG_X11_SELECTIONS
+                printf ("\n------SELECTION NOTIFY EVENT [SENT]------\n");
+                print_selection_notify_event (x_st, reply);
+#endif
+            } break;
+        case XCB_SELECTION_NOTIFY:
+            {
+                xcb_selection_notify_event_t *selection_notify_ev =
+                    (xcb_selection_notify_event_t*)event;
+
+#ifdef DEBUG_X11_SELECTIONS
+                printf ("\n------SELECTION NOTIFY EVENT [RECEIVED]------\n");
+                print_selection_notify_event (x_st, selection_notify_ev);
+#endif
+
+                if (selection_notify_ev->property == XCB_ATOM_NONE) {
+                    break;
+                }
+
+                if (selection_notify_ev->target == XCB_ATOM_STRING) {
+                    // TODO: We should convert from latin1 to UTF8 here.
+                    printf ("Best target match for selection owner is STRING"
+                            " but we don't support conversion from latin1 to"
+                            " utf8 yet!\n");
+
+                } else if (selection_notify_ev->target == xcb_atoms_cache[LOC_ATOM_UTF8_STRING] ||
+                           selection_notify_ev->target == xcb_atoms_cache[LOC_ATOM_TEXT_MIME_CHARSET] ||
+                           selection_notify_ev->target == xcb_atoms_cache[LOC_ATOM_TEXT_MIME]) {
+                    free (gui_st->clipboard_str);
+                    gui_st->clipboard_str =
+                        get_x11_text_property (x_st->xcb_c, NULL,
+                                               x_st->window,
+                                               selection_notify_ev->property,NULL);
+                    gui_st->clipboard_ready = true;
+
+                } else if (selection_notify_ev->target == xcb_atoms_cache[LOC_ATOM_TARGETS]) {
+                    bool invalid_response = false;
+                    size_t len;
+                    xcb_atom_t type;
+                    void * value = get_x11_property (x_st->xcb_c,
+                                                     &x_st->transient_pool,
+                                                     x_st->window,
+                                                     selection_notify_ev->property,
+                                                     &len, &type);
+
+                    xcb_atom_t supported_targets[] = {xcb_atoms_cache[LOC_ATOM_UTF8_STRING],
+                                                      xcb_atoms_cache[LOC_ATOM_TEXT_MIME_CHARSET],
+                                                      xcb_atoms_cache[LOC_ATOM_TEXT_MIME], // ASCII
+                                                      XCB_ATOM_STRING}; // latin1
+                    int best_match = ARRAY_SIZE(supported_targets);
+
+                    if (type == XCB_ATOM_ATOM) {
+                        xcb_atom_t *atom_list = (xcb_atom_t*)value;
+
+                        if (len % sizeof(xcb_atom_t)) {invalid_response = true;}
+                        while (len) {
+                            int i;
+                            for (i=0; i< ARRAY_SIZE(supported_targets); i++) {
+                                if (*atom_list == supported_targets[i] && i<best_match) {
+                                    best_match = i;
+                                    break;
+                                }
+                            }
+
+                            atom_list++;
+                            len -= sizeof(xcb_atom_t);
+                        }
+                    } else {
+                        invalid_response = true;
+                    }
+
+                    if (!invalid_response) {
+                        convert_selection_request_atom (x_st, supported_targets[best_match]);
+                    } else {
+                        printf ("Invalid response to TARGETS selection conversion.\n");
+                    }
+                }
+            } break;
+        case XCB_SELECTION_CLEAR:
+            {
+                x_st->have_clipboard_ownership = false;
+                free (gui_st->clipboard_str);
+                gui_st->clipboard_str = NULL;
+                gui_st->clipboard_ready = false;
+            } break;
+    }
+}
+
 int main (void)
 {
     // Setup clocks
@@ -931,6 +1039,7 @@ int main (void)
     // performance issues, but for cases when we need Xlib functions we have an
     // Xlib Display too.
     struct x_state *x_st = &global_x11_state;
+    x_st->transient_pool_flush = mem_pool_begin_temporary_memory (&x_st->transient_pool);
 
     x_st->xlib_dpy = XOpenDisplay (NULL);
     if (!x_st->xlib_dpy) {
@@ -1018,106 +1127,10 @@ int main (void)
             // care about the source of the event.
             switch (event->response_type & ~0x80) {
                 case XCB_SELECTION_REQUEST:
-                    {
-                        xcb_selection_request_event_t *selection_request_ev =
-                            (xcb_selection_request_event_t*)event;
-
-#ifdef DEBUG_X11_SELECTIONS
-                        printf ("\n----SELECTION REQUEST EVENT [RECEIVED]-----\n");
-                        print_selection_request_event (x_st, selection_request_ev);
-#endif
-
-                        xcb_generic_event_t evt = {0};
-                        xcb_selection_notify_event_t *reply = (xcb_selection_notify_event_t*)&evt;
-                        handle_selection_request_event (x_st, selection_request_ev, reply);
-
-                        x11_send_event (x_st->xcb_c, selection_request_ev->requestor, reply);
-
-#ifdef DEBUG_X11_SELECTIONS
-                        printf ("\n------SELECTION NOTIFY EVENT [SENT]------\n");
-                        print_selection_notify_event (x_st, reply);
-#endif
-                    } break;
                 case XCB_SELECTION_NOTIFY:
-                    {
-                        xcb_selection_notify_event_t *selection_notify_ev =
-                            (xcb_selection_notify_event_t*)event;
-
-#ifdef DEBUG_X11_SELECTIONS
-                        printf ("\n------SELECTION NOTIFY EVENT [RECEIVED]------\n");
-                        print_selection_notify_event (x_st, selection_notify_ev);
-#endif
-
-                        if (selection_notify_ev->property == XCB_ATOM_NONE) {
-                            break;
-                        }
-
-                        if (selection_notify_ev->target == XCB_ATOM_STRING) {
-                            // TODO: We should convert from latin1 to UTF8 here.
-                            printf ("Best target match for selection owner is STRING"
-                                    " but we don't support conversion from latin1 to"
-                                    " utf8 yet!\n");
-
-                        } else if (selection_notify_ev->target == xcb_atoms_cache[LOC_ATOM_UTF8_STRING] ||
-                                   selection_notify_ev->target == xcb_atoms_cache[LOC_ATOM_TEXT_MIME_CHARSET] ||
-                                   selection_notify_ev->target == xcb_atoms_cache[LOC_ATOM_TEXT_MIME]) {
-                            free (st->gui_st.clipboard_str);
-                            st->gui_st.clipboard_str =
-                                get_x11_text_property (x_st->xcb_c, NULL,
-                                                       x_st->window,
-                                                       selection_notify_ev->property,NULL);
-                            st->gui_st.clipboard_ready = true;
-
-                        } else if (selection_notify_ev->target == xcb_atoms_cache[LOC_ATOM_TARGETS]) {
-                            bool invalid_response = false;
-                            size_t len;
-                            xcb_atom_t type;
-                            void * value = get_x11_property (x_st->xcb_c,
-                                                             &x_st->transient_pool,
-                                                             x_st->window,
-                                                             selection_notify_ev->property,
-                                                             &len, &type);
-
-                            xcb_atom_t supported_targets[] = {xcb_atoms_cache[LOC_ATOM_UTF8_STRING],
-                                                              xcb_atoms_cache[LOC_ATOM_TEXT_MIME_CHARSET],
-                                                              xcb_atoms_cache[LOC_ATOM_TEXT_MIME], // ASCII
-                                                              XCB_ATOM_STRING}; // latin1
-                            int best_match = ARRAY_SIZE(supported_targets);
-
-                            if (type == XCB_ATOM_ATOM) {
-                                xcb_atom_t *atom_list = (xcb_atom_t*)value;
-
-                                if (len % sizeof(xcb_atom_t)) {invalid_response = true;}
-                                while (len) {
-                                    int i;
-                                    for (i=0; i< ARRAY_SIZE(supported_targets); i++) {
-                                        if (*atom_list == supported_targets[i] && i<best_match) {
-                                            best_match = i;
-                                            break;
-                                        }
-                                    }
-
-                                    atom_list++;
-                                    len -= sizeof(xcb_atom_t);
-                                }
-                            } else {
-                                invalid_response = true;
-                            }
-
-                            if (!invalid_response) {
-                                convert_selection_request_atom (x_st, supported_targets[best_match]);
-                            } else {
-                                printf ("Invalid response to TARGETS selection conversion.\n");
-                            }
-                        }
-                    } break;
                 case XCB_SELECTION_CLEAR:
-                    {
-                        x_st->have_clipboard_ownership = false;
-                        free (st->gui_st.clipboard_str);
-                        st->gui_st.clipboard_str = NULL;
-                        st->gui_st.clipboard_ready = false;
-                    } break;
+                    x11_handle_selections (x_st, &st->gui_st, event);
+                    break;
                 case XCB_CONFIGURE_NOTIFY:
                     {
                         graphics.width = ((xcb_configure_notify_event_t*)event)->width;
@@ -1260,7 +1273,7 @@ int main (void)
         app_input.keycode = 0;
         app_input.wheel = 1;
         app_input.force_redraw = 0;
-        mem_pool_destroy (&x_st->transient_pool);
+        mem_pool_end_temporary_memory (x_st->transient_pool_flush);
     }
 
     // These don't seem to free everything according to Valgrind, so we don't
