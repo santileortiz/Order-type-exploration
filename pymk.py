@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 from mkpy.utility import *
+assert sys.version_info >= (3,2)
 
 DEP_FLAGS = '-lcairo ' \
             '-lX11-xcb ' \
@@ -31,18 +32,22 @@ def default():
     call_user_function(target)
 
 def ot_viewer ():
+    os.makedirs ("bin", exist_ok=True)
     ex ('gcc {FLAGS} -o bin/ot_viewer ot_viewer.c {DEP_FLAGS} {PANGO_FLAGS} -lcurl')
     return
 
 def search ():
+    os.makedirs ("bin", exist_ok=True)
     ex ('gcc {FLAGS} -o bin/search search.c -lm -lcurl')
     return
 
 def render_seq ():
+    os.makedirs ("bin", exist_ok=True)
     ex ('gcc {FLAGS} -o bin/render_seq render_seq.c -lcurl -lcairo -lm')
     return
 
 def save_file_to_pdf ():
+    os.makedirs ("bin", exist_ok=True)
     ex ('gcc {FLAGS} -o bin/save_file_to_pdf save_file_to_pdf.c {PANGO_FLAGS} -lcairo -lm')
 
 if __name__ == "__main__":
