@@ -1390,5 +1390,9 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
     ps_mode->redraw_panel = false;
     ps_mode->redraw_canvas = false;
 
+    if (st->end_execution) {
+        mem_pool_destroy (&ps_mode->math_memory);
+    }
+
     return blit_needed;
 }

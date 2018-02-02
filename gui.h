@@ -387,6 +387,12 @@ void default_gui_init (struct gui_state_t *gui_st)
     gui_st->selection.background_color = selected_bg_color;
 }
 
+void gui_destroy (struct gui_state_t *gui_st)
+{
+    mem_pool_destroy (&gui_st->pool);
+    mem_pool_destroy (&gui_st->thread_pool);
+}
+
 void cairo_clear (cairo_t *cr)
 {
     cairo_save (cr);
@@ -1292,6 +1298,7 @@ void draw_outset_shadows (app_graphics_t *gr, struct css_box_t *css, layout_box_
             cairo_set_source_surface (cr, single_shadow, xpos, ypos);
             cairo_paint (cr);
             cairo_surface_destroy (single_shadow);
+            cairo_destroy (shadow_cr);
         }
 
         curr_shadow = curr_shadow->next;
@@ -1353,8 +1360,10 @@ void draw_inset_shadows (app_graphics_t *gr, struct css_box_t *css, layout_box_t
             css_gaussian_blur (single_shadow, curr_shadow->blur_radius);
 
             cairo_set_source_surface (cr, single_shadow, -curr_shadow->blur_radius, -curr_shadow->blur_radius);
-            cairo_surface_destroy (single_shadow);
             cairo_paint (cr);
+
+            cairo_surface_destroy (single_shadow);
+            cairo_destroy (shadow_cr);
 
         }
         curr_shadow = curr_shadow->next;
@@ -1397,6 +1406,10 @@ void draw_text_shadows (app_graphics_t *gr, struct css_box_t *css,
             shadow_pos.y += curr_shadow->v_offset - curr_shadow->blur_radius;
             cairo_set_source_surface (cr, single_shadow, shadow_pos.x, shadow_pos.y);
             cairo_paint (cr);
+
+            cairo_surface_destroy (single_shadow);
+            cairo_destroy (shadow_cr);
+            g_object_unref (text_layout);
         }
         curr_shadow = curr_shadow->next;
     }
@@ -1458,6 +1471,7 @@ void css_box_draw (app_graphics_t *gr, struct css_box_t *box, layout_box_t *layo
         cairo_pattern_add_color_stop_rgba (patt, position, ARGS_RGBA(box->gradient_stops[stop_idx]));
         cairo_set_source (cr, patt);
         cairo_paint (cr);
+        cairo_pattern_destroy (patt);
     }
 
     draw_inset_shadows (gr, box, layout, &padding_box);

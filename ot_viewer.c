@@ -101,8 +101,10 @@ bool update_and_render (struct app_state_t *st, app_graphics_t *graphics, app_in
                 st->gui_st.input.force_redraw = true;
                 break;
             case 24: //KEY_Q
-                st->end_execution = 1;
-                return false;
+                st->end_execution = true;
+                // NOTE: We want modes to be called once after we end execution
+                // so they can do their own cleanup.
+                break;
             default:
                 //if (input.keycode >= 8) {
                 //    printf ("%" PRIu8 "\n", input.keycode);
@@ -490,7 +492,9 @@ Visual* Visual_from_visualid (Display *dpy, xcb_visualid_t visualid)
     templ.visualid = visualid;
     int n;
     XVisualInfo *found = XGetVisualInfo (dpy, VisualIDMask, &templ, &n);
-    return found->visual;
+    Visual *retval = found->visual;
+    XFree (found);
+    return retval;
 }
 
 void x11_change_property (xcb_connection_t *c, xcb_drawable_t window,
@@ -1091,6 +1095,7 @@ int main (void)
         cairo_xlib_surface_create (x_st->xlib_dpy, x_st->backbuffer, Xlib_visual,
                                    x_st->screen->width_in_pixels, x_st->screen->height_in_pixels);
     cairo_t *cr = cairo_create (surface);
+    cairo_surface_destroy (surface);
 
     xcb_map_window (x_st->xcb_c, x_st->window);
     xcb_flush (x_st->xcb_c);
@@ -1223,7 +1228,7 @@ int main (void)
                     } break;
                 default: 
                     /* Unknown event type, ignore it */
-                    continue;
+                    break;
             }
             free (event);
         }
@@ -1276,11 +1281,17 @@ int main (void)
         mem_pool_end_temporary_memory (x_st->transient_pool_flush);
     }
 
-    // These don't seem to free everything according to Valgrind, so we don't
-    // care to free them, the process will end anyway.
-    // cairo_surface_destroy(surface);
-    // cairo_destroy (cr);
-    // xcb_disconnect (x_st->xcb_c);
+    XCloseDisplay (x_st->xlib_dpy);
+    cairo_destroy (cr);
+    // NOTE: Even though we try to clean everything up Valgrind complains a
+    // lot about leaking objects. Mainly inside Pango, Glib (libgobject),
+    // libontconfig. Maybe all of that is global data that does not grow over
+    // time but I haven't found a way to check this is the case.
+
+    // These are not necessary but make valgrind complain less when debugging
+    // memory leaks.
+    gui_destroy (&st->gui_st);
+    mem_pool_destroy (&st->memory);
 
     return 0;
 }

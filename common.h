@@ -1312,8 +1312,10 @@ void file_read (int file, void *pos,  size_t size)
     }
 }
 
+// NOTE: Returns false if there was an error creating the directory.
 bool ensure_dir_exists (char *path)
 {
+    bool retval = true;
     char *dir_path = sh_expand (path, NULL);
 
     struct stat st;
@@ -1326,10 +1328,11 @@ bool ensure_dir_exists (char *path)
         char *expl = strerror (errno);
         printf ("Could not create %s: %s\n", dir_path, expl);
         free (expl);
-        return false;
+        retval = false;
     }
 
-    return true;
+    free (dir_path);
+    return retval;
 }
 
 //////////////////////////////
