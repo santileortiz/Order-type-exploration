@@ -17,7 +17,7 @@ void draw_graph (cairo_t *cr, struct grid_mode_state_t *grid_st, int id, box_t *
     cairo_set_source_rgb (cr,0,0,0);
     int i;
     for (i=0; i<2*grid_st->n; i++) {
-        vect2_t p = grid_st->points[i];
+        dvec2 p = grid_st->points[i];
         apply_transform (&graph_to_dest, &p);
         cairo_arc (cr, p.x, p.y, grid_st->point_radius, 0, 2*M_PI);
         cairo_fill (cr);
@@ -28,11 +28,11 @@ void draw_graph (cairo_t *cr, struct grid_mode_state_t *grid_st, int id, box_t *
         int e[2];
         e[0] = grid_st->edges_of_all_loops.data[id*4*grid_st->n+2*i];
         e[1] = grid_st->edges_of_all_loops.data[id*4*grid_st->n+2*i+1];
-        vect2_t p1 = grid_st->points[e[0]];
+        dvec2 p1 = grid_st->points[e[0]];
         apply_transform (&graph_to_dest, &p1);
         pixel_align_as_line (&p1, line_width);
 
-        vect2_t p2 = grid_st->points[e[1]];
+        dvec2 p2 = grid_st->points[e[1]];
         apply_transform (&graph_to_dest, &p2);
         pixel_align_as_line (&p2, line_width);
 
@@ -52,7 +52,7 @@ bool grid_mode (struct app_state_t *st, app_graphics_t *gr)
         grid_mode = st->grid_mode;
         grid_mode->n = 3;
         grid_mode->loops_computed = false;
-        grid_mode->points = mem_pool_push_array (&grid_mode->memory, 2*grid_mode->n, vect2_t);
+        grid_mode->points = mem_pool_push_array (&grid_mode->memory, 2*grid_mode->n, dvec2);
 
         grid_mode->canvas_x = 10;
         grid_mode->canvas_y = 10;

@@ -5,7 +5,7 @@
 #if !defined(GRID_MODE_H)
 struct grid_mode_state_t{
     int n;
-    vect2_t *points;
+    dvec2 *points;
     box_t points_bb;
     double point_radius;
 

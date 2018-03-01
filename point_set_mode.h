@@ -6,7 +6,7 @@
 typedef enum {triangle, segment} entity_type;
 typedef struct {
     entity_type type;
-    vect3_t color;
+    dvec3 color;
     int line_width;
 
     // NOTE: Array of indexes into (app_state_t*)st->pts
@@ -32,8 +32,8 @@ struct arrange_points_state_t {
     int *sort;
     int cvx_hull_len;
     int *cvx_hull;
-    vect2_t centroid;
-    vect2_t *tgt_hull;
+    dvec2 centroid;
+    dvec2 *tgt_hull;
     double tgt_radius;
     uint64_t steps;
 };
@@ -70,8 +70,8 @@ struct point_set_mode_t {
 
     bool view_db_ot;
     struct arrange_points_state_t alg_st;
-    vect2_t visible_pts[15];
-    vect2_t arranged_pts[15];
+    dvec2 visible_pts[15];
+    dvec2 arranged_pts[15];
     double point_radius;
     layout_box_t pts_hitboxes[15];
     int active_hitbox;

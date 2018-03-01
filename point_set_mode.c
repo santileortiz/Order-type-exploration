@@ -4,7 +4,7 @@
 
 #define CANVAS_SIZE 65535 // It's the size of the coordinate axis at 1 zoom
 
-void triangle_entity_add (struct point_set_mode_t *st, int id, vect3_t color)
+void triangle_entity_add (struct point_set_mode_t *st, int id, dvec3 color)
 {
     assert (st->num_entities < ARRAY_SIZE(st->entities));
     entity_t *next_entity = &st->entities[st->num_entities];
@@ -17,7 +17,7 @@ void triangle_entity_add (struct point_set_mode_t *st, int id, vect3_t color)
     next_entity->id = id;
 }
 
-void segment_entity_add (struct point_set_mode_t *st, int id, vect3_t color)
+void segment_entity_add (struct point_set_mode_t *st, int id, dvec3 color)
 {
     assert (st->num_entities < ARRAY_SIZE(st->entities));
     entity_t *next_entity = &st->entities[st->num_entities];
@@ -30,7 +30,7 @@ void segment_entity_add (struct point_set_mode_t *st, int id, vect3_t color)
     next_entity->id = id;
 }
 
-void draw_point (cairo_t *cr, vect2_t p, char *label, double radius, transf_t *T)
+void draw_point (cairo_t *cr, dvec2 p, char *label, double radius, transf_t *T)
 {
     if (T != NULL) {
         apply_transform (T, &p);
@@ -44,10 +44,10 @@ void draw_point (cairo_t *cr, vect2_t p, char *label, double radius, transf_t *T
     cairo_show_text (cr, label);
 }
 
-void draw_polygon (cairo_t *cr, vect2_t *polygon, int len, transf_t *T)
+void draw_polygon (cairo_t *cr, dvec2 *polygon, int len, transf_t *T)
 {
-    vect2_t pts[len];
-    memcpy (pts, polygon, sizeof(vect2_t)*len);
+    dvec2 pts[len];
+    memcpy (pts, polygon, sizeof(dvec2)*len);
     int i;
     for (i=0; i<len; i++) {
         apply_transform (T, &pts[i]);
@@ -68,7 +68,7 @@ void draw_polygon (cairo_t *cr, vect2_t *polygon, int len, transf_t *T)
     cairo_stroke (cr);
 }
 
-void draw_segment (cairo_t *cr, vect2_t p1, vect2_t p2, double line_width, transf_t *T)
+void draw_segment (cairo_t *cr, dvec2 p1, dvec2 p2, double line_width, transf_t *T)
 {
     cairo_set_line_width (cr, line_width);
 
@@ -81,7 +81,7 @@ void draw_segment (cairo_t *cr, vect2_t p1, vect2_t p2, double line_width, trans
     cairo_line_to (cr, (double)p2.x, (double)p2.y);
 }
 
-void draw_triangle (cairo_t *cr, vect2_t p1, vect2_t p2, vect2_t p3, transf_t *T)
+void draw_triangle (cairo_t *cr, dvec2 p1, dvec2 p2, dvec2 p3, transf_t *T)
 {
     draw_segment (cr, p1, p2, 3, T);
     draw_segment (cr, p2, p3, 3, T);
@@ -95,15 +95,15 @@ void draw_entities (struct point_set_mode_t *st, app_graphics_t *graphics)
     int i;
     int n = st->n.i;
 
-    vect2_t *pts = st->visible_pts;
+    dvec2 *pts = st->visible_pts;
     cairo_t *cr = graphics->cr;
     transf_t *T = &st->points_to_canvas;
 
     cairo_set_source_rgb (cr, 0, 0, 0);
     for (i=0; i<binomial(n, 2); i++) {
         subset_it_idx_for_id (i, n, idx, 2);
-        vect2_t p1 = pts[idx[0]];
-        vect2_t p2 = pts[idx[1]];
+        dvec2 p1 = pts[idx[0]];
+        dvec2 p2 = pts[idx[1]];
         draw_segment (cr, p1, p2, 1, T);
     }
     cairo_stroke (cr);
@@ -114,8 +114,8 @@ void draw_entities (struct point_set_mode_t *st, app_graphics_t *graphics)
         switch (entity->type) {
             case segment: {
                 subset_it_idx_for_id (entity->id, n, idx, 2);
-                vect2_t p1 = pts[idx[0]];
-                vect2_t p2 = pts[idx[1]];
+                dvec2 p1 = pts[idx[0]];
+                dvec2 p2 = pts[idx[1]];
                 draw_segment (cr, p1, p2, 1, T);
                 cairo_stroke (cr);
                 } break;
@@ -138,7 +138,7 @@ void draw_entities (struct point_set_mode_t *st, app_graphics_t *graphics)
 
 // A coordinate transform can be set, by giving a point in the window, the point
 // in the canvas we want mapped to it, and the zoom value.
-void compute_transform (transf_t *T, vect2_t window_pt, vect2_t canvas_pt, double zoom)
+void compute_transform (transf_t *T, dvec2 window_pt, dvec2 canvas_pt, double zoom)
 {
     T->scale_x = zoom;
     T->scale_y = -zoom;
@@ -158,8 +158,8 @@ void focus_order_type (app_graphics_t *graphics, struct point_set_mode_t *st)
     double x_center = ((graphics->width - 2*WINDOW_MARGIN) - BOX_WIDTH(box)*st->zoom)/2;
     double y_center = ((graphics->height - 2*WINDOW_MARGIN) - BOX_HEIGHT(box)*st->zoom)/2;
     compute_transform (&st->points_to_canvas,
-                       VECT2(WINDOW_MARGIN+x_center, WINDOW_MARGIN+y_center),
-                       VECT2(box.min.x, box.max.y), st->zoom);
+                       DVEC2(WINDOW_MARGIN+x_center, WINDOW_MARGIN+y_center),
+                       DVEC2(box.min.x, box.max.y), st->zoom);
     st->redraw_canvas = true;
 }
 
@@ -168,31 +168,31 @@ void focus_order_type (app_graphics_t *graphics, struct point_set_mode_t *st)
 // found in the database. A more in depth discussion about it's design can be
 // found in the file auto_positioning_points.txt.
 
-void angular_force (vect2_t *points, order_type_t *ot, int v, int s_m, int p, int s_p, double h, vect2_t *res)
+void angular_force (dvec2 *points, order_type_t *ot, int v, int s_m, int p, int s_p, double h, dvec2 *res)
 {
-    vect2_t vs_m = vect2_subs (points[s_m], points[v]);
-    vect2_t vp = vect2_subs (points[p], points[v]);
-    vect2_t vs_p = vect2_subs (points[s_p], points[v]);
+    dvec2 vs_m = dvec2_subs (points[s_m], points[v]);
+    dvec2 vp = dvec2_subs (points[p], points[v]);
+    dvec2 vs_p = dvec2_subs (points[s_p], points[v]);
 
-    double ang_a = vect2_clockwise_angle_between (vs_m, vp);
-    double ang_b = vect2_clockwise_angle_between (vp, vs_p);
-    if (!in_cone (vs_m, VECT2(0,0), vs_p, vp)) {
-        double ang_c = vect2_clockwise_angle_between (vs_m, vs_p);
-        if (vect2_clockwise_angle_between (vs_p, vp) < (2*M_PI-ang_c)/2) {
-            ang_b = -vect2_angle_between (vs_p, vp);
+    double ang_a = dvec2_clockwise_angle_between (vs_m, vp);
+    double ang_b = dvec2_clockwise_angle_between (vp, vs_p);
+    if (!in_cone (vs_m, DVEC2(0,0), vs_p, vp)) {
+        double ang_c = dvec2_clockwise_angle_between (vs_m, vs_p);
+        if (dvec2_clockwise_angle_between (vs_p, vp) < (2*M_PI-ang_c)/2) {
+            ang_b = -dvec2_angle_between (vs_p, vp);
         } else {
-            ang_a = -vect2_angle_between (vs_m, vp);
+            ang_a = -dvec2_angle_between (vs_m, vp);
         }
     }
 
-    vect2_t force_p = VECT2 (vp.y, -vp.x); // Clockwise perpendicular vector to vp
-    vect2_normalize (&force_p);
-    vect2_mult_to (&force_p, (ang_b-ang_a)/(ang_a+ang_b)*h);
-    vect2_add_to (&res[p], force_p);
+    dvec2 force_p = DVEC2 (vp.y, -vp.x); // Clockwise perpendicular vector to vp
+    dvec2_normalize (&force_p);
+    dvec2_mult_to (&force_p, (ang_b-ang_a)/(ang_a+ang_b)*h);
+    dvec2_add_to (&res[p], force_p);
 
     //if (p==0) {
     //    printf ("v: %d, (%d, %d, %d) = ", v, s_m, p, s_p);
-    //    vect2_print (&force_p);
+    //    dvec2_print (&force_p);
     //}
 }
 
@@ -200,28 +200,28 @@ void angular_force (vect2_t *points, order_type_t *ot, int v, int s_m, int p, in
 // distance and length. When adding the resulting vector to a and it's inverse
 // to b it effectively moves points closer to being at distance length. The
 // value h is a positive value that determines the strength of the force.
-vect2_t spring_force_pts (vect2_t a, vect2_t b, double length, double h)
+dvec2 spring_force_pts (dvec2 a, dvec2 b, double length, double h)
 {
-    vect2_t res;
-    vect2_t force = vect2_subs (b, a);
-    double d = vect2_norm (force);
+    dvec2 res;
+    dvec2 force = dvec2_subs (b, a);
+    double d = dvec2_norm (force);
     if (d > 0) {
-        vect2_normalize (&force);
-        res = vect2_mult (force, h*(d-length));
+        dvec2_normalize (&force);
+        res = dvec2_mult (force, h*(d-length));
     } else {
-        res = VECT2(0,0);
+        res = DVEC2(0,0);
     }
     return res;
 }
 
-vect2_t spring_force (vect2_t *points, int a, int b, double length, double h)
+dvec2 spring_force (dvec2 *points, int a, int b, double length, double h)
 {
-    vect2_t p = points[a];
-    vect2_t p_next = points[b];
+    dvec2 p = points[a];
+    dvec2 p_next = points[b];
     return spring_force_pts (p, p_next, length, h);
 }
 
-void arrange_points_start (struct arrange_points_state_t *alg_st, order_type_t *ot, vect2_t *points)
+void arrange_points_start (struct arrange_points_state_t *alg_st, order_type_t *ot, dvec2 *points)
 {
     int len = ot->n;
     *alg_st = (struct arrange_points_state_t){0};
@@ -237,32 +237,32 @@ void arrange_points_start (struct arrange_points_state_t *alg_st, order_type_t *
     alg_st->cvx_hull = mem_pool_push_size(&alg_st->pool, sizeof(int)*len);
     convex_hull (ot, alg_st->cvx_hull, &alg_st->cvx_hull_len);
 
-    vect2_t cvx_hull_v2[len];
-    vect2_idx_to_array (points, alg_st->cvx_hull, cvx_hull_v2, alg_st->cvx_hull_len);
+    dvec2 cvx_hull_v2[len];
+    dvec2_idx_to_array (points, alg_st->cvx_hull, cvx_hull_v2, alg_st->cvx_hull_len);
     alg_st->centroid = polygon_centroid (cvx_hull_v2, alg_st->cvx_hull_len);
 
-    alg_st->tgt_hull = mem_pool_push_size(&alg_st->pool, sizeof(vect2_t)*alg_st->cvx_hull_len);
+    alg_st->tgt_hull = mem_pool_push_size(&alg_st->pool, sizeof(dvec2)*alg_st->cvx_hull_len);
     convex_point_set_radius (alg_st->cvx_hull_len, 0,
                              points[alg_st->cvx_hull[0]], alg_st->centroid,
                              alg_st->tgt_hull);
-    alg_st->tgt_radius = vect2_norm (vect2_subs(points[alg_st->cvx_hull[0]], alg_st->centroid));
+    alg_st->tgt_radius = dvec2_norm (dvec2_subs(points[alg_st->cvx_hull[0]], alg_st->centroid));
     alg_st->steps = 0;
 }
 
 // Returns true if the resulting point set is good enough to show to the user.
-bool arrange_points_end (struct arrange_points_state_t *alg_st, vect2_t *points, int len)
+bool arrange_points_end (struct arrange_points_state_t *alg_st, dvec2 *points, int len)
 {
     bool res = true;
     int i;
     for (i=0; i < len; i++) {
-        vect2_round (&points[i]);
+        dvec2_round (&points[i]);
     }
 
     box_t box;
     get_bounding_box (points, len, &box);
 
     for (i=0; i < len; i++) {
-        vect2_subs_to (&points[i], VECT2(box.min.x, box.min.y));
+        dvec2_subs_to (&points[i], DVEC2(box.min.x, box.min.y));
     }
 
     ot_triples_t *trip_ot = ot_triples_new (alg_st->ot, &alg_st->pool);
@@ -275,21 +275,21 @@ bool arrange_points_end (struct arrange_points_state_t *alg_st, vect2_t *points,
     return res;
 }
 
-double arrange_points_step (struct arrange_points_state_t *alg_st, vect2_t *points, int len)
+double arrange_points_step (struct arrange_points_state_t *alg_st, dvec2 *points, int len)
 {
     order_type_t *ot = alg_st->ot;
     alg_st->steps++;
 
-    vect2_t res[len];
+    dvec2 res[len];
     int i;
     for (i=0; i<len; i++) {
-        res[i] = (vect2_t){0};
+        res[i] = (dvec2){0};
     }
 
     // Compute the sum of all angular forces on a point p
-    vect2_t tmp_forces[len];
+    dvec2 tmp_forces[len];
     for (i=0; i<len; i++) {
-        tmp_forces[i] = (vect2_t){0};
+        tmp_forces[i] = (dvec2){0};
     }
     int v;
     for (v=0; v<len; v++) {
@@ -311,37 +311,37 @@ double arrange_points_step (struct arrange_points_state_t *alg_st, vect2_t *poin
     }
 
     for (i=0; i<len; i++) {
-        vect2_mult_to (&tmp_forces[i], 1);
-        vect2_add_to (&res[i], tmp_forces[i]);
+        dvec2_mult_to (&tmp_forces[i], 1);
+        dvec2_add_to (&res[i], tmp_forces[i]);
     }
 
     // Circular wall
     for (i=0; i<alg_st->cvx_hull_len; i++) {
-        vect2_t r = vect2_subs (points[alg_st->cvx_hull[i]], alg_st->centroid);
-        double dist = vect2_norm(r) - alg_st->tgt_radius;
+        dvec2 r = dvec2_subs (points[alg_st->cvx_hull[i]], alg_st->centroid);
+        double dist = dvec2_norm(r) - alg_st->tgt_radius;
         if (dist > 0) {
-            vect2_normalize (&r);
-            double norm = vect2_dot (res[alg_st->cvx_hull[i]], r);
-            vect2_mult_to (&r, -(norm + 0.01*dist));
-            vect2_add_to (&res[alg_st->cvx_hull[i]], r);
+            dvec2_normalize (&r);
+            double norm = dvec2_dot (res[alg_st->cvx_hull[i]], r);
+            dvec2_mult_to (&r, -(norm + 0.01*dist));
+            dvec2_add_to (&res[alg_st->cvx_hull[i]], r);
         }
     }
 
     //for (i=0; i<len; i++) {
-    //    vect2_print (&res[i]);
+    //    dvec2_print (&res[i]);
     //}
 
     // Move the original points by the computed force and compute the change
     // indicator.
     double change = 0;
-    vect2_t old_p_0 = points[0];
-    vect2_add_to (&points[0], res[0]);
-    //vect2_print (&res[0]);
+    dvec2 old_p_0 = points[0];
+    dvec2_add_to (&points[0], res[0]);
+    //dvec2_print (&res[0]);
     for (i=1; i<len; i++) {
-        double old_dist = vect2_distance (&old_p_0, &points[i]);
-        vect2_add_to (&points[i], res[i]);
-        //vect2_print (&res[i]);
-        double new_dist = vect2_distance (&points[0], &points[i]);
+        double old_dist = dvec2_distance (&old_p_0, &points[i]);
+        dvec2_add_to (&points[i], res[i]);
+        //dvec2_print (&res[i]);
+        double new_dist = dvec2_distance (&points[0], &points[i]);
         change = MAX(change, fabs(old_dist-new_dist));
     }
 
@@ -355,12 +355,12 @@ void move_hitbox (struct point_set_mode_t *ps_mode)
     layout_box_t *hitbox = &ps_mode->pts_hitboxes[i];
     transf_t *T = &ps_mode->points_to_canvas;
 
-    vect2_t delta_canvas = gui_st->ptr_delta;
+    dvec2 delta_canvas = gui_st->ptr_delta;
     apply_inverse_transform_distance (T, &delta_canvas);
-    vect2_add_to (&ps_mode->visible_pts[i], delta_canvas);
+    dvec2_add_to (&ps_mode->visible_pts[i], delta_canvas);
 
-    vect2_add_to (&hitbox->box.min, gui_st->ptr_delta);
-    vect2_add_to (&hitbox->box.max, gui_st->ptr_delta);
+    dvec2_add_to (&hitbox->box.min, gui_st->ptr_delta);
+    dvec2_add_to (&hitbox->box.max, gui_st->ptr_delta);
 }
 
 void move_hitbox_int (struct point_set_mode_t *ps_mode)
@@ -370,13 +370,13 @@ void move_hitbox_int (struct point_set_mode_t *ps_mode)
     layout_box_t *hitbox = &ps_mode->pts_hitboxes[i];
     transf_t *T = &ps_mode->points_to_canvas;
 
-    vect2_t ptr = gui_st->input.ptr;
+    dvec2 ptr = gui_st->input.ptr;
     apply_inverse_transform (T, &ptr);
-    vect2_round (&ptr);
+    dvec2_round (&ptr);
 
     ps_mode->visible_pts[i] = ptr;
-    vect2_add_to (&hitbox->box.min, gui_st->ptr_delta);
-    vect2_add_to (&hitbox->box.max, gui_st->ptr_delta);
+    dvec2_add_to (&hitbox->box.min, gui_st->ptr_delta);
+    dvec2_add_to (&hitbox->box.max, gui_st->ptr_delta);
 }
 
 struct arrange_work_t {
@@ -423,7 +423,7 @@ void set_ot (struct point_set_mode_t *ps_mode)
     int n = ps_mode->n.i;
     int i;
     for (i=0; i<n; i++) {
-        vect2_t pt = v2_from_v2i (ps_mode->ot->pts[i]);
+        dvec2 pt = CAST_DVEC2(ps_mode->ot->pts[i]);
         ps_mode->visible_pts[i] = pt;
         ps_mode->arranged_pts[i] = pt;
     }
@@ -477,7 +477,7 @@ bool update_button_state (struct app_state_t *st, layout_box_t *lay_box, bool *u
     bool retval = false;
     if (!(lay_box->active_selectors & CSS_SEL_DISABLED) &&
         st->gui_st.mouse_clicked[0] &&
-        is_vect2_in_box (global_gui_st->click_coord[0], lay_box->box) &&
+        is_dvec2_in_box (global_gui_st->click_coord[0], lay_box->box) &&
         (lay_box->active_selectors & CSS_SEL_HOVER)) {
         retval = true;
     }
@@ -496,13 +496,13 @@ struct positioning_info_t {
     union {
         box_t absolute;
         struct {
-            vect2_t position;
-            vect2_t size;
+            dvec2 position;
+            dvec2 size;
         };
 
         struct {
-            vect2_t anchor;
-            vect2_t weight;
+            dvec2 anchor;
+            dvec2 weight;
         };
     };
 };
@@ -537,12 +537,12 @@ void layout_box_set_position (layout_box_t *lay, struct positioning_info_t pos_i
             break;
         case LAYOUT_MODE_CONTENT_FIT:
             {
-                vect2_t layout_size = VECT2 (lay->content.width, lay->content.height);
+                dvec2 layout_size = DVEC2 (lay->content.width, lay->content.height);
                 css_cont_size_to_lay_size (lay->style, &layout_size);
 
                 lay->box.min.x = pos_info.anchor.x - layout_size.x*pos_info.weight.x;
                 lay->box.min.y = pos_info.anchor.y - layout_size.y*pos_info.weight.y;
-                lay->box.max = vect2_add (lay->box.min, layout_size);
+                lay->box.max = dvec2_add (lay->box.min, layout_size);
             } break;
         case LAYOUT_MODE_UNINITIALIZED:
             break;
@@ -551,9 +551,9 @@ void layout_box_set_position (layout_box_t *lay, struct positioning_info_t pos_i
     }
 }
 
-#define POS(x,y) (struct positioning_info_t){LAYOUT_MODE_CONTENT_FIT,{{VECT2(x,y),VECT2(0,0)}}}
-#define POS_CENTERED(x,y) (struct positioning_info_t){LAYOUT_MODE_CONTENT_FIT,{{VECT2(x,y),VECT2(0.5,0.5)}}}
-#define POS_UNINITIALIZED (struct positioning_info_t){LAYOUT_MODE_UNINITIALIZED,{{VECT2(0,0), VECT2(0,0)}}}
+#define POS(x,y) (struct positioning_info_t){LAYOUT_MODE_CONTENT_FIT,{{DVEC2(x,y),DVEC2(0,0)}}}
+#define POS_CENTERED(x,y) (struct positioning_info_t){LAYOUT_MODE_CONTENT_FIT,{{DVEC2(x,y),DVEC2(0.5,0.5)}}}
+#define POS_UNINITIALIZED (struct positioning_info_t){LAYOUT_MODE_UNINITIALIZED,{{DVEC2(0,0), DVEC2(0,0)}}}
 
 layout_box_t*
 label (char *str, struct positioning_info_t pos_info)
@@ -650,7 +650,7 @@ begin_labeled_layout (double x_pos, double y_pos,
     lay.x_pos = x_pos;
     lay.y_pos = y_pos;
     lay.container = container;
-    container->box.min = VECT2 (x_pos, y_pos);
+    container->box.min = DVEC2 (x_pos, y_pos);
     lay.x = x_pos + lay.container->style->padding_x;
     lay.y = y_pos + lay.container->style->padding_y;
     lay.x_step = x_step;
@@ -680,10 +680,10 @@ layout_box_t* labeled_text_entry (labeled_entries_layout_t *lay,
     struct labeled_layout_row_t *row = labeled_layout_new_row (lay);
 
     row->label = label (label_str, POS_UNINITIALIZED);
-    row->label->box.min = VECT2 (lay->x, lay->y);
+    row->label->box.min = DVEC2 (lay->x, lay->y);
 
     row->label->text_align_override = CSS_TEXT_ALIGN_RIGHT;
-    row->label->box.min = VECT2 (lay->x, lay->y);
+    row->label->box.min = DVEC2 (lay->x, lay->y);
 
     double label_height = row->label->content.height;
     css_cont_size_to_lay_size_w_h (row->label->style, NULL, &label_height);
@@ -707,10 +707,10 @@ layout_box_t* labeled_button (labeled_entries_layout_t *lay,
     struct labeled_layout_row_t *row = labeled_layout_new_row (lay);
 
     row->label = label (label_str, POS_UNINITIALIZED);
-    row->label->box.min = VECT2 (lay->x, lay->y);
+    row->label->box.min = DVEC2 (lay->x, lay->y);
 
     row->label->text_align_override = CSS_TEXT_ALIGN_RIGHT;
-    row->label->box.min = VECT2 (lay->x, lay->y);
+    row->label->box.min = DVEC2 (lay->x, lay->y);
 
     double label_height = row->label->content.height;
     css_cont_size_to_lay_size_w_h (row->label->style, NULL, &label_height);
@@ -863,7 +863,7 @@ void view_database_points (struct point_set_mode_t *ps_mode, app_graphics_t *gra
     if (ps_mode->ot_arrangeable) {
         int i;
         for (i=0; i<ps_mode->n.i; i++) {
-            ps_mode->visible_pts[i] = v2_from_v2i(ps_mode->ot->pts[i]);
+            ps_mode->visible_pts[i] = CAST_DVEC2(ps_mode->ot->pts[i]);
         }
         focus_order_type (graphics, ps_mode);
         ps_mode->redraw_canvas = true;
@@ -995,14 +995,14 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
         case 54: //KEY_C
             if (XCB_KEY_BUT_MASK_CONTROL & input.modifiers) {
                 if (gui_st->selection.dest != NULL) {
-                    gui_st->platform.set_clipboard_str (gui_st->selection.start,
-                                                        gui_st->selection.len);
+                    gui_st->set_clipboard_str (gui_st->selection.start,
+                                               gui_st->selection.len);
                 }
             }
             break;
         case 55: //KEY_V
             if (XCB_KEY_BUT_MASK_CONTROL & input.modifiers) {
-                gui_st->platform.get_clipboard_str ();
+                gui_st->get_clipboard_str ();
             } else {
                 if (ps_mode->ot_arrangeable) {
                     ps_mode->view_db_ot = !ps_mode->view_db_ot;
@@ -1264,13 +1264,13 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
         // doesn't have such thing.
         case 0:
             {
-                if (!is_vect2_in_box (gui_st->click_coord[0], panel->box) && gui_st->input.mouse_down[0]) {
+                if (!is_dvec2_in_box (gui_st->click_coord[0], panel->box) && gui_st->input.mouse_down[0]) {
                     bool hit = false;
                     int i;
                     for (i=0; i<ps_mode->n.i; i++) {
                         layout_box_t *hitbox = &ps_mode->pts_hitboxes[i];
 
-                        if (is_vect2_in_box (gui_st->click_coord[0], hitbox->box)) {
+                        if (is_dvec2_in_box (gui_st->click_coord[0], hitbox->box)) {
                             ps_mode->active_hitbox = i;
                             move_hitbox_int (ps_mode);
 
@@ -1324,7 +1324,7 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
         cairo_paint (cr);
 
         if (ps_mode->zoom_changed) {
-            vect2_t window_ptr_pos = input.ptr;
+            dvec2 window_ptr_pos = input.ptr;
             apply_inverse_transform (&ps_mode->points_to_canvas, &window_ptr_pos);
             compute_transform (&ps_mode->points_to_canvas, input.ptr, window_ptr_pos, ps_mode->zoom);
         }
@@ -1334,7 +1334,7 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
         for (i=0; i<ARRAY_SIZE(ps_mode->pts_hitboxes); i++) {
             layout_box_t *curr_hitbox = &ps_mode->pts_hitboxes[i];
 
-            vect2_t point = ps_mode->visible_pts[i];
+            dvec2 point = ps_mode->visible_pts[i];
             apply_transform (&ps_mode->points_to_canvas, &point);
 
             BOX_CENTER_X_Y_W_H(curr_hitbox->box,
@@ -1355,7 +1355,7 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
         subset_it_idx_for_id (ps_mode->ts_id.i, ps_mode->triangle_it->size,
                               triangles, ARRAY_SIZE(triangles));
         for (i=0; i<ps_mode->k.i; i++) {
-            vect3_t color;
+            dvec3 color;
             get_next_color (&color);
             triangle_entity_add (ps_mode, triangles[i], color);
         }

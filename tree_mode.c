@@ -275,7 +275,7 @@ void tree_layout_first_walk (layout_tree_node_t *v)
 #define tree_layout_second_walk(r,size,margins) \
     tree_layout_second_walk_helper(r,size,margins,-r->prelim,0)
 void tree_layout_second_walk_helper (layout_tree_node_t *v,
-                                     vect2_t size, vect2_t margins,
+                                     dvec2 size, dvec2 margins,
                                      double m, double l)
 {
     BOX_X_Y_W_H(*(v->box), v->prelim + m, l*(size.y+margins.y), v->width-margins.x, size.y);
@@ -336,7 +336,7 @@ void draw_permutation (cairo_t *cr, uint64_t perm_id, box_t *dest, struct tree_m
     cairo_set_source_rgb (cr,0,0,0);
     int i;
     for (i=0; i<2*tree_mode->n; i++) {
-        vect2_t p = tree_mode->points[i];
+        dvec2 p = tree_mode->points[i];
         apply_transform (&graph_to_dest, &p);
         cairo_arc (cr, p.x, p.y, tree_mode->point_radius, 0, 2*M_PI);
         cairo_fill (cr);
@@ -345,11 +345,11 @@ void draw_permutation (cairo_t *cr, uint64_t perm_id, box_t *dest, struct tree_m
     int line_width = 2;
     cairo_set_line_width (cr, line_width);
     for (i=0; i<tree_mode->n; i++) {
-        vect2_t p1 = tree_mode->points[e[2*i]];
+        dvec2 p1 = tree_mode->points[e[2*i]];
         apply_transform (&graph_to_dest, &p1);
         pixel_align_as_line (&p1, line_width);
 
-        vect2_t p2 = tree_mode->points[e[2*i+1]];
+        dvec2 p2 = tree_mode->points[e[2*i+1]];
         apply_transform (&graph_to_dest, &p2);
         pixel_align_as_line (&p2, line_width);
 
@@ -368,7 +368,7 @@ void draw_view_tree_preorder (cairo_t *cr, view_tree_node_t *v, double x, double
     dest_box.min.y = v->box.min.y+y;
     dest_box.max.y = v->box.max.y+y;
     if (v->view_type == VTN_COMPACT || v->val == -1) {
-        vect2_t p = VECT2 (dest_box.min.x + BOX_WIDTH(dest_box)/2, dest_box.min.y + BOX_HEIGHT(dest_box)/2);
+        dvec2 p = DVEC2 (dest_box.min.x + BOX_WIDTH(dest_box)/2, dest_box.min.y + BOX_HEIGHT(dest_box)/2);
         cairo_arc (cr, p.x, p.y, 7, 0, 2*M_PI);
         cairo_fill (cr);
     } else {
@@ -397,10 +397,10 @@ bool tree_mode (struct app_state_t *st, app_graphics_t *gr)
     if (!st->tree_mode) {
         st->tree_mode = mem_pool_push_size_full (&st->memory, sizeof(struct tree_mode_state_t), POOL_ZERO_INIT);
         tree_mode = st->tree_mode;
-        tree_mode->root_pos = VECT2 (100, 50);
+        tree_mode->root_pos = DVEC2 (100, 50);
         tree_mode->n = n;
         tree_mode->point_radius = 4;
-        tree_mode->points = mem_pool_push_array (&tree_mode->pool, 2*tree_mode->n, vect2_t);
+        tree_mode->points = mem_pool_push_array (&tree_mode->pool, 2*tree_mode->n, dvec2);
         bipartite_points (tree_mode->n, tree_mode->points, &tree_mode->points_bb, 1.618);
 
         tree_mode->all_perms = mem_pool_push_array (&tree_mode->pool, factorial(n)*n, int);
@@ -420,8 +420,8 @@ bool tree_mode (struct app_state_t *st, app_graphics_t *gr)
         int dest_height = (dest_width-2*tree_mode->point_radius)/BOX_AR(tree_mode->points_bb)+
             2*tree_mode->point_radius;
 
-        vect2_t dest_size = VECT2 (dest_width, dest_height);
-        vect2_t margins = VECT2 (30, 20);
+        dvec2 dest_size = DVEC2 (dest_width, dest_height);
+        dvec2 margins = DVEC2 (30, 20);
         double compact_width = 14;
 
         int ch_id;

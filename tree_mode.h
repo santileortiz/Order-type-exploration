@@ -4,10 +4,10 @@
 
 #if !defined(TREE_MODE_H)
 struct tree_mode_state_t{
-    vect2_t root_pos;
+    dvec2 root_pos;
 
     int n;
-    vect2_t *points;
+    dvec2 *points;
     box_t points_bb;
     double point_radius;
 

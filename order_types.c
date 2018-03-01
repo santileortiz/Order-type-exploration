@@ -200,7 +200,7 @@ void db_seek (order_type_t *ot, uint64_t id)
     }
 }
 
-#define order_type_size(n) (sizeof(order_type_t)+(n-1)*sizeof(vect2i_t))
+#define order_type_size(n) (sizeof(order_type_t)+(n-1)*sizeof(ivec2))
 order_type_t *order_type_new (int n, mem_pool_t *pool)
 {
     order_type_t *ret = pom_push_size (pool, order_type_size(n));
@@ -342,7 +342,7 @@ ot_triples_t *ot_triples_new (order_type_t *ot, mem_pool_t *pool)
     return ret;
 }
 
-ot_triples_t *ps_triples_new (vect2_t *points, int len, mem_pool_t *pool)
+ot_triples_t *ps_triples_new (dvec2 *points, int len, mem_pool_t *pool)
 {
     ot_triples_t *ret;
     uint32_t size = len*(len-1)*(len-2);

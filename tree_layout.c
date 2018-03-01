@@ -17,7 +17,7 @@ struct _layout_tree_node_t {
     struct _layout_tree_node_t *parent;
     struct _layout_tree_node_t *ancestor;
     struct _layout_tree_node_t *thread;
-    vect2_t pos;
+    dvec2 pos;
     uint32_t child_id; // position among its siblings
     uint32_t num_children;
     struct _layout_tree_node_t *children[1];
@@ -191,7 +191,7 @@ void tree_layout_second_walk_helper (layout_tree_node_t *v,
                                      box_t *box,
                                      double m, double l)
 {
-    v->pos = VECT2(v->prelim + m, l*(v_separation));
+    v->pos = DVEC2(v->prelim + m, l*(v_separation));
     if (box != NULL) {
         box->min.x = MIN(box->min.x, v->pos.x);
         box->min.y = MIN(box->min.y, v->pos.y);

@@ -32,13 +32,13 @@ triangle_t triangle_for_indexes (order_type_t *ot, int *idx)
     return t;
 }
 
-void transform (vect2i_t *p, transf_t *tr)
+void transform (ivec2 *p, transf_t *tr)
 {
     p->x = tr->scale_x*(double)p->x+tr->dx;
     p->y = tr->scale_y*(255-(double)p->y)+tr->dy;
 }
 
-void draw_segment (cairo_t *cr, vect2i_t p1, vect2i_t p2, double line_width, transf_t *tr)
+void draw_segment (cairo_t *cr, ivec2 p1, ivec2 p2, double line_width, transf_t *tr)
 {
     cairo_set_line_width (cr, line_width);
 
@@ -51,7 +51,7 @@ void draw_segment (cairo_t *cr, vect2i_t p1, vect2i_t p2, double line_width, tra
 
 void draw_point (cairo_t *cr, double x, double y, transf_t *tr)
 {
-    vect2i_t p;
+    ivec2 p;
     p.x = x;
     p.y = y;
     transform (&p, tr);
@@ -118,7 +118,7 @@ int main (void)
             subset_it_seek (triangle_it, triangle_set_it->idx[i]);
             t = triangle_for_indexes (ot, triangle_it->idx);
 
-            vect3_t color;
+            dvec3 color;
             get_next_color (&color);
 
             cairo_set_source_rgb (cr, color.r, color.g, color.b);
@@ -199,7 +199,7 @@ int main (void)
             subset_it_seek (triangle_it, triangle_set_it->idx[i]);
             t = triangle_for_indexes (ot, triangle_it->idx);
 
-            vect3_t color;
+            dvec3 color;
             get_next_color (&color);
 
             cairo_set_source_rgb (cr, color.r, color.g, color.b);

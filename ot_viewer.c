@@ -1122,8 +1122,8 @@ int main (void)
     struct app_state_t *st = mem_pool_push_size_full (&bootstrap, sizeof(struct app_state_t), POOL_ZERO_INIT);
     st->memory = bootstrap;
 
-    st->gui_st.platform.set_clipboard_str = x11_set_clipboard;
-    st->gui_st.platform.get_clipboard_str = x11_get_clipboard;
+    st->gui_st.set_clipboard_str = x11_set_clipboard;
+    st->gui_st.get_clipboard_str = x11_get_clipboard;
 
     while (!st->end_execution) {
         while ((event = xcb_poll_for_event (x_st->xcb_c))) {

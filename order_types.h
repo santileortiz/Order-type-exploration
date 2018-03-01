@@ -6,7 +6,7 @@
 typedef struct {
     int n;
     uint32_t id;
-    vect2i_t pts [1];
+    ivec2 pts [1];
 } order_type_t;
 
 struct {

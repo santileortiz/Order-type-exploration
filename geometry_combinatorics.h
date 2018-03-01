@@ -11,10 +11,10 @@
 
 typedef struct {
     int n;
-    vect2_t pts [1];
+    dvec2 pts [1];
 } real_point_set_t;
 
-void bipartite_points (int n, vect2_t *points, box_t *bounding_box, double bb_ar)
+void bipartite_points (int n, dvec2 *points, box_t *bounding_box, double bb_ar)
 {
     int64_t y_step = UINT8_MAX/(n-1);
 
@@ -41,11 +41,11 @@ void bipartite_points (int n, vect2_t *points, box_t *bounding_box, double bb_ar
 }
 
 typedef struct {
-    vect2i_t v [2];
+    ivec2 v [2];
 } segment_t;
 
 typedef struct {
-    vect2i_t v [3];
+    ivec2 v [3];
 } triangle_t;
 #define TRIANGLE(ot,a,b,c) (triangle_t){{ot->pts[a],ot->pts[b],ot->pts[c]}}
 #define TRIANGLE_IDXS(ot,idx) TRIANGLE(ot, idx[0], idx[1], idx[2])
@@ -66,20 +66,20 @@ typedef struct {
 } triangle_set_t;
 #define triangle_set_size(n) (sizeof(triangle_set_t)+(n-1)*sizeof(triangle_t))
 
-int64_t area_2_i (vect2i_t a, vect2i_t b, vect2i_t c)
+int64_t area_2_i (ivec2 a, ivec2 b, ivec2 c)
 {
     return (b.x-a.x)*(c.y-a.y) - 
            (c.x-a.x)*(b.y-a.y);
 }
 
 // true if point c is to the left of a-->b
-bool left_i (vect2i_t a, vect2i_t b, vect2i_t c)
+bool left_i (ivec2 a, ivec2 b, ivec2 c)
 {
     return area_2_i (a, b, c) > 0;
 }
 
 // true if point c is to the left or on a-->b
-bool left_on_i (vect2i_t a, vect2i_t b, vect2i_t c)
+bool left_on_i (ivec2 a, ivec2 b, ivec2 c)
 {
     return area_2_i (a, b, c) >= 0;
 }
@@ -87,7 +87,7 @@ bool left_on_i (vect2i_t a, vect2i_t b, vect2i_t c)
 // Returns true if the segment ap is between the cone spanned clockwise between
 // a0, a, and a1, where a is the apex.
 // NOTE: borders of the cone are defined as being inside the cone.
-bool in_cone_i (vect2i_t a0, vect2i_t a, vect2i_t a1, vect2i_t p)
+bool in_cone_i (ivec2 a0, ivec2 a, ivec2 a1, ivec2 p)
 {
     if (left_on_i (a, a1, a0)) {
         // The cone is convex
@@ -97,7 +97,7 @@ bool in_cone_i (vect2i_t a0, vect2i_t a, vect2i_t a1, vect2i_t p)
     }
 }
 
-int segments_intersect  (vect2i_t s1p1, vect2i_t s1p2, vect2i_t s2p1, vect2i_t s2p2)
+int segments_intersect  (ivec2 s1p1, ivec2 s1p2, ivec2 s2p1, ivec2 s2p2)
 {
     return
         (!left_i (s1p1, s1p2, s2p1) ^ !left_i (s1p1, s1p2, s2p2)) &&
@@ -108,7 +108,7 @@ int segments_intersect  (vect2i_t s1p1, vect2i_t s1p2, vect2i_t s2p1, vect2i_t s
 // a0, a, and a1, where a is the apex.
 // NOTE: borders of the cone are defined as being inside the cone up to some
 // epsilon.
-bool in_cone (vect2_t a0, vect2_t a, vect2_t a1, vect2_t p)
+bool in_cone (dvec2 a0, dvec2 a, dvec2 a1, dvec2 p)
 {
     if (left_on (a, a1, a0)) {
         // The cone is convex
@@ -137,77 +137,77 @@ int count_common_vertices (triangle_t *a, triangle_t *b)
 // where res[0] = p0, the first edge is in the direction towards p1 and the
 // polygon lies to the right of this first edge. If r==0 then we set it to the
 // value necessary so that p0-->p1 is an edge.
-void convex_point_set (int n, double r, vect2_t p0, vect2_t p1, vect2_t *res)
+void convex_point_set (int n, double r, dvec2 p0, dvec2 p1, dvec2 *res)
 {
-    assert (!vect_equal (&p0,&p1));
+    assert (!vec_equal (&p0,&p1));
     double theta = (2*M_PI)/n;
 
-    vect2_t next_point = p0;
-    vect2_t delta = vect2_subs (p1, p0);
+    dvec2 next_point = p0;
+    dvec2 delta = dvec2_subs (p1, p0);
 
     if (r != 0) {
         double edge_length = r*sqrt(2*(1-cos(2*M_PI/n)));
-        vect2_normalize (&delta);
-        vect2_mult_to (&delta, edge_length);
+        dvec2_normalize (&delta);
+        dvec2_mult_to (&delta, edge_length);
     }
 
     res[0] = next_point;
 
     int i;
     for (i=1; i<n; i++) {
-        vect2_add_to (&next_point, delta);
+        dvec2_add_to (&next_point, delta);
         res[i] = next_point;
-        vect2_clockwise_rotate_on (&delta, theta);
+        dvec2_clockwise_rotate_on (&delta, theta);
     }
 }
 
 // Sets res to an array of points that represent an n sided regular polygon
 // centered around c where res[0] lies in the direction of c-->p0, but at
 // distance r. The polygon is created clockwise from res[0].
-void convex_point_set_radius (int n, double r, vect2_t p0, vect2_t c, vect2_t *res)
+void convex_point_set_radius (int n, double r, dvec2 p0, dvec2 c, dvec2 *res)
 {
-    assert (!vect_equal (&p0,&c));
+    assert (!vec_equal (&p0,&c));
     double theta = (2*M_PI)/n;
 
-    vect2_t next_point;
-    vect2_t r_v = vect2_subs (p0, c);
+    dvec2 next_point;
+    dvec2 r_v = dvec2_subs (p0, c);
     if (r != 0) {
-        vect2_normalize (&r_v);
-        vect2_mult_to (&r_v, r);
-        next_point = vect2_add (c, r_v);
+        dvec2_normalize (&r_v);
+        dvec2_mult_to (&r_v, r);
+        next_point = dvec2_add (c, r_v);
     } else {
-        r = vect2_norm (r_v);
+        r = dvec2_norm (r_v);
         next_point = p0;
     }
 
 
     double edge_length = r*sqrt(2*(1-cos(2*M_PI/n)));
-    vect2_clockwise_rotate_on (&r_v, (theta + M_PI)/2);
-    vect2_t delta = vect2_mult (r_v, edge_length/r);
+    dvec2_clockwise_rotate_on (&r_v, (theta + M_PI)/2);
+    dvec2 delta = dvec2_mult (r_v, edge_length/r);
 
     res[0] = next_point;
 
     int i;
     for (i=1; i<n; i++) {
-        vect2_add_to (&next_point, delta);
+        dvec2_add_to (&next_point, delta);
         res[i] = next_point;
-        vect2_clockwise_rotate_on (&delta, theta);
+        dvec2_clockwise_rotate_on (&delta, theta);
     }
 }
 
-vect2_t polygon_centroid (vect2_t *pts, int len)
+dvec2 polygon_centroid (dvec2 *pts, int len)
 {
-    vect2_t res = VECT2(0,0);
+    dvec2 res = DVEC2(0,0);
     double area = 0;
     int i;
     for (i=0; i<len-1; i++) {
-        double det = area_2 (VECT2(0,0), pts[i], pts[i+1]);
+        double det = area_2 (DVEC2(0,0), pts[i], pts[i+1]);
         res.x += (pts[i].x + pts[i+1].x) * det;
         res.y += (pts[i].y + pts[i+1].y) * det;
         area += det;
     }
 
-    double det = area_2 (VECT2(0,0), pts[i], pts[0]);
+    double det = area_2 (DVEC2(0,0), pts[i], pts[0]);
     res.x += (pts[i].x + pts[0].x) * det;
     res.y += (pts[i].y + pts[0].y) * det;
     area += det;
@@ -219,19 +219,19 @@ vect2_t polygon_centroid (vect2_t *pts, int len)
 }
 
 #define polygon_area(pts,len) fabs(polygon_signed_area(pts,len))
-double polygon_signed_area (vect2_t *pts, int len)
+double polygon_signed_area (dvec2 *pts, int len)
 {
     double area = 0;
     int i;
     for (i=0; i<len-1; i++) {
-        area += area_2 (VECT2(0,0), pts[i], pts[i+1]);
+        area += area_2 (DVEC2(0,0), pts[i], pts[i+1]);
     }
-    area += area_2 (VECT2(0,0), pts[i], pts[0]);
+    area += area_2 (DVEC2(0,0), pts[i], pts[0]);
 
     return area/2;
 }
 
-void vect2_idx_to_array (vect2_t *src, int *str_idx, vect2_t *dest, int len)
+void dvec2_idx_to_array (dvec2 *src, int *str_idx, dvec2 *dest, int len)
 {
     while (len > 0) {
         len--;
@@ -372,23 +372,7 @@ int is_edge_disjoint_set (triangle_set_t *set)
     return 1;
 }
 
-vect2_t v2_from_v2i (vect2i_t v)
-{
-    vect2_t res;
-    res.x = (double)v.x;
-    res.y = (double)v.y;
-    return res;
-}
-
-vect2i_t v2i_from_v2 (vect2_t v)
-{
-    vect2i_t res;
-    res.x = (int64_t)v.x;
-    res.y = (int64_t)v.y;
-    return res;
-}
-
-box_t box_min_dim (vect2_t min, vect2_t dim)
+box_t box_min_dim (dvec2 min, dvec2 dim)
 {
     box_t res;
     res.min = min;
@@ -419,7 +403,7 @@ void max_min_edges (box_t box, int64_t *max, int64_t *min)
     }
 }
 
-void get_bounding_box (vect2_t *pts, int n, box_t *res)
+void get_bounding_box (dvec2 *pts, int n, box_t *res)
 {
     double min_x, min_y, max_x, max_y;
 

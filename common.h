@@ -11,7 +11,13 @@
 #include <string.h>
 #include <wordexp.h>
 #include <math.h>
+
+#ifdef __cplusplus
+#define ZERO_INIT(type) (type){}
+#else
+#define ZERO_INIT(type) (type){0}
 typedef enum {false, true} bool;
+#endif
 
 #define ARRAY_SIZE(arr) (sizeof(arr)/sizeof((arr)[0]))
 
@@ -26,6 +32,8 @@ typedef enum {false, true} bool;
 #if !defined(CLAMP)
 #define CLAMP(a,lower,upper) ((a)>(upper)?(upper):((a)<(lower)?(lower):(a)))
 #endif
+
+#define WRAP(a,lower,upper) ((a)>(upper)?(lower):((a)<(lower)?(upper):(a)))
 
 #define LOW_CLAMP(a,lower) ((a)<(lower)?(lower):(a))
 
@@ -169,7 +177,7 @@ static inline
 char* str_non_small_alloc (string_t *str, size_t len)
 {
     str->capacity = (len+1) | 0xF; // Round up and guarantee LSB == 1
-    str->str = malloc(str->capacity);
+    str->str = (char*)malloc(str->capacity);
     return str->str;
 }
 
@@ -324,7 +332,7 @@ void str_debug_print (string_t *str)
 #endif
 
 #define str_new(data) strn_new((data),((data)!=NULL?strlen(data):0))
-string_t strn_new (char *c_str, size_t len)
+string_t strn_new (const char *c_str, size_t len)
 {
     string_t retval = {0};
     char *dest = str_init (&retval, len);
@@ -337,11 +345,23 @@ string_t strn_new (char *c_str, size_t len)
 }
 
 #define str_set(str,c_str) strn_set(str,(c_str),((c_str)!=NULL?strlen(c_str):0))
-void strn_set (string_t *str, char *c_str, size_t len)
+void strn_set (string_t *str, const char *c_str, size_t len)
 {
     str_maybe_grow (str, len, false);
 
     char *dest = str_data(str);
+    if (c_str != NULL) {
+        memmove (dest, c_str, len);
+    }
+    dest[len] = '\0';
+}
+
+#define str_put(str,pos,c_str) strn_put(str,pos,(c_str),((c_str)!=NULL?strlen(c_str):0))
+void strn_put (string_t *str, size_t pos, const char *c_str, size_t len)
+{
+    str_maybe_grow (str, pos + len, false);
+
+    char *dest = str_data(str) + pos;
     if (c_str != NULL) {
         memmove (dest, c_str, len);
     }
@@ -365,8 +385,13 @@ void str_cat (string_t *dest, string_t *src)
 
     str_maybe_grow (dest, len, true);
     char *dest_data = str_data(dest);
-    memmove (dest_data+len_dest, str_data(src), len);
+    memmove (dest_data+len_dest, str_data(src), str_len(src));
     dest_data[len] = '\0';
+}
+
+char str_last (string_t *str)
+{
+    return str_data(str)[str_len(str)-1];
 }
 
 #define VECT_X 0
@@ -384,9 +409,14 @@ typedef union {
         double x;
         double y;
     };
+    struct {
+        double w;
+        double h;
+    };
     double E[2];
-} vect2_t;
-#define VECT2(x,y) ((vect2_t){{x,y}})
+} dvec2;
+#define DVEC2(x,y) ((dvec2){{x,y}})
+#define CAST_DVEC2(v) (dvec2){{(double)v.x,(double)v.y}}
 
 // TODO: These are 128 bit structs, they may take up a lot of space, maybe have
 // another one of 32 bits for small coordinates.
@@ -397,14 +427,15 @@ typedef union {
         int64_t y;
     };
     int64_t E[2];
-} vect2i_t;
-#define VECT2i(x,y) ((vect2i_t){{x,y}})
+} ivec2;
+#define IVEC2(x,y) ((ivec2){{x,y}})
+#define CAST_IVEC2(v) (ivec2){{(int64_t)v.x,(int64_t)v.y}}
 
-#define vect_equal(v1,v2) ((v1)->x == (v2)->x && (v1)->y == (v2)->y)
+#define vec_equal(v1,v2) ((v1)->x == (v2)->x && (v1)->y == (v2)->y)
 
 typedef struct {
-    vect2_t min;
-    vect2_t max;
+    dvec2 min;
+    dvec2 max;
 } box_t;
 
 void box_print (box_t *b)
@@ -412,94 +443,94 @@ void box_print (box_t *b)
     printf ("min: (%f, %f), max: (%f, %f)\n", b->min.x, b->min.y, b->max.x, b->max.y);
 }
 
-void vect2_floor (vect2_t *p)
+void dvec2_floor (dvec2 *p)
 {
     p->x = floor (p->x);
     p->y = floor (p->y);
 }
 
-void vect2_round (vect2_t *p)
+void dvec2_round (dvec2 *p)
 {
     p->x = round (p->x);
     p->y = round (p->y);
 }
 
 static inline
-vect2_t vect2_add (vect2_t v1, vect2_t v2)
+dvec2 dvec2_add (dvec2 v1, dvec2 v2)
 {
-    vect2_t res;
+    dvec2 res;
     res.x = v1.x+v2.x;
     res.y = v1.y+v2.y;
     return res;
 }
 
 static inline
-void vect2_add_to (vect2_t *v1, vect2_t v2)
+void dvec2_add_to (dvec2 *v1, dvec2 v2)
 {
     v1->x += v2.x;
     v1->y += v2.y;
 }
 
 static inline
-vect2_t vect2_subs (vect2_t v1, vect2_t v2)
+dvec2 dvec2_subs (dvec2 v1, dvec2 v2)
 {
-    vect2_t res;
+    dvec2 res;
     res.x = v1.x-v2.x;
     res.y = v1.y-v2.y;
     return res;
 }
 
 static inline
-void vect2_subs_to (vect2_t *v1, vect2_t v2)
+void dvec2_subs_to (dvec2 *v1, dvec2 v2)
 {
     v1->x -= v2.x;
     v1->y -= v2.y;
 }
 
 static inline
-vect2_t vect2_mult (vect2_t v, double k)
+dvec2 dvec2_mult (dvec2 v, double k)
 {
-    vect2_t res;
+    dvec2 res;
     res.x = v.x*k;
     res.y = v.y*k;
     return res;
 }
 
 static inline
-void vect2_mult_to (vect2_t *v, double k)
+void dvec2_mult_to (dvec2 *v, double k)
 {
     v->x *= k;
     v->y *= k;
 }
 
 static inline
-double vect2_dot (vect2_t v1, vect2_t v2)
+double dvec2_dot (dvec2 v1, dvec2 v2)
 {
     return v1.x*v2.x + v1.y*v2.y;
 }
 
 static inline
-double vect2_norm (vect2_t v)
+double dvec2_norm (dvec2 v)
 {
     return sqrt ((v.x)*(v.x) + (v.y)*(v.y));
 }
 
-double area_2 (vect2_t a, vect2_t b, vect2_t c)
+double area_2 (dvec2 a, dvec2 b, dvec2 c)
 {
     return (b.x-a.x)*(c.y-a.y) - (c.x-a.x)*(b.y-a.y);
 }
 
 // true if point c is to the left of a-->b
-bool left (vect2_t a, vect2_t b, vect2_t c)
+bool left (dvec2 a, dvec2 b, dvec2 c)
 {
     return area_2 (a, b, c) > 0;
 }
 
 // true if vector p points to the left of vector a
-#define left_vect(a,p) left(VECT2(0,0),a,p)
+#define left_dvec2(a,p) left(DVEC2(0,0),a,p)
 
 // true if point c is to the left or in a-->b
-bool left_on (vect2_t a, vect2_t b, vect2_t c)
+bool left_on (dvec2 a, dvec2 b, dvec2 c)
 {
     return area_2 (a, b, c) > -0.01;
 }
@@ -508,41 +539,41 @@ bool left_on (vect2_t a, vect2_t b, vect2_t c)
 //
 // NOTE: The return value is in the range [0, 2*M_PI).
 static inline
-double vect2_clockwise_angle_between (vect2_t v1, vect2_t v2)
+double dvec2_clockwise_angle_between (dvec2 v1, dvec2 v2)
 {
-    if (vect_equal (&v1, &v2)) {
+    if (vec_equal (&v1, &v2)) {
         return 0;
-    } else if (left_vect (v2, v1))
-        return acos (vect2_dot (v1, v2)/(vect2_norm (v1)*vect2_norm(v2)));
+    } else if (left_dvec2 (v2, v1))
+        return acos (dvec2_dot (v1, v2)/(dvec2_norm (v1)*dvec2_norm(v2)));
     else
-        return 2*M_PI - acos (vect2_dot (v1, v2)/(vect2_norm (v1)*vect2_norm(v2)));
+        return 2*M_PI - acos (dvec2_dot (v1, v2)/(dvec2_norm (v1)*dvec2_norm(v2)));
 }
 
 // Smallest angle between v1 to v2.
 //
 // NOTE: The return value is in the range [0, M_PI].
 static inline
-double vect2_angle_between (vect2_t v1, vect2_t v2)
+double dvec2_angle_between (dvec2 v1, dvec2 v2)
 {
-    if (vect_equal (&v1, &v2)) {
+    if (vec_equal (&v1, &v2)) {
         return 0;
     } else
-        return acos (vect2_dot (v1, v2)/(vect2_norm (v1)*vect2_norm(v2)));
+        return acos (dvec2_dot (v1, v2)/(dvec2_norm (v1)*dvec2_norm(v2)));
 }
 
 static inline
-void vect2_normalize (vect2_t *v)
+void dvec2_normalize (dvec2 *v)
 {
-    double norm = vect2_norm (*v);
+    double norm = dvec2_norm (*v);
     assert (norm != 0);
     v->x /= norm;
     v->y /= norm;
 }
 
 static inline
-void vect2_normalize_or_0 (vect2_t *v)
+void dvec2_normalize_or_0 (dvec2 *v)
 {
-    double norm = vect2_norm (*v);
+    double norm = dvec2_norm (*v);
     if (norm == 0) {
         v->x = 0;
         v->y = 0;
@@ -552,34 +583,34 @@ void vect2_normalize_or_0 (vect2_t *v)
     }
 }
 
-vect2_t vect2_clockwise_rotate (vect2_t v, double rad)
+dvec2 dvec2_clockwise_rotate (dvec2 v, double rad)
 {
-    vect2_t res;
+    dvec2 res;
     res.x =  v.x*cos(rad) + v.y*sin(rad);
     res.y = -v.x*sin(rad) + v.y*cos(rad);
     return res;
 }
 
-void vect2_clockwise_rotate_on (vect2_t *v, double rad)
+void dvec2_clockwise_rotate_on (dvec2 *v, double rad)
 {
-    vect2_t tmp = *v;
+    dvec2 tmp = *v;
     v->x =  tmp.x*cos(rad) + tmp.y*sin(rad);
     v->y = -tmp.x*sin(rad) + tmp.y*cos(rad);
 }
 
 static inline
-double vect2_distance (vect2_t *v1, vect2_t *v2)
+double dvec2_distance (dvec2 *v1, dvec2 *v2)
 {
-    if (vect_equal(v1, v2)) {
+    if (vec_equal(v1, v2)) {
         return 0;
     } else {
         return sqrt ((v1->x-v2->x)*(v1->x-v2->x) + (v1->y-v2->y)*(v1->y-v2->y));
     }
 }
 
-void vect2_print (vect2_t *v)
+void dvec2_print (dvec2 *v)
 {
-    printf ("(%f, %f) [%f]\n", v->x, v->y, vect2_norm(*v));
+    printf ("(%f, %f) [%f]\n", v->x, v->y, dvec2_norm(*v));
 }
 
 // NOTE: W anf H MUST be positive.
@@ -598,6 +629,96 @@ void vect2_print (vect2_t *v)
 
 typedef union {
     struct {
+        float x;
+        float y;
+        float z;
+    };
+
+    struct {
+        float r;
+        float g;
+        float b;
+    };
+    float E[3];
+} fvec3;
+#define FVEC3(x,y,z) ((fvec3){{x,y,z}})
+
+static inline
+double fvec3_dot (fvec3 v1, fvec3 v2)
+{
+    return v1.x*v2.x + v1.y*v2.y + v1.z*v2.z;
+}
+
+static inline
+fvec3 fvec3_cross (fvec3 v1, fvec3 v2)
+{
+    fvec3 res;
+    res.x = v1.y*v2.z - v1.z*v2.y;
+    res.y = v1.z*v2.x - v1.x*v2.z;
+    res.z = v1.x*v2.y - v1.y*v2.x;
+    return res;
+}
+
+static inline
+fvec3 fvec3_subs (fvec3 v1, fvec3 v2)
+{
+    fvec3 res;
+    res.x = v1.x-v2.x;
+    res.y = v1.y-v2.y;
+    res.z = v1.z-v2.z;
+    return res;
+}
+
+static inline
+fvec3 fvec3_mult (fvec3 v, float k)
+{
+    fvec3 res;
+    res.x = v.x*k;
+    res.y = v.y*k;
+    res.z = v.z*k;
+    return res;
+}
+
+static inline
+fvec3 fvec3_mult_to (fvec3 *v, float k)
+{
+    fvec3 res;
+    v->x = v->x*k;
+    v->y = v->y*k;
+    v->z = v->z*k;
+    return res;
+}
+
+static inline
+double fvec3_norm (fvec3 v)
+{
+    return sqrt ((v.x)*(v.x) + (v.y)*(v.y) + (v.z)*(v.z));
+}
+
+static inline
+fvec3 fvec3_normalize (fvec3 v)
+{
+    fvec3 res;
+    double norm = fvec3_norm (v);
+    assert (norm != 0);
+    res.x = v.x/norm;
+    res.y = v.y/norm;
+    res.z = v.z/norm;
+    return res;
+}
+
+void fvec3_print_norm (fvec3 v)
+{
+    printf ("(%f, %f, %f) [%f]\n", v.x, v.y, v.z, fvec3_norm(v));
+}
+
+void fvec3_print (fvec3 v)
+{
+    printf ("(%f, %f, %f)\n", v.x, v.y, v.z);
+}
+
+typedef union {
+    struct {
         double x;
         double y;
         double z;
@@ -609,17 +730,76 @@ typedef union {
         double b;
     };
     double E[3];
-} vect3_t;
-#define VECT3(x,y,z) ((vect3_t){{x,y,z}})
+} dvec3;
+#define DVEC3(x,y,z) ((dvec3){{x,y,z}})
 
 static inline
-vect3_t vect3_cross (vect3_t v1, vect3_t v2)
+double dvec3_dot (dvec3 v1, dvec3 v2)
 {
-    vect3_t res;
+    return v1.x*v2.x + v1.y*v2.y + v1.z*v2.z;
+}
+
+static inline
+dvec3 dvec3_cross (dvec3 v1, dvec3 v2)
+{
+    dvec3 res;
     res.x = v1.y*v2.z - v1.z*v2.y;
     res.y = v1.z*v2.x - v1.x*v2.z;
     res.z = v1.x*v2.y - v1.y*v2.x;
     return res;
+}
+
+static inline
+dvec3 dvec3_subs (dvec3 v1, dvec3 v2)
+{
+    dvec3 res;
+    res.x = v1.x-v2.x;
+    res.y = v1.y-v2.y;
+    res.z = v1.z-v2.z;
+    return res;
+}
+
+static inline
+dvec3 dvec3_mult (dvec3 v, float k)
+{
+    dvec3 res;
+    res.x = v.x*k;
+    res.y = v.y*k;
+    res.z = v.z*k;
+    return res;
+}
+
+static inline
+dvec3 dvec3_mult_to (dvec3 *v, float k)
+{
+    dvec3 res;
+    v->x = v->x*k;
+    v->y = v->y*k;
+    v->z = v->z*k;
+    return res;
+}
+
+static inline
+double dvec3_norm (dvec3 v)
+{
+    return sqrt ((v.x)*(v.x) + (v.y)*(v.y) + (v.z)*(v.z));
+}
+
+static inline
+dvec3 dvec3_normalize (dvec3 v)
+{
+    dvec3 res;
+    double norm = dvec3_norm (v);
+    assert (norm != 0);
+    res.x = v.x/norm;
+    res.y = v.y/norm;
+    res.z = v.z/norm;
+    return res;
+}
+
+void dvec3_print (dvec3 v)
+{
+    printf ("(%f, %f, %f) [%f]\n", v.x, v.y, v.z, dvec3_norm(v));
 }
 
 typedef union {
@@ -643,12 +823,289 @@ typedef union {
         double l;
     };
     double E[4];
-} vect4_t;
-#define VECT4(x,y,z,w) ((vect4_t){{x,y,z,w}})
+} dvec4;
+#define DVEC4(x,y,z,w) ((dvec4){{x,y,z,w}})
 
-void vect4_print (vect4_t *v)
+void dvec4_print (dvec4 *v)
 {
     printf ("(%f, %f, %f, %f)", v->x, v->y, v->z, v->w);
+}
+
+// NOTE: Transpose before uploading to OpenGL!!
+typedef union {
+    float E[16];
+    float M[4][4]; // [down][right]
+} mat4f;
+
+// NOTE: Camera will be looking towards -Cz.
+static inline
+mat4f camera_matrix (dvec3 Cx, dvec3 Cy, dvec3 Cz, dvec3 Cpos)
+{
+    mat4f matrix;
+    int i = 0, j;
+    for (j=0; j<3; j++) {
+        matrix.E[i*4+j] = Cx.E[j];
+    }
+
+    matrix.E[i*4+j] = -dvec3_dot (Cpos, Cx);
+
+    i = 1;
+    for (j=0; j<3; j++) {
+        matrix.E[i*4+j] = Cy.E[j];
+    }
+    matrix.E[i*4+j] = -dvec3_dot (Cpos, Cy);
+
+    i = 2;
+    for (j=0; j<3; j++) {
+        matrix.E[i*4+j] = -Cz.E[j];
+    }
+    matrix.E[i*4+j] = dvec3_dot (Cpos, Cz);
+
+    i = 3;
+    for (j=0; j<3; j++) {
+        matrix.E[i*4+j] = 0;
+    }
+    matrix.E[i*4+j] = 1;
+    return matrix;
+}
+
+static inline
+mat4f look_at (dvec3 camera, dvec3 target, dvec3 up)
+{
+    dvec3 Cz = dvec3_normalize (dvec3_subs (camera, target));
+    dvec3 Cx = dvec3_normalize (dvec3_cross (up, Cz));
+    dvec3 Cy = dvec3_cross (Cz, Cx);
+    return camera_matrix (Cx, Cy, Cz, camera);
+}
+
+static inline
+mat4f rotation_x (float angle_r)
+{
+    float s = sinf(angle_r);
+    float c = cosf(angle_r);
+    mat4f res = {{
+         1, 0, 0, 0,
+         0, c,-s, 0,
+         0, s, c, 0,
+         0, 0, 0, 1
+    }};
+    return res;
+}
+
+static inline
+mat4f rotation_y (float angle_r)
+{
+    float s = sinf(angle_r);
+    float c = cosf(angle_r);
+    mat4f res = {{
+         c, 0, s, 0,
+         0, 1, 0, 0,
+        -s, 0, c, 0,
+         0, 0, 0, 1
+    }};
+    return res;
+}
+
+static inline
+mat4f rotation_z (float angle_r)
+{
+    float s = sinf(angle_r);
+    float c = cosf(angle_r);
+    mat4f res = {{
+         c,-s, 0, 0,
+         s, c, 0, 0,
+         0, 0, 1, 0,
+         0, 0, 0, 1
+    }};
+    return res;
+}
+
+void mat4f_print (mat4f mat)
+{
+    int i;
+    for (i=0; i<4; i++) {
+        int j;
+        for (j=0; j<4; j++) {
+            printf ("%f, ", mat.E[i*4+j]);
+        }
+        printf ("\n");
+    }
+    printf ("\n");
+}
+
+static inline
+mat4f perspective_projection (float left, float right, float bottom, float top, float near, float far)
+{
+    // NOTE: There are several conventions for the semantics of the near and far
+    // arguments to this function:
+    //  - OpenGL assumes them to be distances to the camera and fails if either
+    //    near or far is negative. This may be confusing because the other
+    //    values are assumed to be coordinates and near and far are not,
+    //    otherwise they would be negative because OpenGL uses RH coordinates.
+    //  - We can make all argumets be the coordinates, then if the near plane or
+    //    far plane coordinates are positive we throw an error.
+    //  - A third approach is to mix both of them by taking the absolute value
+    //    of the near and far plane and never fail. This works fine if they are
+    //    interpreted as being Z coordinates, or distances to the camera at the
+    //    cost of computing two absolute values.
+    near = fabs (near);
+    far = fabs (far);
+
+    float a = 2*near/(right-left);
+    float b = -(right+left)/(right-left);
+
+    float c = 2*near/(top-bottom);
+    float d = -(top+bottom)/(top-bottom);
+
+    float e = (near+far)/(far-near);
+    float f = -2*far*near/(far-near);
+
+    mat4f res = {{
+        a, 0, b, 0,
+        0, c, d, 0,
+        0, 0, e, f,
+        0, 0, 1, 0,
+    }};
+    return res;
+}
+
+static inline
+mat4f mat4f_mult (mat4f mat1, mat4f mat2)
+{
+    mat4f res = ZERO_INIT(mat4f);
+    int i;
+    for (i=0; i<4; i++) {
+        int j;
+        for (j=0; j<4; j++) {
+            int k;
+            for (k=0; k<4; k++) {
+                res.M[i][j] += mat1.M[i][k] * mat2.M[k][j];
+            }
+        }
+    }
+    return res;
+}
+
+static inline
+dvec3 mat4f_times_point (mat4f mat, dvec3 p)
+{
+    dvec3 res = DVEC3(0,0,0);
+    int i;
+    for (i=0; i<3; i++) {
+        int j;
+        for (j=0; j<3; j++) {
+            res.E[i] += mat.M[i][j] * p.E[j];
+        }
+    }
+
+    for (i=0; i<3; i++) {
+        res.E[i] += mat.M[i][3];
+    }
+    return res;
+}
+
+// The resulting transform sends s1 and s2 to d1 and d2 respectiveley.
+//   s1 = res * d1
+//   s2 = res * d2
+static inline
+mat4f transform_from_2_points (dvec3 s1, dvec3 s2, dvec3 d1, dvec3 d2)
+{
+    float xs, x0, ys, y0, zs, z0;
+    if (s1.x != s2.x) {
+        xs = (d1.x - d2.x)/(s1.x - s2.x);
+        x0 = (d2.x*s1.x - d2.x*s2.x - d1.x*s2.x + d2.x*s2.x)/(s1.x - s2.x);
+    } else {
+        xs = 1;
+        x0 = 0;
+    }
+
+    if (s1.y != s2.y) {
+        ys = (d1.y - d2.y)/(s1.y - s2.y);
+        y0 = (d2.y*s1.y - d2.y*s2.y - d1.y*s2.y + d2.y*s2.y)/(s1.y - s2.y);
+    } else {
+        ys = 1;
+        y0 = 0;
+    }
+
+    if (s1.z != s2.z) {
+        zs = (d1.z - d2.z)/(s1.z - s2.z);
+        z0 = (d2.z*s1.z - d2.z*s2.z - d1.z*s2.z + d2.z*s2.z)/(s1.z - s2.z);
+    } else {
+        zs = 1;
+        z0 = 0;
+    }
+
+    mat4f res = {{
+        xs, 0, 0,x0,
+         0,ys, 0,y0,
+         0, 0,zs,z0,
+         0, 0, 0, 1
+    }};
+    return res;
+}
+
+// This may as well be a 3x3 matrix but sometimes the semantics are simpler like
+// this. Of course this is subjective.
+typedef struct {
+    double scale_x;
+    double scale_y;
+    double dx;
+    double dy;
+} transf_t;
+
+void apply_transform (transf_t *tr, dvec2 *p)
+{
+    p->x = tr->scale_x*p->x + tr->dx;
+    p->y = tr->scale_y*p->y + tr->dy;
+}
+
+void apply_transform_distance (transf_t *tr, dvec2 *p)
+{
+    p->x = tr->scale_x*p->x;
+    p->y = tr->scale_y*p->y;
+}
+
+void apply_inverse_transform (transf_t *tr, dvec2 *p)
+{
+    p->x = (p->x - tr->dx)/tr->scale_x;
+    p->y = (p->y - tr->dy)/tr->scale_y;
+}
+
+void apply_inverse_transform_distance (transf_t *tr, dvec2 *p)
+{
+    p->x = p->x/tr->scale_x;
+    p->y = p->y/tr->scale_y;
+}
+
+void transform_translate (transf_t *tr, dvec2 *delta)
+{
+    tr->dx += delta->x;
+    tr->dy += delta->y;
+}
+
+// Calculates a ratio by which multiply box a so that it fits inside box b
+double best_fit_ratio (double a_width, double a_height,
+                       double b_width, double b_height)
+{
+    if (a_width/a_height < b_width/b_height) {
+        return b_height/a_height;
+    } else {
+        return b_width/a_width;
+    }
+}
+
+void compute_best_fit_box_to_box_transform (transf_t *tr, box_t *src, box_t *dest)
+{
+    double src_width = BOX_WIDTH(*src);
+    double src_height = BOX_HEIGHT(*src);
+    double dest_width = BOX_WIDTH(*dest);
+    double dest_height = BOX_HEIGHT(*dest);
+
+    tr->scale_x = best_fit_ratio (src_width, src_height,
+                                dest_width, dest_height);
+    tr->scale_y = tr->scale_x;
+    tr->dx = dest->min.x + (dest_width-src_width*tr->scale_x)/2;
+    tr->dy = dest->min.y + (dest_height-src_height*tr->scale_y)/2;
 }
 
 void swap (int*a, int*b)
@@ -694,7 +1151,7 @@ void int_sort (int *arr, int n)
     }
 }
 
-void swap_n_bytes (void *a, void*b, int n)
+void swap_n_bytes (void *a, void*b, uint32_t n)
 {
     while (sizeof(int)<=n) {
         n -= sizeof(int);
@@ -793,7 +1250,7 @@ void array_clear (int *arr, int n)
     }
 }
 
-void array_print_full (int *arr, int n, char *sep, char *start, char *end)
+void array_print_full (int *arr, int n, const char *sep, const char *start, const char *end)
 {
     int i;
     if (start != NULL) {
@@ -844,7 +1301,7 @@ void print_u64_array (uint64_t *arr, int n)
     printf ("%"PRIu64"]\n", arr[i]);
 }
 
-void print_line (char *sep, int len)
+void print_line (const char *sep, int len)
 {
     int w = strlen(sep);
     char str[w*len+1];
@@ -857,14 +1314,14 @@ void print_line (char *sep, int len)
 }
 
 struct ascii_tbl_t {
-    char* vert_sep;
-    char* hor_sep;
-    char* cross;
+    const char* vert_sep;
+    const char* hor_sep;
+    const char* cross;
     int curr_col;
     int num_cols;
 };
 
-void print_table_bar (char *hor_sep, char* cross, int *lens, int num_cols)
+void print_table_bar (const char *hor_sep, const char* cross, int *lens, int num_cols)
 {
     int i;
     for (i=0; i<num_cols-1; i++) {
@@ -955,7 +1412,7 @@ typedef struct {
 
 void int_dyn_arr_init (int_dyn_arr_t *arr, uint32_t size)
 {
-    arr->data = malloc (size * sizeof (*arr->data));
+    arr->data = (int*)malloc (size * sizeof (*arr->data));
     if (!arr->data) {
         printf ("Malloc failed.\n");
     }
@@ -973,7 +1430,7 @@ void int_dyn_arr_grow (int_dyn_arr_t *arr, uint32_t new_size)
 {
     assert (new_size < UINT32_MAX);
     int *new_data;
-    if ((new_data = realloc (arr->data, new_size * sizeof(*arr->data)))) {
+    if ((new_data = (int*)realloc (arr->data, new_size * sizeof(*arr->data)))) {
         arr->data = new_data;
         arr->size = new_size;
     } else {
@@ -1007,7 +1464,7 @@ void int_dyn_arr_insert_and_shift (int_dyn_arr_t *arr, uint32_t pos, int element
         int_dyn_arr_grow (arr, 2*arr->size);
     }
     
-    int i;
+    uint32_t i;
     for (i=arr->len; i>pos; i--) {
         arr->data[i] = arr->data[i-1];
     }
@@ -1015,18 +1472,18 @@ void int_dyn_arr_insert_and_shift (int_dyn_arr_t *arr, uint32_t pos, int element
     arr->len++;
 }
 
-void int_dyn_arr_insert_multiple_and_shift (int_dyn_arr_t *arr, uint32_t pos, int *elements, int len)
+void int_dyn_arr_insert_multiple_and_shift (int_dyn_arr_t *arr, uint32_t pos, int *elements, uint32_t len)
 {
     assert (pos < arr->len);
     if (arr->len + len > arr->size) {
-        int new_size = arr->size;
+        uint32_t new_size = arr->size;
         while (new_size < arr->len + len) {
             new_size *= 2;
         }
         int_dyn_arr_grow (arr, new_size);
     }
 
-    int i;
+    uint32_t i;
     for (i=arr->len+len-1; i>pos+len-1; i--) {
         arr->data[i] = arr->data[i-len];
     }
@@ -1092,7 +1549,7 @@ void cont_buff_destroy (cont_buff_t *buff)
 }
 
 // Memory pool that grows as needed, and can be freed easily.
-#define MEM_POOL_MIN_BIN_SIZE 1024
+#define MEM_POOL_MIN_BIN_SIZE 1024u
 typedef struct {
     uint32_t min_bin_size;
     uint32_t size;
@@ -1124,7 +1581,7 @@ enum alloc_opts {
 #define mem_pool_push_struct(pool, type) mem_pool_push_size(pool, sizeof(type))
 #define mem_pool_push_array(pool, n, type) mem_pool_push_size(pool, (n)*sizeof(type))
 #define mem_pool_push_size(pool, size) mem_pool_push_size_full(pool, size, POOL_UNINITIALIZED)
-void* mem_pool_push_size_full (mem_pool_t *pool, int size, enum alloc_opts opts)
+void* mem_pool_push_size_full (mem_pool_t *pool, uint32_t size, enum alloc_opts opts)
 {
     if (pool->used + size >= pool->size) {
         pool->num_bins++;
@@ -1270,7 +1727,7 @@ char* collapse_str_arr (char **arr, int n, mem_pool_t *pool)
     for (i=0; i<n; i++) {
         len += strlen (arr[i]) + 1;
     }
-    char *res = pom_push_size (pool, len);
+    char *res = (char*)pom_push_size (pool, len);
 
     char *ptr = res;
     for (i=0; i<n; i++) {
@@ -1286,7 +1743,7 @@ char* collapse_str_arr (char **arr, int n, mem_pool_t *pool)
 // Expand _str_ as bash would, allocate it in _pool_ or heap. 
 // NOTE: $(<cmd>) and `<cmd>` work but don't get too crazy, this spawns /bin/sh
 // and a subprocess. Using env vars like $HOME, or ~/ doesn't.
-char* sh_expand (char *str, mem_pool_t *pool)
+char* sh_expand (const char *str, mem_pool_t *pool)
 {
     wordexp_t out;
     wordexp (str, &out, 0);
@@ -1295,14 +1752,14 @@ char* sh_expand (char *str, mem_pool_t *pool)
     return res;
 }
 
-void file_write (int file, void *pos,  size_t size)
+void file_write (int file, void *pos,  ssize_t size)
 {
     if (write (file, pos, size) < size) {
         printf ("Write interrupted\n");
     }
 }
 
-void file_read (int file, void *pos,  size_t size)
+void file_read (int file, void *pos,  ssize_t size)
 {
     int bytes_read = read (file, pos, size);
     if (bytes_read < size) {
@@ -1310,6 +1767,80 @@ void file_read (int file, void *pos,  size_t size)
                 "asked for: %ld\n"
                 "received: %d\n", size, bytes_read);
     }
+}
+
+char* full_file_read (mem_pool_t *pool, const char *path)
+{
+    char *retval = NULL;
+    char *dir_path = sh_expand (path, NULL);
+
+    struct stat st;
+    if (stat(dir_path, &st) == 0) {
+        retval = (char*)pom_push_size (pool, st.st_size + 1);
+
+        int file = open (dir_path, O_RDONLY);
+        int bytes_read = 0;
+        do {
+            int status = read (file, retval+bytes_read, st.st_size-bytes_read);
+            if (status == -1) {
+                printf ("Error reading %s: %s\n", path, strerror(errno));
+                break;
+            }
+            bytes_read += status;
+        } while (bytes_read != st.st_size);
+        retval[st.st_size] = '\0';
+    } else {
+        printf ("Could not read %s: %s\n", path, strerror(errno));
+    }
+
+    free (dir_path);
+    return retval;
+}
+
+char* full_file_read_prefix (mem_pool_t *out_pool, const char *path, char **prefix, int len)
+{
+    mem_pool_t pool = {0};
+    char *retval = NULL;
+    string_t pfx_s = {0};
+    string_t path_s = str_new (path);
+    char *dir_path = sh_expand (path, &pool);
+
+    int status, i = 0;
+    struct stat st;
+    while ((status = (stat(dir_path, &st) == -1)) && i < len) {
+        if (errno == ENOENT && prefix != NULL && *prefix != NULL) {
+            str_set (&pfx_s, prefix[i]);
+            assert (str_last(&pfx_s) == '/');
+            str_cat (&pfx_s, &path_s);
+            dir_path = sh_expand (str_data(&pfx_s), &pool);
+            i++;
+        } else {
+            break;
+        }
+    }
+    str_free (&pfx_s);
+    str_free (&path_s);
+
+    if (status == 0) {
+        retval = (char*)pom_push_size (out_pool, st.st_size + 1);
+
+        int file = open (dir_path, O_RDONLY);
+        int bytes_read = 0;
+        do {
+            int status = read (file, retval+bytes_read, st.st_size-bytes_read);
+            if (status == -1) {
+                printf ("Error reading %s: %s\n", path, strerror(errno));
+                break;
+            }
+            bytes_read += status;
+        } while (bytes_read != st.st_size);
+        retval[st.st_size] = '\0';
+    } else {
+        printf ("Could not locate %s in any folder.\n", path);
+    }
+
+    mem_pool_destroy (&pool);
+    return retval;
 }
 
 // NOTE: Returns false if there was an error creating the directory.
@@ -1346,7 +1877,7 @@ char* change_extension (mem_pool_t *pool, char *path, char *new_ext)
     while (i>0 && path[i-1] != '.') {
         i--;
     }
-    char *res = mem_pool_push_size (pool, path_len+strlen(new_ext)+1);
+    char *res = (char*)mem_pool_push_size (pool, path_len+strlen(new_ext)+1);
     strcpy (res, path);
     strcpy (&res[i], new_ext);
     return res;
@@ -1355,7 +1886,7 @@ char* change_extension (mem_pool_t *pool, char *path, char *new_ext)
 char* add_extension (mem_pool_t *pool, char *path, char *new_ext)
 {
     size_t path_len = strlen(path);
-    char *res = mem_pool_push_size (pool, path_len+strlen(new_ext)+2);
+    char *res = (char*)mem_pool_push_size (pool, path_len+strlen(new_ext)+2);
     strcpy (res, path);
     res[path_len++] = '.';
     strcpy (&res[path_len], new_ext);
