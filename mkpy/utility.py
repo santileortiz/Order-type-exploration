@@ -95,6 +95,9 @@ def get_cli_option (opts, values=None, has_argument=False, unique_option=False):
     additional error checking is available if _values_ is set to a list of the
     possible values the argument could take.
 
+    NOTE: We don't detect if there is an argument, the caller must tell if it
+    expects an argument or not by using has_argument.
+
     When unique_option is True then _opt_ must be the only option used.
 
     """
