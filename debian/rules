@@ -6,7 +6,7 @@ PACKAGENAME := $(shell awk 'NR==1{print $$1}' debian/changelog)
 	dh $@
 
 override_dh_auto_build:
-	./pymk.py --mode release ot_viewer
+	./pymk.py point_set_viewer --mode release
 
 override_dh_auto_install:
 	./pymk.py install --destdir ${CURDIR}/debian/${PACKAGENAME}/

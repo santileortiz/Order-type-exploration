@@ -1,7 +1,7 @@
 [Desktop Entry]
 Name=Point Set Viewer
 Comment=Explore point set's order types
-Exec=ot_viewer
+Exec=point-set-viewer
 Icon=point-set-viewer
 Keywords=points;order types;
 Terminal=false
