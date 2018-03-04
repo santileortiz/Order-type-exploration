@@ -359,7 +359,7 @@ void strn_set (string_t *str, const char *c_str, size_t len)
 #define str_put(str,pos,c_str) strn_put(str,pos,(c_str),((c_str)!=NULL?strlen(c_str):0))
 void strn_put (string_t *str, size_t pos, const char *c_str, size_t len)
 {
-    str_maybe_grow (str, pos + len, false);
+    str_maybe_grow (str, pos + len, true);
 
     char *dest = str_data(str) + pos;
     if (c_str != NULL) {

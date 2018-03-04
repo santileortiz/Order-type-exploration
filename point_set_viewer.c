@@ -606,7 +606,7 @@ void x11_create_window (struct x_state *x_st, char *title)
             false);
 }
 
-void x11_setup_icccm_and_ewmh_protocols (struct x_state *x_st)
+void x11_setup_icccm_and_ewmh_protocols (struct x_state *x_st, char *arg0)
 {
     xcb_atom_t net_wm_protocols_value[2];
 
@@ -626,7 +626,6 @@ void x11_setup_icccm_and_ewmh_protocols (struct x_state *x_st)
                          x_st->counters,
                          false);
 
-    /////////////////////////////
     // Set WM_PROTOCOLS property
     net_wm_protocols_value[0] = xcb_atoms_cache[LOC_ATOM_WM_DELETE_WINDOW];
     net_wm_protocols_value[1] = xcb_atoms_cache[LOC_ATOM__NET_WM_SYNC_REQUEST];
@@ -638,6 +637,32 @@ void x11_setup_icccm_and_ewmh_protocols (struct x_state *x_st)
                          ARRAY_SIZE(net_wm_protocols_value),
                          net_wm_protocols_value,
                          false);
+
+    // Set window WM_CLASS to allow other applications track resources
+    //
+    // TODO: Some people may expect to set the instance name using the
+    // --name <instance> option or with the RESOURCE_NAME environment variable.
+    int len = strlen (arg0);
+    char *c = &arg0[len];
+    while (c > arg0 && *(c-1) != '/') {
+        c--;
+    }
+
+    string_t instance = str_new (c);
+    int end = str_len(&instance)+1;
+    str_put (&instance, end, c);
+    // This capitalization won't work if the binary's name is not ASCII but I've
+    // never seen that before.
+    str_data(&instance)[end] &= ~0x20;
+
+    x11_change_property (x_st->xcb_c,
+            x_st->window,
+            XCB_ATOM_WM_CLASS,
+            XCB_ATOM_STRING,
+            str_len(&instance),
+            str_data(&instance),
+            false);
+    str_free (&instance);
 }
 
 void blocking_xcb_sync_set_counter (xcb_connection_t *c, xcb_sync_counter_t counter, xcb_sync_int64_t *val)
@@ -1035,7 +1060,7 @@ void x11_handle_selections (struct x_state *x_st, struct gui_state_t *gui_st, xc
     }
 }
 
-int main (void)
+int main (int argc, char ** argv)
 {
     // Setup clocks
     setup_clocks ();
@@ -1071,7 +1096,7 @@ int main (void)
 
     x11_create_window (x_st, "Point Set Viewer");
 
-    x11_setup_icccm_and_ewmh_protocols (x_st);
+    x11_setup_icccm_and_ewmh_protocols (x_st, argv[0]);
 
     // Crerate backbuffer pixmap
     x_st->gc = xcb_generate_id (x_st->xcb_c);
