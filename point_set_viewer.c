@@ -2,8 +2,6 @@
  * Copyright (C) 2017 Santiago León O. <santileortiz@gmail.com>
  */
 
-// Dependencies:
-// sudo apt-get install libxcb1-dev libcairo2-dev
 #include <X11/Xlib-xcb.h>
 #include <xcb/sync.h>
 #include <X11/Xutil.h>
@@ -96,10 +94,6 @@ bool update_and_render (struct app_state_t *st, app_graphics_t *graphics, app_in
         update_input (&st->gui_st, input);
 
         switch (st->gui_st.input.keycode) {
-            case 58: //KEY_M
-                st->app_mode = (st->app_mode + 1)%NUM_APP_MODES;
-                st->gui_st.input.force_redraw = true;
-                break;
             case 24: //KEY_Q
                 st->end_execution = true;
                 // NOTE: We want modes to be called once after we end execution
@@ -111,6 +105,14 @@ bool update_and_render (struct app_state_t *st, app_graphics_t *graphics, app_in
                 //    //printf ("%" PRIu16 "\n", input.modifiers);
                 //}
                 break;
+        }
+
+#ifdef RELEASE_BUILD
+        blit_needed = point_set_mode (st, graphics);
+#else
+        if (st->gui_st.input.keycode == 58) { //KEY_M
+            st->app_mode = (st->app_mode + 1)%NUM_APP_MODES;
+            st->gui_st.input.force_redraw = true;
         }
 
         switch (st->app_mode) {
@@ -126,6 +128,7 @@ bool update_and_render (struct app_state_t *st, app_graphics_t *graphics, app_in
             default:
                 invalid_code_path;
         }
+#endif
     }
 
     cairo_surface_flush (cairo_get_target(graphics->cr));
@@ -1066,7 +1069,7 @@ int main (void)
     // have to iterate with xcb_setup_roots_iterator(), and xcb_screen_next ().
     x_st->screen = xcb_setup_roots_iterator (xcb_get_setup (x_st->xcb_c)).data;
 
-    x11_create_window (x_st, "Order Type");
+    x11_create_window (x_st, "Point Set Viewer");
 
     x11_setup_icccm_and_ewmh_protocols (x_st);
 

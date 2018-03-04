@@ -3,6 +3,8 @@ Point Set Viewer
 
 Graphical application to view point sets representing order types.
 
+![screenshot](img/screenshot.png)
+
 Compilation
 -----------
 

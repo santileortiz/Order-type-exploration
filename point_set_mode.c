@@ -1035,7 +1035,7 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
         labeled_entries_layout_t lay =
             begin_labeled_layout (10, 10, 12, 12, panel);
 
-        layout_box_t *tmp = title ("Point Set:", POS(lay.x, lay.y));
+        layout_box_t *tmp = title ("Point Set", POS(lay.x, lay.y));
         labeled_layout_skip (&lay, BOX_HEIGHT (tmp->box));
 
         ps_mode->focus_list[foc_n] =
