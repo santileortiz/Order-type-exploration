@@ -62,9 +62,12 @@ def install ():
         return
 
     destdir = get_cli_option('--destdir', has_argument=True)
-    install_files (installation_info, destdir)
+    installed_files = install_files (installation_info, destdir)
     if destdir == None or destdir == '/':
-        ex ('gtk-update-icon-cache-3.0 /usr/share/icons/hicolor/')
+        for f in installed_files:
+            if 'hicolor' in f:
+                ex ('gtk-update-icon-cache-3.0 /usr/share/icons/hicolor/')
+                break;
 
 if __name__ == "__main__":
     if get_cli_option ('--get_deps_pkgs'):

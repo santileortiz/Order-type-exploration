@@ -650,7 +650,7 @@ void x11_setup_icccm_and_ewmh_protocols (struct x_state *x_st, char *arg0)
 
     string_t instance = str_new (c);
     int end = str_len(&instance)+1;
-    str_put (&instance, end, c);
+    str_put_c (&instance, end, c);
     // This capitalization won't work if the binary's name is not ASCII but I've
     // never seen that before.
     str_data(&instance)[end] &= ~0x20;

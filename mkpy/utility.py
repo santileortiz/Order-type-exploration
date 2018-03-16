@@ -66,7 +66,7 @@ def call_user_function(name, dry_run=False):
 def check_completions ():
     comp_path = pathlib.Path('/usr/share/bash-completion/completions/pymk.py')
     if not comp_path.exists():
-        warn ('Tab completions not installed:')
+        print ('Tab completions not installed:')
         print ('Use "sudo ./pymk.py --install_completions" to install them\n')
         return
     if comp_path.is_file() and not filecmp.cmp ('mkpy/pymk.py', str(comp_path)):
@@ -300,35 +300,57 @@ def ensure_dir (path_s):
     if not path.exists():
         os.makedirs (resolved_path)
 
+def file_time(fname):
+    res = 0
+    tgt_path = pathlib.Path(fname)
+    if tgt_path.is_file():
+        res = os.stat(fname).st_mtime
+    return res
+
 def install_files (info_dict, prefix=None):
     global g_dry_run
 
     if prefix == None:
         prefix = '/'
 
-    prnt = [] 
+    prnt = []
     for f in info_dict.keys():
         dst = prefix + info_dict[f]
         resolved_dst = dst.format(**get_user_str_vars())
-        dst_path = pathlib.Path(resolved_dst)
-
         resolved_f = f.format(**get_user_str_vars())
 
+        # Compute the absolute dest path including the file, even if just a
+        # dest directory was specified
         dst_dir, fname = os.path.split (resolved_dst)
         if fname == '':
             _, fname = os.path.split (resolved_f)
-
         dest_file = dst_dir + '/' + fname
-        if not g_dry_run:
-            if not dst_path.exists():
-                os.makedirs (resolved_dst)
-            shutil.copy (resolved_f, dest_file)
-            prnt.append (dest_file)
-        else:
-            prnt.append ('Install: ' + resolved_f + ' -> ' + dest_file)
+
+        # If the file already exists check we have a newer version. If we
+        # don't, skip it.
+        install_file = True
+        dest_file_path = pathlib.Path(dest_file)
+        if dest_file_path.exists():
+            src_time = file_time (resolved_f)
+            dst_time = file_time (dest_file)
+            if (src_time < dst_time):
+                install_file = False
+
+        if install_file:
+            if not g_dry_run:
+                dst_path = pathlib.Path(dst_dir)
+                if not dst_path.exists():
+                    os.makedirs (dst_dir)
+
+                shutil.copy (resolved_f, dest_file)
+                prnt.append (dest_file)
+            else:
+                prnt.append ('Install: ' + resolved_f + ' -> ' + dest_file)
 
     prnt.sort()
     [print (s) for s in prnt]
+
+    return prnt
 
 def pymk_default ():
     check_completions ()
