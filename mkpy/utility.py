@@ -211,6 +211,12 @@ def get_deps_pkgs (flags):
     res = ex ('echo "' +str(strs)+ '" | grep -Po "^.*?(?=:)" | sort | uniq | xargs echo', ret_stdout=True, echo=False)
     print (res[:-1])
 
+def pkg_config_libs (packages):
+    return ex ('pkg-config --libs ' + ' '.join(packages), ret_stdout=True)
+
+def pkg_config_includes (packages):
+    return ex ('pkg-config --cflags ' + ' '.join(packages), ret_stdout=True)
+
 ex_cmds = []
 g_dry_run = False
 
@@ -233,7 +239,7 @@ def ex (cmd, no_stdout=False, ret_stdout=False, echo=True):
         redirect = open(os.devnull, 'wb') if no_stdout else None
         return subprocess.call(resolved_cmd, shell=True, stdout=redirect)
     else:
-        return subprocess.check_output(resolved_cmd, shell=True, stderr=open(os.devnull, 'wb')).decode()
+        return subprocess.check_output(resolved_cmd, shell=True, stderr=open(os.devnull, 'wb')).decode().rstrip ()
 
 def get_target ():
     if len(sys.argv) == 1:
@@ -251,6 +257,18 @@ def get_target_dep_pkgs ():
         if s.startswith('gcc'):
             get_deps_pkgs (s)
 
+def pers_get_cache_dict ():
+    cache_dict = {}
+    if os.path.exists('mkpy/cache'):
+        cache = open ('mkpy/cache', 'r')
+        cache_dict = ast.literal_eval (cache.readline())
+        cache.close ()
+    return cache_dict
+
+def pers_set_cache_dict (cache_dict):
+    cache = open ('mkpy/cache', 'w')
+    cache.write (str(cache_dict)+'\n')
+
 def pers (name, default=None, value=None):
     """
     Makes persistent some value across runs of the script storing it in a
@@ -260,15 +278,14 @@ def pers (name, default=None, value=None):
     If default is used, when _value_==None and _name_ is not in the cache the
     pair _name_:_default is stored.
     """
+
+    # TODO: With this we now return None, even when _default_!=None
+    # In this case the point is we always return something.
     global g_dry_run
     if g_dry_run:
         return
 
-    cache_dict = {}
-    if os.path.exists('mkpy/cache'):
-        cache = open ('mkpy/cache', 'r')
-        cache_dict = ast.literal_eval (cache.readline())
-        cache.close ()
+    cache_dict = pers_get_cache_dict ()
 
     if value == None:
         if name in cache_dict.keys ():
@@ -282,9 +299,56 @@ def pers (name, default=None, value=None):
     else:
         cache_dict[name] = value
 
-    cache = open ('mkpy/cache', 'w')
-    cache.write (str(cache_dict)+'\n')
+    pers_set_cache_dict (cache_dict)
     return cache_dict.get (name)
+
+def pers_func_f (name, func, args, kwargs={}):
+    # TODO: Is there a valid usecase where arg==None? for now I can't think of
+    # any one.
+    if args == None:
+        print ("I didn't expect to receive arg==None")
+        return
+
+    call_func = False
+    cache_dict = pers_get_cache_dict ()
+
+    # If args changed from last call update them in cache and trigger
+    # execution of func
+    last_args = None
+    if name+'_args' in cache_dict.keys ():
+        last_args = cache_dict[name+'_args']
+
+    if last_args != args:
+        cache_dict[name+'_args'] = args
+        call_func = True
+
+    # If kwargs changed from last call update them in cache and trigger
+    # execution of func
+    last_kwargs = {}
+    if kwargs != {}:
+        if name+'_kwargs' in cache_dict.keys ():
+            last_kwargs = cache_dict[name+'_kwargs']
+
+        if last_kwargs != kwargs:
+            cache_dict[name+'_kwargs'] = kwargs
+            call_func = True
+
+    # If some argument changed or func has never been called, call func and
+    # store result in cache. Else return cached value.
+    if last_args == None or call_func:
+        res = func(*args, **kwargs)
+        cache_dict[name] = res
+        pers_set_cache_dict (cache_dict)
+        return res
+    else:
+        return cache_dict[name]
+
+def pers_func (name, func, arg):
+    """
+    Simpler version of pers_func_f for the case when _func_ has a single
+    argument
+    """
+    return pers_func_f (name, func, [arg])
 
 # This could also be accomplished by:
 #   ex ('mkdir -p {path_s}')

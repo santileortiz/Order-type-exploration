@@ -130,7 +130,7 @@ void draw_entities (struct point_set_mode_t *st, app_graphics_t *graphics)
 
     cairo_set_source_rgb (cr, 0, 0, 0);
     for (i=0; i<n; i++) {
-        char str[4];
+        char str[11];
         snprintf (str, ARRAY_SIZE(str), "%i", i);
         draw_point (cr, pts[i], str, st->point_radius, T);
     }
@@ -428,7 +428,10 @@ void set_ot (struct point_set_mode_t *ps_mode)
         ps_mode->arranged_pts[i] = pt;
     }
 
-    pthread_join (global_gui_st->thread, NULL);
+    if (global_gui_st->thread != 0) {
+        pthread_join (global_gui_st->thread, NULL);
+    }
+
     struct arrange_work_t *wk =
         mem_pool_push_size (&global_gui_st->thread_pool, sizeof(struct arrange_work_t));
     wk->ps_mode = ps_mode;

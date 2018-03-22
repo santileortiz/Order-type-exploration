@@ -10,14 +10,13 @@ DEP_FLAGS = '-lcairo ' \
             '-lpthread ' \
             '-lm '
 
-# NOTE: This is too much just to depend on Pango, maybe move to HarfBuzz?
-PANGO_FLAGS = '-lgobject-2.0 ' \
-              '-lpango-1.0 ' \
-              '-lpangocairo-1.0 ' \
-              '-I/usr/include/pango-1.0 ' \
-              '-I/usr/include/cairo ' \
-              '-I/usr/include/glib-2.0 ' \
-              '-I/usr/lib/x86_64-linux-gnu/glib-2.0/include '
+# Put Pango flags separated because some targets don't depend on it.
+# NOTE: Not as clean as I would like but Gnome places its headers in weird
+# places.
+pkg_config_pkgs = ['pango', 'pangocairo']
+PKG_CONFIG_L = pers_func ('PKG_CONFIG_L', pkg_config_libs, pkg_config_pkgs)
+PKG_CONFIG_I = pers_func ('PKG_CONFIG_I', pkg_config_includes, pkg_config_pkgs)
+PANGO_FLAGS = PKG_CONFIG_I + ' ' + PKG_CONFIG_L
 
 installation_info = {
     'bin/point-set-viewer': 'usr/bin/',
@@ -40,11 +39,11 @@ FLAGS = modes[pers('mode', 'debug', cli_mode)]
 ensure_dir ("bin")
 
 def default():
-    target = pers ('last_target', 'point-set-viewer')
+    target = pers ('last_target', 'point_set_viewer')
     call_user_function(target)
 
 def point_set_viewer ():
-    ex ('gcc {FLAGS} -o bin/point-set-viewer point_set_viewer.c {DEP_FLAGS} {PANGO_FLAGS} -lcurl')
+    ex ('gcc {FLAGS} -o bin/point-set-viewer point_set_viewer.c {PANGO_FLAGS} {DEP_FLAGS} -lcurl')
 
 def search ():
     ex ('gcc {FLAGS} -o bin/search search.c -lm -lcurl')
