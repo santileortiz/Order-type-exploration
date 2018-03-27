@@ -30,9 +30,9 @@ installation_info = {
     }
 
 modes = {
-        'debug': '-g -Wall',
-        'profile_debug': '-O3 -g -pg -Wall',
-        'release': '-O3 -DNDEBUG -DRELEASE_BUILD -Wall'
+        'debug': '-Og -Wall',
+        'profile_debug': '-O2 -g -pg -Wall',
+        'release': '-O2 -g -DNDEBUG -DRELEASE_BUILD -Wall'
         }
 cli_mode = get_cli_option('-M,--mode', modes.keys())
 FLAGS = modes[pers('mode', 'debug', cli_mode)]
