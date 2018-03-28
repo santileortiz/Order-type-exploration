@@ -1,5 +1,7 @@
 #!/usr/bin/python3
+from mkpy import utility as cfg
 from mkpy.utility import *
+
 assert sys.version_info >= (3,2)
 
 DEP_FLAGS = '-lcairo ' \
@@ -68,9 +70,11 @@ def install ():
                 ex ('gtk-update-icon-cache-3.0 /usr/share/icons/hicolor/')
                 break;
 
+cfg.builtin_completions = ['--get_run_deps', '--get_build_deps']
 if __name__ == "__main__":
-    if get_cli_option ('--get_deps_pkgs'):
-        get_target_dep_pkgs ()
-        exit ()
+    # Everything above this line will be executed for each TAB press.
+    # If --get_completions is set, handle_tab_complete() calls exit().
+    handle_tab_complete ()
+
     pymk_default()
 

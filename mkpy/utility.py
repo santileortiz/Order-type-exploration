@@ -68,12 +68,14 @@ def check_completions ():
     if not comp_path.exists():
         print ('Tab completions not installed:')
         print ('Use "sudo ./pymk.py --install_completions" to install them\n')
-        return
-    if comp_path.is_file() and not filecmp.cmp ('mkpy/pymk.py', str(comp_path)):
-        err ('Tab completions outdated:')
-        print ('Update with "sudo ./pymk.py --install_completions"\n')
+        return False
+    else:
+        return True
 
-def default_opt (s):
+# Options can have several syntaxes, like ls has -a and --all. These are stored
+# as a comma separated list in the key of cli_completions, here we choose just
+# one to recommend when using tab completions.
+def recommended_opt (s):
     opt_lst = s.split(',')
     res = None
     for s in opt_lst: 
@@ -83,16 +85,26 @@ def default_opt (s):
         res = opt_lst[0]
     return res
 
+builtin_completions = []
 cli_completions = {}
-def cli_completion_options ():
+def handle_tab_complete ():
     """
     Handles command line options used by tab completion.
     The option --get_completions exits the script after printing completions.
     """
-    global cli_completions
+    global cli_completions, builtin_completions
+
+    # Check that the tab completion script is installed
+    if not check_completions ():
+        return
+
+    # Add the builtin tab completions the user wants
+    if len(builtin_completions) > 0:
+        [get_cli_option (c) for c in builtin_completions]
 
     if get_cli_option('--install_completions'):
         ex ("cp mkpy/pymk.py /usr/share/bash-completion/completions/")
+        exit ()
 
     data_str = get_cli_option('--get_completions', unique_option=True, has_argument=True)
     if data_str != None:
@@ -111,7 +123,7 @@ def cli_completion_options ():
             f_names = [s for s,f in get_user_functions()]
             print (' '.join(f_names))
             if line[-1] == '-':
-                def_opts = [default_opt(s) for s in cli_completions.keys()]
+                def_opts = [recommended_opt(s) for s in cli_completions.keys()]
                 print (' '.join(def_opts))
             elif line[-1] != '':
                 def_opts = []
@@ -200,17 +212,6 @@ def get_user_str_vars ():
             var_dict[v_name] = v
     return var_dict
 
-def get_deps_pkgs (flags):
-    """
-    Prints dpkg packages from where -l* options in _flags_ are comming from.
-    """
-    # TODO: Is there a better way to find out this information?
-    libs = [f for f in flags.split(" ") if f.startswith("-l")]
-    strs = ex ('ld --verbose '+" ".join(libs)+' | grep succeeded | grep -Po "/\K(/.*.so)" | xargs dpkg-query --search', ret_stdout=True, echo=False)
-    ex ('rm a.out', echo=False) # ld always creates a.out
-    res = ex ('echo "' +str(strs)+ '" | grep -Po "^.*?(?=:)" | sort | uniq | xargs echo', ret_stdout=True, echo=False)
-    print (res[:-1])
-
 def pkg_config_libs (packages):
     return ex ('pkg-config --libs ' + ' '.join(packages), ret_stdout=True)
 
@@ -224,13 +225,19 @@ def set_dry_run():
     global g_dry_run
     g_dry_run = True
 
+# Allow commands
+class format_dict(dict):
+    def __missing__(self, key):
+        return '{'+key+'}'
+
 def ex (cmd, no_stdout=False, ret_stdout=False, echo=True):
     global g_dry_run
 
-    resolved_cmd = cmd.format(**get_user_str_vars())
+    user_vars = format_dict(get_user_str_vars())
+    resolved_cmd = cmd.format_map(user_vars)
 
+    ex_cmds.append(resolved_cmd)
     if g_dry_run:
-        ex_cmds.append(resolved_cmd)
         return
 
     if echo: print (resolved_cmd)
@@ -249,13 +256,6 @@ def get_target ():
             return 'default'
         else:
             return sys.argv[1]
-
-def get_target_dep_pkgs ():
-    global ex_cmds
-    call_user_function (get_target(), dry_run=True)
-    for s in ex_cmds:
-        if s.startswith('gcc'):
-            get_deps_pkgs (s)
 
 def pers_get_cache_dict ():
     cache_dict = {}
@@ -416,11 +416,166 @@ def install_files (info_dict, prefix=None):
 
     return prnt
 
-def pymk_default ():
-    check_completions ()
-    cli_completion_options() # If we are being called by the tab completion script, execution ends here
+# TODO: dnf is written in python, meybe we can call dnf's module instead of
+# using ex().
+# @use_dnf_python
+def dnf_find_providers (file_list, short_name=False):
+    f_str = " ".join (file_list)
+    queryformat = ''
+    if short_name:
+        queryformat = r'%{{NAME}}\n'
+    else:
+        queryformat = r'%{{NAME}}-%{{version}}-%{{release}}.%{{ARCH}}\n'
+    prov_str = ex ("rpm -qf {} --queryformat '{}' | sort | uniq".format(f_str, queryformat),\
+                   ret_stdout=True, echo=False)
+    return prov_str.split ('\n')
 
+# @use_dnf_python
+def dnf_find_deps (pkg_name):
+    # FIXME: The --installed option is required because there is a bug in dnf
+    # that makes the query impossibly slow. Check if this gets fixed.
+    deps_str = ex ("dnf repoquery --qf '%{{NAME}}-%{{version}}-%{{release}}.%{{ARCH}}'" \
+            " --requires --resolve --installed --recursive " + pkg_name, ret_stdout=True, echo=False)
+    return deps_str.split ('\n')
+
+# @requires_gcc, @requires_dnf
+def get_run_deps (bin_name):
+    required_shdeps = ex ("ldd {} | awk '{{print $3}}'".format (bin_name), ret_stdout=True, echo=False)
+    all_deps = dnf_find_providers (required_shdeps.split ('\n'))
+
+    a = set()
+    b = set(all_deps)
+
+    print ('Full run dependencies:\n' + " ".join(all_deps))
+    print ()
+    while b:
+        dep = b.pop ()
+        print ('Prunning: ' + dep)
+        curr_deps = dnf_find_deps (dep)
+        for d in curr_deps:
+            if d in a:
+                a.remove (d)
+            if d in b:
+                b.remove (d)
+        a.add (dep)
+    print()
+    print ('Minimal run dependencies:\n' + '\n'.join(a))
+
+def gcc_used_system_includes (cmd):
+    def awk_escape (s):
+        return s.replace ('\n', '').replace ('{', '{{').replace ('}','}}')
+
+    tmpfname = ex ('mktemp', ret_stdout=True, echo=False)
+    arr = cmd.split()
+    arr.insert (1, '-M -MF {}'.format(tmpfname))
+
+    # FIXME: If we call gcc -M -MF <file> -o <output_file> then gcc for some
+    # reason clears <output_file> and becomes empty. Strip the -o option to
+    # avoid this.
+    for i, tk in enumerate(arr):
+        if tk == '-o':
+            # Remove -o
+            arr.pop(i)
+            # Remove <output_file>
+            arr.pop(i)
+            break
+
+    ex (" ".join (arr), echo=False)
+
+    # NOTE: I think gcc outputs one Makefile rule per source file present in
+    # the command, right now we just take all system include files and merge
+    # them.
+    awk_prg = r"""
+    BEGIN {
+        RS="\\";
+        OFS="\n"
+    }
+    {
+        for(i=1;i<=NF;i++)
+            if ($i ~ /^\//) {print $i}
+    }
+    """
+    awk_prg = awk_escape(awk_prg)
+    res = ex ("awk '{}' {} | sort | uniq".format(awk_prg, tmpfname), echo=False, ret_stdout=True)
+    return res.split ('\n')
+
+def gcc_get_out (cmd):
+    """
+    Returns a.out or the file after -o option.
+    """
+    out_f = 'a.out'
+    cmd_arr = cmd.split ()
+    for i, tk in enumerate(cmd_arr):
+        if tk == '-o':
+            out_f = cmd_arr[i+1]
+            break
+    return out_f
+
+def file_is_elf (fname):
+    return not ex ('file '+ fname + ' | grep ELF', echo=False, no_stdout=True)
+
+def file_exists (fname):
+    return pathlib.Path(fname).exists()
+
+def pymk_default ():
+    global ex_cmds
     t = get_target()
+
+    if '--get_run_deps' in builtin_completions and \
+        get_cli_option ('--get_run_deps'):
+        # Look for all gcc commands that generate an executable and get the
+        # packages that provide the shared libraries it uses.
+        #
+        # First we try to get the executable using a dry run of the target, if
+        # we can't find the output file then runs the target and try again. I'm
+        # still not sure this is a good default because if a target generates
+        # something using gcc and then deletes it, then this function will
+        # always call the target. Still, knowing if a target deletes gcc's
+        # output seems intractable, there are too many ways to do it.
+        use_dry_run = True
+        for attempt in range (2):
+            call_user_function (t, dry_run=use_dry_run)
+            tmp_ex_cmds = ex_cmds[:]
+            for cmd in tmp_ex_cmds:
+                if cmd.startswith('gcc'):
+                    out_file = gcc_get_out (cmd)
+                    if not file_exists (out_file):
+                        if attempt == 0:
+                            # Output does not exist, reset ex_cmd and try
+                            # again but not as dry_run.
+                            ex_cmds = []
+                            use_dry_run = False
+                            break
+                        else:
+                            # Output does not exist but we already ran the
+                            # target. Probably the target itself deletes this
+                            # file. Skip it.
+                            continue
+                    elif file_is_elf (out_file):
+                        get_run_deps (out_file)
+            if use_dry_run == True:
+                # Calling the target wasn't necessary, we are done.
+                break
+        exit ()
+
+    if '--get_build_deps' in builtin_completions and \
+        get_cli_option ('--get_build_deps'):
+        # Call the target in dry run mode and for each gcc command find the
+        # packages that provide the include files it needs.
+        call_user_function (t, dry_run=True)
+        deps = set()
+        for cmd in ex_cmds[:]:
+            if cmd.startswith('gcc'):
+                include_files = gcc_used_system_includes (cmd)
+                curr_deps = set (dnf_find_providers (include_files, short_name=True))
+                deps = deps.union (curr_deps)
+
+        # Sort and print
+        deps_list = list(deps)
+        deps_list.sort()
+        print ("\n".join (deps_list))
+        exit ()
+
     call_user_function (t)
     if t != 'default' and t != 'install':
         pers ('last_target', value=t)
