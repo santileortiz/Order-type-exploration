@@ -443,7 +443,7 @@ def deb_find_providers (file_list, short_name=False):
     return prov_str.split ('\n')
 
 def deb_find_deps (pkg_name):
-    flags = '--recurse --no-suggests --no-conflicts --no-breaks --no-replaces --no-enhances'
+    flags = '--recurse --no-recommends --no-suggests --no-conflicts --no-breaks --no-replaces --no-enhances'
     deps_str = ex ("apt-cache depends {} {} | grep Depends | awk '{{print $2}}'".format(flags, pkg_name), \
             ret_stdout=True, echo=False)
     return deps_str.split ('\n')
@@ -458,6 +458,9 @@ def get_pkg_manager_type ():
         elif l.startswith ('ID_LIKE='):
             os_id_like = l.replace ('ID_LIKE=', '').rstrip()
     os_release.close()
+
+    os_id = os_id.replace ("'",'').replace ('"', '')
+    os_id_like = os_id_like.replace ("'",'').replace ('"', '')
 
     def match_os_id (wanted_ids, os_id, os_id_like):
         for i in wanted_ids:
@@ -507,10 +510,12 @@ def prune_pkg_list (pkg_list):
     return list (a)
 
 def get_run_deps (bin_name):
-    required_shdeps = ex ("ldd {} | awk '{{print $3}}'".format (bin_name), ret_stdout=True, echo=False)
+    required_shdeps = ex ("ldd {} | awk '!/vdso/{{print $(NF-1)}}'".format (bin_name),\
+            ret_stdout=True, echo=False)
     all_deps = find_providers (required_shdeps.split ('\n'))
     all_deps = prune_pkg_list (all_deps)
-    return all_deps.sort()
+    all_deps.sort()
+    return all_deps
 
 def gcc_used_system_includes (cmd):
     def awk_escape (s):
@@ -607,7 +612,7 @@ def pymk_default ():
                     elif file_is_elf (out_file):
                         print ('Dependencies for: ' + out_file)
                         deps = get_run_deps (out_file)
-                        print (deps.join ('\n'))
+                        print ('\n'.join (deps))
             if use_dry_run == True:
                 # Calling the target wasn't necessary, we are done.
                 break
