@@ -268,6 +268,7 @@ def pers_get_cache_dict ():
 def pers_set_cache_dict (cache_dict):
     cache = open ('mkpy/cache', 'w')
     cache.write (str(cache_dict)+'\n')
+    cache.close ()
 
 def pers (name, default=None, value=None):
     """
@@ -278,12 +279,7 @@ def pers (name, default=None, value=None):
     If default is used, when _value_==None and _name_ is not in the cache the
     pair _name_:_default is stored.
     """
-
-    # TODO: With this we now return None, even when _default_!=None
-    # In this case the point is we always return something.
     global g_dry_run
-    if g_dry_run:
-        return
 
     cache_dict = pers_get_cache_dict ()
 
@@ -299,7 +295,9 @@ def pers (name, default=None, value=None):
     else:
         cache_dict[name] = value
 
-    pers_set_cache_dict (cache_dict)
+    # In dry ryn mode just don't the cache file
+    if g_dry_run:
+        pers_set_cache_dict (cache_dict)
     return cache_dict.get (name)
 
 def pers_func_f (name, func, args, kwargs={}):
@@ -419,7 +417,7 @@ def install_files (info_dict, prefix=None):
 # TODO: dnf is written in python, meybe we can call dnf's module instead of
 # using ex().
 # @use_dnf_python
-def dnf_find_providers (file_list, short_name=False):
+def rpm_find_providers (file_list, short_name=False):
     f_str = " ".join (file_list)
     queryformat = ''
     if short_name:
@@ -431,17 +429,71 @@ def dnf_find_providers (file_list, short_name=False):
     return prov_str.split ('\n')
 
 # @use_dnf_python
-def dnf_find_deps (pkg_name):
+def rpm_find_deps (pkg_name):
     # FIXME: The --installed option is required because there is a bug in dnf
     # that makes the query impossibly slow. Check if this gets fixed.
     deps_str = ex ("dnf repoquery --qf '%{{NAME}}-%{{version}}-%{{release}}.%{{ARCH}}'" \
             " --requires --resolve --installed --recursive " + pkg_name, ret_stdout=True, echo=False)
     return deps_str.split ('\n')
 
-# @requires_gcc, @requires_dnf
+def deb_find_providers (file_list, short_name=False):
+    f_str = " ".join (file_list)
+    prov_str = ex ("dpkg -S {} | awk -F: '{{print $1}}' | sort | uniq".format(f_str), \
+            ret_stdout=True, echo=False)
+    return prov_str.split ('\n')
+
+def deb_find_deps (pkg_name):
+    flags = '--recurse --no-suggests --no-conflicts --no-breaks --no-replaces --no-enhances'
+    deps_str = ex ("apt-cache depends {} {} | grep Depends | awk '{{print $2}}'".format(flags, pkg_name), \
+            ret_stdout=True, echo=False)
+    return deps_str.split ('\n')
+
+def get_pkg_manager_type ():
+    os_release = open ('/etc/os-release', "r")
+    os_id = ''
+    os_id_like = ''
+    for l in os_release:
+        if l.startswith ('ID='):
+            os_id = l.replace ('ID=', '').rstrip()
+        elif l.startswith ('ID_LIKE='):
+            os_id_like = l.replace ('ID_LIKE=', '').rstrip()
+    os_release.close()
+
+    def match_os_id (wanted_ids, os_id, os_id_like):
+        for i in wanted_ids:
+            if i == os_id:
+                return True
+            elif i == os_id_like:
+                return True
+            else:
+                return False
+
+    deb_oses = ['elementary', 'ubuntu', 'debian']
+    rpm_oses = ['fedora']
+
+    if match_os_id (deb_oses, os_id, os_id_like):
+        return 'deb'
+    elif match_os_id (rpm_oses, os_id, os_id_like):
+        return 'rpm'
+    else:
+        return ''
+
+pkg_manager_type = get_pkg_manager_type ()
+
+# Probably put this in polymorphic classes?
+# TODO: Test this in several distributions. Arch is still not implemented.
+find_deps = None
+find_providers = None
+if pkg_manager_type == 'deb':
+    find_deps = deb_find_deps
+    find_providers = deb_find_providers
+elif pkg_manager_type == 'rpm':
+    find_deps = rpm_find_deps
+    find_providers = rpm_find_providers
+
 def get_run_deps (bin_name):
     required_shdeps = ex ("ldd {} | awk '{{print $3}}'".format (bin_name), ret_stdout=True, echo=False)
-    all_deps = dnf_find_providers (required_shdeps.split ('\n'))
+    all_deps = find_providers (required_shdeps.split ('\n'))
 
     a = set()
     b = set(all_deps)
@@ -450,8 +502,8 @@ def get_run_deps (bin_name):
     print ()
     while b:
         dep = b.pop ()
+        curr_deps = find_deps (dep)
         print ('Prunning: ' + dep)
-        curr_deps = dnf_find_deps (dep)
         for d in curr_deps:
             if d in a:
                 a.remove (d)
@@ -521,8 +573,7 @@ def pymk_default ():
     global ex_cmds
     t = get_target()
 
-    if '--get_run_deps' in builtin_completions and \
-        get_cli_option ('--get_run_deps'):
+    if '--get_run_deps' in builtin_completions and get_cli_option ('--get_run_deps'):
         # Look for all gcc commands that generate an executable and get the
         # packages that provide the shared libraries it uses.
         #
@@ -532,6 +583,9 @@ def pymk_default ():
         # something using gcc and then deletes it, then this function will
         # always call the target. Still, knowing if a target deletes gcc's
         # output seems intractable, there are too many ways to do it.
+        if pkg_manager_type == '':
+            exit ()
+
         use_dry_run = True
         for attempt in range (2):
             call_user_function (t, dry_run=use_dry_run)
@@ -558,16 +612,18 @@ def pymk_default ():
                 break
         exit ()
 
-    if '--get_build_deps' in builtin_completions and \
-        get_cli_option ('--get_build_deps'):
+    if '--get_build_deps' in builtin_completions and get_cli_option ('--get_build_deps'):
         # Call the target in dry run mode and for each gcc command find the
         # packages that provide the include files it needs.
+        if pkg_manager_type == '':
+            exit ()
+
         call_user_function (t, dry_run=True)
         deps = set()
         for cmd in ex_cmds[:]:
             if cmd.startswith('gcc'):
                 include_files = gcc_used_system_includes (cmd)
-                curr_deps = set (dnf_find_providers (include_files, short_name=True))
+                curr_deps = set (find_providers (include_files, short_name=True))
                 deps = deps.union (curr_deps)
 
         # Sort and print
