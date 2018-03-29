@@ -491,27 +491,26 @@ elif pkg_manager_type == 'rpm':
     find_deps = rpm_find_deps
     find_providers = rpm_find_providers
 
-def get_run_deps (bin_name):
-    required_shdeps = ex ("ldd {} | awk '{{print $3}}'".format (bin_name), ret_stdout=True, echo=False)
-    all_deps = find_providers (required_shdeps.split ('\n'))
-
+def prune_pkg_list (pkg_list):
     a = set()
-    b = set(all_deps)
+    b = set(pkg_list)
 
-    print ('Full run dependencies:\n' + " ".join(all_deps))
-    print ()
     while b:
         dep = b.pop ()
         curr_deps = find_deps (dep)
-        print ('Prunning: ' + dep)
         for d in curr_deps:
             if d in a:
                 a.remove (d)
             if d in b:
                 b.remove (d)
         a.add (dep)
-    print()
-    print ('Minimal run dependencies:\n' + '\n'.join(a))
+    return list (a)
+
+def get_run_deps (bin_name):
+    required_shdeps = ex ("ldd {} | awk '{{print $3}}'".format (bin_name), ret_stdout=True, echo=False)
+    all_deps = find_providers (required_shdeps.split ('\n'))
+    all_deps = prune_pkg_list (all_deps)
+    return all_deps.sort()
 
 def gcc_used_system_includes (cmd):
     def awk_escape (s):
@@ -606,7 +605,9 @@ def pymk_default ():
                             # file. Skip it.
                             continue
                     elif file_is_elf (out_file):
-                        get_run_deps (out_file)
+                        print ('Dependencies for: ' + out_file)
+                        deps = get_run_deps (out_file)
+                        print (deps.join ('\n'))
             if use_dry_run == True:
                 # Calling the target wasn't necessary, we are done.
                 break
@@ -628,7 +629,9 @@ def pymk_default ():
 
         # Sort and print
         deps_list = list(deps)
+        deps_list = prune_pkg_list (deps_list)
         deps_list.sort()
+        print ('Dependencies for target: ' + t)
         print ("\n".join (deps_list))
         exit ()
 
