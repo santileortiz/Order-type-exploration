@@ -18,22 +18,6 @@ struct database_download_t {
     volatile int writing_str;
 };
 
-DOWNLOAD_PROGRESS_CALLBACK(db_dl_progress)
-{
-    struct database_download_t *dl_st = clientp;
-
-    start_mutex (&dl_st->lock);
-    if (dltotal == 0) {
-        dl_st->percentage_completed = 0;
-    } else {
-        dl_st->percentage_completed = (double)dlnow*100/(double)dltotal;
-    }
-    end_mutex (&dl_st->lock);
-
-    dl_st->redraw = true;
-    return 0;
-}
-
 void* download_thread (void *arg)
 {
     struct database_download_t *dl_st = (struct database_download_t*) arg;
@@ -45,6 +29,7 @@ void* download_thread (void *arg)
     char *url = mem_pool_push_size(&dl_st->mem, strlen(OTDB_URL)+strlen(otdb_names[10])+1);
     char *u_loc = stpcpy (url, OTDB_URL);
 
+    bool download_error = false;
     int i;
     for (i=0; i<dl_st->num_missing; i++) {
         strcpy (f_loc, otdb_names[dl_st->missing[i]]);
@@ -53,11 +38,34 @@ void* download_thread (void *arg)
         dl_st->curr_download = i+1;
         dl_st->percentage_completed = 0;
 
-        dl_st->success = download_file_cbk (url, full_path, db_dl_progress, dl_st);
-        if (!dl_st->success) {
+        http_t* request = http_get (url, NULL);
+        if (request)
+        {
+            http_status_t status = HTTP_STATUS_PENDING;
+            while (status == HTTP_STATUS_PENDING)
+            {
+                status = http_process (request);
+            }
+
+            if( status != HTTP_STATUS_FAILED )
+            {
+                full_file_write (request->response_data, request->response_size, full_path);
+            } else {
+                printf( "HTTP request failed (%d): %s.\n", request->status_code, request->reason_phrase );
+                download_error = true;
+            }
+
+            http_release( request );
+        } else {
+            download_error = true;
             break;
         }
     }
+
+    if (download_error) {
+        printf ("Errors occurred while downloading the database.\n");
+    }
+
     *dl_st->downloading = false;
     free (dir_path);
     mem_pool_destroy (&dl_st->mem);

@@ -10,7 +10,6 @@
 #include <stdlib.h>
 #include <cairo/cairo-xlib.h>
 #include <pango/pangocairo.h>
-#include <curl/curl.h>
 #include <pthread.h>
 
 #include <inttypes.h>
@@ -23,6 +22,8 @@
 
 #define APPLICATION_DATA "~/.ps_viewer/"
 
+#define HTTP_IMPLEMENTATION
+#include "libs/http.h"
 #include "common.h"
 #include "gui.h"
 #include "slo_timers.h"

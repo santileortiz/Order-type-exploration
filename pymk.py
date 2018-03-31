@@ -45,13 +45,13 @@ def default():
     call_user_function(target)
 
 def point_set_viewer ():
-    ex ('gcc {FLAGS} -o bin/point-set-viewer point_set_viewer.c {PANGO_FLAGS} {DEP_FLAGS} -lcurl')
+    ex ('gcc {FLAGS} -o bin/point-set-viewer point_set_viewer.c {PANGO_FLAGS} {DEP_FLAGS}')
 
 def search ():
-    ex ('gcc {FLAGS} -o bin/search search.c -lm -lcurl')
+    ex ('gcc {FLAGS} -o bin/search search.c -lm')
 
 def render_seq ():
-    ex ('gcc {FLAGS} -o bin/render_seq render_seq.c -lcurl -lcairo -lm')
+    ex ('gcc {FLAGS} -o bin/render_seq render_seq.c -lcairo -lm')
 
 def save_file_to_pdf ():
     ex ('gcc {FLAGS} -o bin/save_file_to_pdf save_file_to_pdf.c {PANGO_FLAGS} -lcairo -lm')

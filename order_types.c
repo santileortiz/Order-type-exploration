@@ -62,7 +62,7 @@ void check_database (int missing[10], int *num_missing)
     free (dir_path);
 }
 
-#ifdef __CURL_CURL_H
+#ifdef http_hpp
 #define OTDB_URL "http://www.ist.tugraz.at/aichholzer/research/rp/triangulations/ordertypes/data/"
 void ensure_full_database ()
 {
@@ -71,7 +71,7 @@ void ensure_full_database ()
     check_database (missing, &num_missing);
 
     if (num_missing > 0) {
-        printf ("Missing %i order type databases.\n", num_missing);
+        printf ("Missing %i order type databases, downloading...\n", num_missing);
 
         char *dir_path = sh_expand (APPLICATION_DATA, NULL);
 
@@ -93,7 +93,7 @@ void ensure_full_database ()
         free (dir_path);
     }
 }
-#endif /*__CURL_CURL_H*/
+#endif /*http_hpp*/
 
 int open_database (int n)
 {
