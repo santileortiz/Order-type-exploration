@@ -32,7 +32,7 @@ installation_info = {
     }
 
 modes = {
-        'debug': '-Og -Wall',
+        'debug': '-Og -g -Wall',
         'profile_debug': '-O2 -g -pg -Wall',
         'release': '-O2 -g -DNDEBUG -DRELEASE_BUILD -Wall'
         }

@@ -26,6 +26,7 @@ struct app_state_t {
     struct gui_state_t gui_st;
 
     mem_pool_t memory;
+    struct config_t *config;
 
     // NOTE: This will be cleared at every frame start
     mem_pool_t temporary_memory;

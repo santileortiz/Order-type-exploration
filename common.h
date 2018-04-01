@@ -1675,11 +1675,6 @@ enum alloc_opts {
     POOL_ZERO_INIT
 };
 
-// pom == pool or malloc
-#define pom_push_struct(pool, type) pom_push_size(pool, sizeof(type))
-#define pom_push_array(pool, n, type) pom_push_size(pool, (n)*sizeof(type))
-#define pom_push_size(pool, size) (pool==NULL? malloc(size) : mem_pool_push_size(pool,size))
-
 #define mem_pool_push_struct(pool, type) mem_pool_push_size(pool, sizeof(type))
 #define mem_pool_push_array(pool, n, type) mem_pool_push_size(pool, (n)*sizeof(type))
 #define mem_pool_push_size(pool, size) mem_pool_push_size_full(pool, size, POOL_UNINITIALIZED)
@@ -1819,6 +1814,29 @@ void mem_pool_end_temporary_memory (mem_pool_temp_marker_t mrkr)
         mrkr.pool->total_used = 0;
     }
 }
+
+// pom == pool or malloc
+#define pom_push_struct(pool, type) pom_push_size(pool, sizeof(type))
+#define pom_push_array(pool, n, type) pom_push_size(pool, (n)*sizeof(type))
+#define pom_push_size(pool, size) (pool==NULL? malloc(size) : mem_pool_push_size(pool,size))
+
+static inline
+void* pom_strndup (mem_pool_t *pool, void *str, uint32_t str_len)
+{
+    char *res = (char*)pom_push_size (pool, str_len+1);
+    memcpy (res, str, str_len);
+    res[str_len] = '\0';
+    return res;
+}
+
+static inline
+void* pom_dup (mem_pool_t *pool, void *data, uint32_t size)
+{
+    void *res = pom_push_size (pool, size);
+    memcpy (res, data, size);
+    return res;
+}
+
 
 // Flatten an array of null terminated strings into a single string allocated
 // into _pool_ or heap.

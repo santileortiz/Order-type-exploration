@@ -33,6 +33,7 @@
 #include "tree_mode.h"
 #include "grid_mode.h"
 #include "point_set_mode.h"
+#include "config.c"
 #include "app_api.h"
 
 #define SEQUENCE_STORE_IMPL
@@ -1153,6 +1154,8 @@ int main (int argc, char ** argv)
 
     st->gui_st.set_clipboard_str = x11_set_clipboard;
     st->gui_st.get_clipboard_str = x11_get_clipboard;
+
+    st->config = read_config (&st->memory);
 
     while (!st->end_execution) {
         while ((event = xcb_poll_for_event (x_st->xcb_c))) {
