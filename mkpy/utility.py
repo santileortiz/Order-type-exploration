@@ -295,8 +295,8 @@ def pers (name, default=None, value=None):
     else:
         cache_dict[name] = value
 
-    # In dry ryn mode just don't the cache file
-    if g_dry_run:
+    # In dry ryn mode just don't update the cache file
+    if not g_dry_run:
         pers_set_cache_dict (cache_dict)
     return cache_dict.get (name)
 
