@@ -417,14 +417,10 @@ def install_files (info_dict, prefix=None):
 # TODO: dnf is written in python, meybe we can call dnf's module instead of
 # using ex().
 # @use_dnf_python
-def rpm_find_providers (file_list, short_name=False):
+def rpm_find_providers (file_list):
     f_str = " ".join (file_list)
     queryformat = ''
-    if short_name:
-        queryformat = r'%{{NAME}}\n'
-    else:
-        queryformat = r'%{{NAME}}-%{{version}}-%{{release}}.%{{ARCH}}\n'
-    prov_str = ex ("rpm -qf {} --queryformat '{}' | sort | uniq".format(f_str, queryformat),\
+    prov_str = ex (r"rpm -qf {} --queryformat '%{{NAME}}\n' | sort | uniq".format(f_str),\
                    ret_stdout=True, echo=False)
     return prov_str.split ('\n')
 
@@ -432,11 +428,11 @@ def rpm_find_providers (file_list, short_name=False):
 def rpm_find_deps (pkg_name):
     # FIXME: The --installed option is required because there is a bug in dnf
     # that makes the query impossibly slow. Check if this gets fixed.
-    deps_str = ex ("dnf repoquery --qf '%{{NAME}}-%{{version}}-%{{release}}.%{{ARCH}}'" \
+    deps_str = ex (r"dnf repoquery --qf '%{{NAME}}'" \
             " --requires --resolve --installed --recursive " + pkg_name, ret_stdout=True, echo=False)
     return deps_str.split ('\n')
 
-def deb_find_providers (file_list, short_name=False):
+def deb_find_providers (file_list):
     f_str = " ".join (file_list)
     prov_str = ex ("dpkg -S {} | awk -F: '{{print $1}}' | sort | uniq".format(f_str), \
             ret_stdout=True, echo=False)
@@ -501,6 +497,7 @@ def prune_pkg_list (pkg_list):
     while b:
         dep = b.pop ()
         curr_deps = find_deps (dep)
+        #print ('Pruning {}: {}\n'.format(dep, " ".join(curr_deps)))
         for d in curr_deps:
             if d in a:
                 a.remove (d)
@@ -629,7 +626,7 @@ def pymk_default ():
         for cmd in ex_cmds[:]:
             if cmd.startswith('gcc'):
                 include_files = gcc_used_system_includes (cmd)
-                curr_deps = set (find_providers (include_files, short_name=True))
+                curr_deps = set (find_providers (include_files))
                 deps = deps.union (curr_deps)
 
         # Sort and print

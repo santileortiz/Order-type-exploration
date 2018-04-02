@@ -11,17 +11,10 @@ Source0:  https://github.com/santileortiz/%{name}/archive/%{version}.tar.gz
 BuildRequires: python3
 BuildRequires: gcc
 BuildRequires: cairo-devel
-BuildRequires: glib2-devel
-BuildRequires: glibc-devel
-BuildRequires: libcurl-devel
-BuildRequires: libX11-devel
-BuildRequires: libxcb-devel
 BuildRequires: pango-devel
-BuildRequires: xorg-x11-proto-devel
 
 Requires:	pango
-Requires:	libX11
-Requires:   libcurl
+Requires:	libX11-xcb
 
 %description
 A tool to explore different point sets in two dimensions and their combinatoric
