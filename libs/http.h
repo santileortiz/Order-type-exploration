@@ -9,8 +9,8 @@ Do this:
     #define HTTP_IMPLEMENTATION
 before you include this file in *one* C/C++ file to create the implementation.
 
-This is a slightly modified version of the original library [1] just to remove
-some warnings in GCC.
+This modified version of [1] adds functionality to get the expected response
+size, before getting the full response.
 
 [1] https://raw.githubusercontent.com/mattiasgustavsson/libs/master/http.h
 */
@@ -35,6 +35,8 @@ typedef struct http_t
     int status_code;
     char const* reason_phrase;
     char const* content_type;
+    size_t received_size;
+    size_t content_length;
     size_t response_size;
     void* response_data;
     } http_t;
@@ -251,6 +253,7 @@ typedef struct http_internal_t
     HTTP_SOCKET socket;
     int connect_pending;
     int request_sent;
+    int header_received;
     char address[ 256 ];
     char request_header[ 256 ];
     char* request_header_large;
@@ -389,12 +392,14 @@ static http_internal_t* http_internal_create( size_t request_data_size, void* me
     internal->memctx = memctx;
     internal->connect_pending = 1;
     internal->request_sent = 0;
+    internal->header_received = 0;
     
     strcpy( internal->reason_phrase, "" );
     internal->http.reason_phrase = internal->reason_phrase;
 
     strcpy( internal->content_type, "" );
     internal->http.content_type = internal->content_type;
+    internal->http.content_length = 0;
 
     internal->data_size = 0;
     internal->data_capacity = 64 * 1024;
@@ -557,6 +562,8 @@ http_status_t http_process( http_t* http )
             }
         else if( size > 0 )
             {
+
+
             size_t min_size = internal->data_size + size + 1;
             if( internal->data_capacity < min_size )
                 {
@@ -568,6 +575,32 @@ http_status_t http_process( http_t* http )
                 internal->data = new_data;
                 }
             memcpy( (void*)( ( (uintptr_t) internal->data ) + internal->data_size ), buffer, (size_t) size );
+
+            if( !internal->header_received )
+                {
+                char const* header_end = strstr( ( (char*) internal->data ) + internal->data_size, "\r\n\r\n" );
+                if( header_end )
+                    {
+                    header_end += 4;
+                    internal->http.received_size = size - (int)( header_end - ( (char*) internal->data + internal->data_size ) );
+                    internal->header_received = 1;
+
+                    char const* content_length_start = strstr( buffer, "Content-Length: " );
+                    if( content_length_start )
+                        {
+                        content_length_start += strlen( "Content-Length: " );
+                        char const* content_length_end = strstr( content_length_start, "\r\n" );
+                        if( content_length_end )
+                            {
+                            internal->http.content_length = atoi( content_length_start );
+                            }
+                        }
+                    }
+                }
+            else
+                {
+                internal->http.received_size += size;
+                }
             internal->data_size += size;
             }
         else if( size == 0 )

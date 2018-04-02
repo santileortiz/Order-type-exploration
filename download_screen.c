@@ -45,6 +45,12 @@ void* download_thread (void *arg)
             http_status_t status = HTTP_STATUS_PENDING;
             while (status == HTTP_STATUS_PENDING) {
                 status = http_process (request);
+
+                if (request->content_length == 0) {
+                    dl_st->percentage_completed = 0;
+                } else {
+                    dl_st->percentage_completed = (double)request->received_size*100/(double)request->content_length;
+                }
             }
 
             if( status != HTTP_STATUS_FAILED ) {
@@ -64,6 +70,7 @@ void* download_thread (void *arg)
     if (download_error) {
         printf ("Errors occurred while downloading the database.\n");
     }
+
 
     *dl_st->downloading = false;
     // NOTE: We reset this to remove the layout boxes used for the download screen.
