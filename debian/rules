@@ -5,6 +5,10 @@ PACKAGENAME := $(shell awk 'NR==1{print $$1}' debian/changelog)
 %:
 	dh $@
 
+override_dh_auto_clean:
+	rm -f bin/*
+	dh_clean
+
 override_dh_auto_build:
 	./pymk.py point_set_viewer --mode release
 
