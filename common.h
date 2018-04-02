@@ -1918,7 +1918,7 @@ bool full_file_write (void *data, ssize_t size, char *path)
     bool failed = false;
     char *dir_path = sh_expand (path, NULL);
 
-    int file = open (path, O_WRONLY | O_CREAT, 0666);
+    int file = open (dir_path, O_WRONLY | O_CREAT, 0666);
     if (file != -1) {
         int bytes_written = 0;
         do {
@@ -2015,6 +2015,23 @@ char* full_file_read_prefix (mem_pool_t *out_pool, const char *path, char **pref
     }
 
     mem_pool_destroy (&pool);
+    return retval;
+}
+
+bool path_exists (char *path)
+{
+    bool retval = true;
+    char *dir_path = sh_expand (path, NULL);
+
+    struct stat st;
+    int status;
+    if ((status = stat(dir_path, &st)) == -1) {
+        retval = false;
+        if (errno != ENOENT) {
+            printf ("Error checking existance of %s: %s\n", path, strerror(errno));
+        }
+    }
+    free (dir_path);
     return retval;
 }
 

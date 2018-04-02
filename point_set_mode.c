@@ -802,42 +802,6 @@ void end_labeled_layout (labeled_entries_layout_t *lay,
     mem_pool_destroy (&lay->pool);
 }
 
-void set_focused_box_value (struct point_set_mode_t *ps_mode, app_graphics_t *graphics, uint64_t val)
-{
-    layout_box_t *focused_box = global_gui_st->focus->dest;
-    if (ps_mode->focus_list[foc_ot] == focused_box) {
-        if (val >= __g_db_data.num_order_types) {
-            val = __g_db_data.num_order_types-1;
-        }
-        db_seek (ps_mode->ot, val);
-        set_ot (ps_mode);
-        focus_order_type (graphics, ps_mode);
-
-    } else if (ps_mode->focus_list[foc_n] == focused_box) {
-        if (val < 3) {
-            val = 3;
-        } else if (val > 10) {
-            val = 10;
-        }
-        set_n (ps_mode, val, graphics);
-
-    } else if (ps_mode->focus_list[foc_k] == focused_box) {
-        uint64_t max_k = ps_mode->triangle_it->size;
-        if (val > max_k) {
-            val = max_k;
-        }
-        set_k (ps_mode, val);
-
-    } else if (ps_mode->focus_list[foc_ts] == focused_box) {
-        if (val >= ps_mode->num_triangle_subsets) {
-            val = ps_mode->num_triangle_subsets-1;
-        }
-        int_string_update (&ps_mode->ts_id, val);
-    }
-
-    ps_mode->redraw_canvas = true;
-}
-
 bool is_negative (char *str)
 {
     while (*str != '\0') {
@@ -883,8 +847,13 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
         ps_mode = st->ps_mode;
         ps_mode->math_memory_flush = mem_pool_begin_temporary_memory (&ps_mode->math_memory);
 
-        int_string_update (&ps_mode->n, 8);
+        if (in_array (8, st->config->n_values, st->config->num_n_values)) {
+            int_string_update (&ps_mode->n, 8);
+        } else {
+            int_string_update (&ps_mode->n, st->config->n_values[0]);
+        }
         int_string_update (&ps_mode->k, thrackle_size (ps_mode->n.i));
+        int_string_update (&ps_mode->ts_id, 0);
 
         ps_mode->max_zoom = 5000;
         ps_mode->zoom = 1;
@@ -900,9 +869,7 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
 
         ps_mode->rebuild_panel = true;
         ps_mode->redraw_canvas = true;
-
         set_n (ps_mode, ps_mode->n.i, graphics);
-        int_string_update (&ps_mode->ts_id, 0);
     }
 
     app_input_t input = st->gui_st.input;
@@ -948,19 +915,27 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
 
             } else if (ps_mode->focus_list[foc_n] == focused_box) {
                 int n = ps_mode->n.i;
+                int n_pos = 0;
+                while (st->config->n_values[n_pos] != n &&
+                       n_pos < st->config->num_n_values) {
+                    n_pos++;
+                }
+
                 if (XCB_KEY_BUT_MASK_SHIFT & input.modifiers
                         || input.keycode == 113) {
-                    n--;
-                    if (n<3) {
-                        n=10;
+                    if (n_pos == 0) {
+                        n_pos = st->config->num_n_values-1;
+                    } else {
+                        n_pos--;
                     }
                 } else {
-                    n++;
-                    if (n>10) {
-                        n=3;
+                    if (n_pos == st->config->num_n_values-1) {
+                        n_pos = 0;
+                    } else {
+                        n_pos++;
                     }
                 }
-                set_n (ps_mode, n, graphics);
+                set_n (ps_mode, st->config->n_values[n_pos], graphics);
             } else if (ps_mode->focus_list[foc_k] == focused_box) {
                 uint64_t max_k = ps_mode->triangle_it->size;
                 if (XCB_KEY_BUT_MASK_SHIFT & input.modifiers
@@ -1220,12 +1195,25 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
             switch (i) {
                 case foc_n:
                     val = ps_mode->n.i;
-                    if (val < 3) {
-                        val = 3;
-                    } else if (val > 10) {
-                        val = 10;
+                    bool is_valid = false;
+
+                    int *valid_n = st->config->n_values;
+                    uint32_t valid_n_size = st->config->num_n_values;
+                    uint32_t len = valid_n_size;
+                    while (len > 0) {
+                        len--;
+                        if (val == valid_n[len]) {
+                            is_valid = true;
+                        }
                     }
-                    set_n (ps_mode, val, graphics);
+
+                    if (is_valid) {
+                        set_n (ps_mode, val, graphics);
+                    } else {
+                        printf ("Tried to set an invalid value for n."
+                                " Either not in range, or not configured in ~/.ps_viewer/viewer.conf\n");
+                    }
+
                     break;
                 case foc_ot:
                     val = ps_mode->ot_id.i;

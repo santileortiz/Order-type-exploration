@@ -12,43 +12,42 @@ struct database_download_t {
     bool success;
     int curr_download;
     double percentage_completed;
-    int num_missing;
-    int missing[10];
+    int num_to_download;
+    int to_download[10];
     char progress_str[40];
     volatile int writing_str;
+    char* database_source;
+    char* database_location;
 };
 
 void* download_thread (void *arg)
 {
     struct database_download_t *dl_st = (struct database_download_t*) arg;
-    char *dir_path = sh_expand (APPLICATION_DATA, NULL);
+    char *dir_path = sh_expand (dl_st->database_location, NULL);
 
     char *full_path = mem_pool_push_size (&dl_st->mem, strlen(dir_path)+strlen(otdb_names[10])+1);
     char *f_loc = stpcpy (full_path, dir_path);
 
-    char *url = mem_pool_push_size(&dl_st->mem, strlen(OTDB_URL)+strlen(otdb_names[10])+1);
-    char *u_loc = stpcpy (url, OTDB_URL);
+    char *url = mem_pool_push_size(&dl_st->mem, strlen(dl_st->database_source)+strlen(otdb_names[10])+1);
+    char *u_loc = stpcpy (url, dl_st->database_source);
 
     bool download_error = false;
     int i;
-    for (i=0; i<dl_st->num_missing; i++) {
-        strcpy (f_loc, otdb_names[dl_st->missing[i]]);
-        strcpy (u_loc, otdb_names[dl_st->missing[i]]);
+    for (i=0; i<dl_st->num_to_download; i++) {
+        strcpy (f_loc, otdb_names[dl_st->to_download[i]]);
+        strcpy (u_loc, otdb_names[dl_st->to_download[i]]);
 
         dl_st->curr_download = i+1;
         dl_st->percentage_completed = 0;
 
         http_t* request = http_get (url, NULL);
-        if (request)
-        {
+        if (request) {
             http_status_t status = HTTP_STATUS_PENDING;
-            while (status == HTTP_STATUS_PENDING)
-            {
+            while (status == HTTP_STATUS_PENDING) {
                 status = http_process (request);
             }
 
-            if( status != HTTP_STATUS_FAILED )
-            {
+            if( status != HTTP_STATUS_FAILED ) {
                 full_file_write (request->response_data, request->response_size, full_path);
             } else {
                 printf( "HTTP request failed (%d): %s.\n", request->status_code, request->reason_phrase );
@@ -67,6 +66,9 @@ void* download_thread (void *arg)
     }
 
     *dl_st->downloading = false;
+    // NOTE: We reset this to remove the layout boxes used for the download screen.
+    global_gui_st->num_layout_boxes = 0;
+
     free (dir_path);
     mem_pool_destroy (&dl_st->mem);
     pthread_exit (0);
@@ -81,7 +83,7 @@ bool download_database_screen (struct app_state_t *st, app_graphics_t *graphics)
         label ("Downloading database", POS_CENTERED(cent.x, cent.y-10));
 
         sprintf (dl_st->progress_str, " 1 of %d: %s (  0.0%%) ",
-                 dl_st->num_missing, otdb_names[dl_st->missing[0]]);
+                 dl_st->num_to_download, otdb_names[dl_st->to_download[0]]);
         label (dl_st->progress_str, POS_CENTERED(cent.x, cent.y+10));
 
         dl_st->percentage_completed = 0;
@@ -89,6 +91,9 @@ bool download_database_screen (struct app_state_t *st, app_graphics_t *graphics)
         dl_st->screen_built = true;
         dl_st->redraw = true;
         dl_st->lock = 0;
+        dl_st->database_source = st->config->database_source;
+        dl_st->database_location = st->config->database_location;
+        ensure_dir_exists (st->config->database_location);
         pthread_create (&dl_st->thread, NULL, download_thread, dl_st);
     }
 
@@ -100,8 +105,8 @@ bool download_database_screen (struct app_state_t *st, app_graphics_t *graphics)
 
         start_mutex (&dl_st->lock);
         sprintf (dl_st->progress_str, "%d of %d: %s (%.1f%%)",
-                 dl_st->curr_download, dl_st->num_missing,
-                 otdb_names[dl_st->missing[dl_st->curr_download-1]],
+                 dl_st->curr_download, dl_st->num_to_download,
+                 otdb_names[dl_st->to_download[dl_st->curr_download-1]],
                  dl_st->percentage_completed);
         end_mutex (&dl_st->lock);
 

@@ -4,7 +4,7 @@
 
 struct config_t {
     int *n_values;
-    uint32_t n_values_size;
+    uint32_t num_n_values;
     char *database_source;
     char *database_location;
 };
@@ -67,7 +67,8 @@ char* consume_character (char *str, char c, bool *failed)
     }
 }
 
-void parse_int_list (mem_pool_t *pool, char *str, uint32_t str_size, int **res, uint32_t *res_size)
+void parse_int_list_range (mem_pool_t *pool, char *str, uint32_t str_size, int **res, uint32_t *res_size,
+                           int min_val, int max_val)
 {
     int_dyn_arr_t found = {0};
     str = consume_spaces (str);
@@ -76,6 +77,9 @@ void parse_int_list (mem_pool_t *pool, char *str, uint32_t str_size, int **res, 
     while (*str != '\0' && *str != '\n' && !is_list_end) {
         char *int_end;
         int n = strtol (str, &int_end, 0);
+        if (n < min_val || max_val < n) {
+            printf ("Integer outside of valid range [%i - %i]\n", min_val, max_val);
+        }
         int_dyn_arr_append (&found, n);
         str = consume_character (int_end, ',', &is_list_end);
         (*res_size)++;
@@ -85,13 +89,28 @@ void parse_int_list (mem_pool_t *pool, char *str, uint32_t str_size, int **res, 
     int_dyn_arr_destroy (&found);
 }
 
+#define CONFIG_DIR "~/.ps_viewer/"
+#define CONFIG_FILE CONFIG_DIR"viewer.conf"
 struct config_t* read_config (mem_pool_t *pool)
 {
     mem_pool_t local_pool = {0};
     struct config_t *res = pom_push_size (pool, sizeof (struct config_t));
 
-    char *full_path = sh_expand ("~/.ps_viewer/viewer.conf", &local_pool);
-    char *conf_file = full_file_read (&local_pool, full_path);
+    ensure_dir_exists (CONFIG_DIR);
+    if (!path_exists (CONFIG_FILE)) {
+        char *default_config = 
+        "# Number of points. Can contain values between [3-10]\n"
+        "N = 3,4,5,6,7,8,9,10\n"
+        "\n"
+        "# Where the database will be downloaded from\n"
+        "DatabaseSource = http://www.ist.tugraz.at/aichholzer/research/rp/triangulations/ordertypes/data/\n"
+        "\n"
+        "# Where the database will be downloaded into. If files are already there then\n"
+        "# we don't download anything.\n"
+        "DatabaseLocation = "CONFIG_DIR"\n";
+        full_file_write (default_config, strlen(default_config), CONFIG_FILE);
+    }
+    char *conf_file = full_file_read (&local_pool, CONFIG_FILE);
 
     bool success = true;
     if (conf_file) {
@@ -104,7 +123,7 @@ struct config_t* read_config (mem_pool_t *pool)
                 break;
             }
             if (strneq (key, key_size, C_STR("N"))) {
-                 parse_int_list (pool, val, val_size, &res->n_values, &res->n_values_size);
+                 parse_int_list_range (pool, val, val_size, &res->n_values, &res->num_n_values, 3, 10);
 
             } else if (strneq(key, key_size, C_STR("DatabaseSource"))) {
                 res->database_source = (char*)pom_strndup (pool, val, val_size);
@@ -128,15 +147,13 @@ struct config_t* read_config (mem_pool_t *pool)
     }
 
     if (res->database_source == NULL) {
-        char *s = "http://www.ist.tugraz.at/aichholzer/research/rp/triangulations/ordertypes/data/";
-        printf ("Using default configuration value: DatabaseSource = %s\n", s);
-        res->database_source = (char*)pom_strndup (pool, C_STR(s));
+        printf ("Using default configuration value: DatabaseSource = %s\n", DEFAULT_DB_SOURCE);
+        res->database_source = (char*)pom_strndup (pool, C_STR(DEFAULT_DB_SOURCE));
     }
 
     if (res->database_location == NULL) {
-        char *s = "~/.ps_viewer/";
-        printf ("Using default configuration value: DatabaseLocation = %s\n", s);
-        res->database_location = (char*)pom_strndup (pool, C_STR(s));
+        printf ("Using default configuration value: DatabaseLocation = %s\n", DEFAULT_DB_LOCATION);
+        res->database_location = (char*)pom_strndup (pool, C_STR(DEFAULT_DB_LOCATION));
     }
 
     return res;

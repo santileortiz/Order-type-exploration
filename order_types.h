@@ -3,6 +3,9 @@
  */
 #if !defined(ORDER_TYPES_H)
 
+#define DEFAULT_DB_LOCATION "http://www.ist.tugraz.at/aichholzer/research/rp/triangulations/ordertypes/data/"
+#define DEFAULT_DB_SOURCE "~/.ps_viewer/"
+
 typedef struct {
     int n;
     uint32_t id;
@@ -18,6 +21,8 @@ struct {
     uint64_t num_order_types;
     uint64_t indx;
     uint32_t buff[40];
+    char *source;
+    char *location;
 } __g_db_data ;
 
 int open_database (int n);

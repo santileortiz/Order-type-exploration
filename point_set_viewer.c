@@ -20,8 +20,6 @@
 #include <assert.h>
 #include <errno.h>
 
-#define APPLICATION_DATA "~/.ps_viewer/"
-
 #define HTTP_IMPLEMENTATION
 #include "libs/http.h"
 #include "common.h"
@@ -56,9 +54,9 @@ bool update_and_render (struct app_state_t *st, app_graphics_t *graphics, app_in
         st->end_execution = false;
         st->is_initialized = true;
 
-        if (!ensure_dir_exists (APPLICATION_DATA)) {
+        if (!ensure_dir_exists ("~/.ps_viewer")) {
             st->end_execution = true;
-            printf ("Couldn't create %s, where the database should be downloaded.", APPLICATION_DATA);
+            printf ("Couldn't create ~/.ps_viewer/ directory for configuration files.");
         }
 
         default_gui_init (&st->gui_st);
@@ -66,9 +64,19 @@ bool update_and_render (struct app_state_t *st, app_graphics_t *graphics, app_in
         st->temporary_memory_flush = mem_pool_begin_temporary_memory (&st->temporary_memory);
 
         st->download_database = false;
-        int missing[10], num_missing;
-        check_database (missing, &num_missing);
-        if (num_missing != 0) {
+        int missing_files[10], num_missing_files;
+        check_database (st->config->database_location, missing_files, &num_missing_files);
+
+        int to_download[10], num_to_download = 0;
+        int i;
+        for (i=0; i<num_missing_files; i++) {
+            if (in_array (missing_files[i], st->config->n_values, st->config->num_n_values)) {
+                to_download[num_to_download] = missing_files[i];
+                num_to_download++;
+            }
+        }
+
+        if (num_to_download != 0) {
             st->download_database = true;
 
             mem_pool_t bootstrap_mem = {0};
@@ -76,10 +84,10 @@ bool update_and_render (struct app_state_t *st, app_graphics_t *graphics, app_in
                                                  sizeof(struct database_download_t),
                                                  POOL_ZERO_INIT);
             st->dl_st->mem = bootstrap_mem;
-            st->dl_st->num_missing = num_missing;
+            st->dl_st->num_to_download = num_to_download;
             int i;
-            for (i=0; i<num_missing; i++) {
-                st->dl_st->missing[i] = missing[i];
+            for (i=0; i<num_to_download; i++) {
+                st->dl_st->to_download[i] = to_download[i];
             }
         }
     }
@@ -1156,6 +1164,7 @@ int main (int argc, char ** argv)
     st->gui_st.get_clipboard_str = x11_get_clipboard;
 
     st->config = read_config (&st->memory);
+    setup_db (st->config->database_location, st->config->database_source);
 
     while (!st->end_execution) {
         while ((event = xcb_poll_for_event (x_st->xcb_c))) {

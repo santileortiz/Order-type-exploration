@@ -41,9 +41,9 @@ char* otdb_names [] = { "", "", "",
                        "otypes03.b08", "otypes04.b08", "otypes05.b08", "otypes06.b08",
                        "otypes07.b08", "otypes08.b08", "otypes09.b16", "otypes10.b16"};
 
-void check_database (int missing[10], int *num_missing)
+void check_database (char *db_location, int missing[10], int *num_missing)
 {
-    char *dir_path = sh_expand (APPLICATION_DATA, NULL);
+    char *dir_path = sh_expand (db_location, NULL);
     struct stat st;
 
     *num_missing = 0;
@@ -62,24 +62,29 @@ void check_database (int missing[10], int *num_missing)
     free (dir_path);
 }
 
+void setup_db (char *db_location, char *db_source)
+{
+    __g_db_data.location = db_location;
+    __g_db_data.source = db_source;
+}
+
 #ifdef http_hpp
-#define OTDB_URL "http://www.ist.tugraz.at/aichholzer/research/rp/triangulations/ordertypes/data/"
-void ensure_full_database ()
+void ensure_full_database (char *db_source, char *db_location)
 {
     int missing [10];
     int num_missing = 0;
-    check_database (missing, &num_missing);
+    check_database (db_location, missing, &num_missing);
 
     if (num_missing > 0) {
         printf ("Missing %i order type databases, downloading...\n", num_missing);
 
-        char *dir_path = sh_expand (APPLICATION_DATA, NULL);
+        char *dir_path = sh_expand (db_location, NULL);
 
         char *full_path = malloc (strlen(dir_path)+strlen(otdb_names[10])+1);
         char *f_loc = stpcpy (full_path, dir_path);
 
-        char *url = malloc(strlen(OTDB_URL)+strlen(otdb_names[10])+1);
-        char *u_loc = stpcpy (url, OTDB_URL);
+        char *url = malloc(strlen(db_source)+strlen(otdb_names[10])+1);
+        char *u_loc = stpcpy (url, db_source);
 
         int i;
         for (i=0; i<num_missing; i++) {
@@ -97,6 +102,14 @@ void ensure_full_database ()
 
 int open_database (int n)
 {
+    if (__g_db_data.location == NULL) {
+        __g_db_data.location = DEFAULT_DB_LOCATION;
+    }
+
+    if (__g_db_data.source == NULL) {
+        __g_db_data.source = DEFAULT_DB_SOURCE;
+    }
+
     if (__g_db_data.db) {
         close(__g_db_data.db);
     }
@@ -107,7 +120,7 @@ int open_database (int n)
     __g_db_data.coord_size = db_coord_size (n);
     __g_db_data.ot_size = 2*n*__g_db_data.coord_size/8;
 
-    char *dir_path = sh_expand (APPLICATION_DATA, NULL);
+    char *dir_path = sh_expand (__g_db_data.location, NULL);
     char *full_path = malloc (strlen(dir_path)+strlen(otdb_names[10])+1);
     char *f_loc = stpcpy (full_path, dir_path);
     strcpy (f_loc, otdb_names[n]);
