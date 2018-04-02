@@ -4,13 +4,10 @@ Priority: extra
 Maintainer: Santiago León O. <santileortiz@gmail.com>
 Build-Depends: debhelper (>= 9),
                libc6-dev (>= 2.17),
+               python3 (>=3.2),
                libcairo2-dev,
-               libcurl4-openssl-dev,
-               libglib2.0-dev,
                libpango1.0-dev,
-               libx11-dev,
                libx11-xcb-dev,
-               libxcb1-dev,
                libxcb-sync-dev
 Standards-Version: 3.9.7
 
