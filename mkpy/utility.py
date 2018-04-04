@@ -631,8 +631,8 @@ def pymk_default ():
                             continue
                     elif file_is_elf (out_file):
                         info ('Runtime dependencies for: ' + out_file)
-                        cmd = ex_escape("ldd " + out_file + " | awk '!/vdso/{print $(NF-1)}'")
-                        required_shdeps = ex (cmd, ret_stdout=True, echo=False).split ('\n')
+                        tmp = ex_escape("ldd " + out_file + " | awk '!/vdso/{print $(NF-1)}'")
+                        required_shdeps = ex (tmp, ret_stdout=True, echo=False).split ('\n')
                         deps = find_providers (required_shdeps)
                         print (' '.join (deps))
                         print ()
