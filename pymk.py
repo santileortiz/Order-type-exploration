@@ -13,8 +13,7 @@ DEP_FLAGS = '-lcairo ' \
             '-lm '
 
 # Put Pango flags separated because some targets don't depend on it.
-# NOTE: Not as clean as I would like but Gnome places its headers in weird
-# places.
+# NOTE: Not as clean as I would like but Gnome puts headers in weird places.
 pkg_config_pkgs = ['pango', 'pangocairo']
 PKG_CONFIG_L = pers_func ('PKG_CONFIG_L', pkg_config_libs, pkg_config_pkgs)
 PKG_CONFIG_I = pers_func ('PKG_CONFIG_I', pkg_config_includes, pkg_config_pkgs)

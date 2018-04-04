@@ -225,16 +225,16 @@ def set_dry_run():
     global g_dry_run
     g_dry_run = True
 
-# Allow commands
-class format_dict(dict):
-    def __missing__(self, key):
-        return '{'+key+'}'
+def ex_escape (s):
+    return s.replace ('\n', '').replace ('{', '{{').replace ('}','}}')
 
 def ex (cmd, no_stdout=False, ret_stdout=False, echo=True):
+    # NOTE: This fails if there are braces {} in cmd but the content is not a
+    # variable. If this is the case, escape the content that has braces using
+    # the ex_escape() function. This is required for things like awk scripts.
     global g_dry_run
 
-    user_vars = format_dict(get_user_str_vars())
-    resolved_cmd = cmd.format_map(user_vars)
+    resolved_cmd = cmd.format(**get_user_str_vars())
 
     ex_cmds.append(resolved_cmd)
     if g_dry_run:
@@ -246,7 +246,22 @@ def ex (cmd, no_stdout=False, ret_stdout=False, echo=True):
         redirect = open(os.devnull, 'wb') if no_stdout else None
         return subprocess.call(resolved_cmd, shell=True, stdout=redirect)
     else:
-        return subprocess.check_output(resolved_cmd, shell=True, stderr=open(os.devnull, 'wb')).decode().rstrip ()
+        return subprocess.check_output(resolved_cmd, shell=True, stderr=open(os.devnull, 'wb')).decode().strip ()
+
+def info (s):
+    # The following code can be used to se available colors
+    #for i in range (8):
+    #    print ("\033[0;3" + str(i) + "m\033[K" + "HELLO" + "\033[m\033[K", end=' ')
+    #    print ("\033[0;9" + str(i) + "m\033[K" + "HELLO" + "\033[m\033[K", end=' ')
+    #    print ("\033[1;9" + str(i) + "m\033[K" + "HELLO" + "\033[m\033[K", end=' ')
+    #    print ("\033[1;3" + str(i) + "m\033[K" + "HELLO" + "\033[m\033[K")
+
+    #for i in range (16, 232):
+    #    print (str(i) + ": \033[1;38;5;" + str(i) + "m\033[K" + "HELLO" + "\033[m\033[K")
+
+    color = '\033[1;38;5;177m\033[K'
+    default_color = '\033[m\033[K'
+    print (color+s+default_color)
 
 def get_target ():
     if len(sys.argv) == 1:
@@ -419,29 +434,29 @@ def install_files (info_dict, prefix=None):
 # @use_dnf_python
 def rpm_find_providers (file_list):
     f_str = " ".join (file_list)
-    queryformat = ''
-    prov_str = ex (r"rpm -qf {} --queryformat '%{{NAME}}\n' | sort | uniq".format(f_str),\
-                   ret_stdout=True, echo=False)
+    cmd = ex_escape (r"rpm -qf " + f_str + " --queryformat '%{NAME}\n' | sort | uniq")
+    prov_str = ex (cmd, ret_stdout=True, echo=False)
     return prov_str.split ('\n')
 
 # @use_dnf_python
 def rpm_find_deps (pkg_name):
     # FIXME: The --installed option is required because there is a bug in dnf
     # that makes the query impossibly slow. Check if this gets fixed.
-    deps_str = ex (r"dnf repoquery --qf '%{{NAME}}'" \
-            " --requires --resolve --installed --recursive " + pkg_name, ret_stdout=True, echo=False)
+    cmd = ex_escape(r"dnf repoquery --qf '%{NAME}' --requires --resolve --installed --recursive " + pkg_name)
+    deps_str = ex (cmd, ret_stdout=True, echo=False)
     return deps_str.split ('\n')
 
 def deb_find_providers (file_list):
     f_str = " ".join (file_list)
-    prov_str = ex ("dpkg -S {} | awk -F: '{{print $1}}' | sort | uniq".format(f_str), \
-            ret_stdout=True, echo=False)
+    cmd = ex_escape ("dpkg -S " + f_str + " | awk -F: '{print $1}' | sort | uniq")
+    prov_str = ex (cmd, ret_stdout=True, echo=False)
     return prov_str.split ('\n')
 
 def deb_find_deps (pkg_name):
     flags = '--recurse --no-recommends --no-suggests --no-conflicts --no-breaks --no-replaces --no-enhances'
-    deps_str = ex ("apt-cache depends {} {} | grep Depends | awk '{{print $2}}'".format(flags, pkg_name), \
-            ret_stdout=True, echo=False)
+    apt_cmd = 'apt-cache depends {} {}'.format(flags, pkg_name)
+    cmd = ex_escape (apt_cmd + " | grep Depends | awk '{print $2}'")
+    deps_str = ex (cmd, ret_stdout=True, echo=False)
     return deps_str.split ('\n')
 
 def get_pkg_manager_type ():
@@ -450,9 +465,9 @@ def get_pkg_manager_type ():
     os_id_like = ''
     for l in os_release:
         if l.startswith ('ID='):
-            os_id = l.replace ('ID=', '').rstrip()
+            os_id = l.replace ('ID=', '').strip()
         elif l.startswith ('ID_LIKE='):
-            os_id_like = l.replace ('ID_LIKE=', '').rstrip()
+            os_id_like = l.replace ('ID_LIKE=', '').strip()
     os_release.close()
 
     os_id = os_id.replace ("'",'').replace ('"', '')
@@ -498,26 +513,25 @@ def prune_pkg_list (pkg_list):
         dep = b.pop ()
         curr_deps = find_deps (dep)
         #print ('Pruning {}: {}\n'.format(dep, " ".join(curr_deps)))
+        print ('Pruning {}... '.format(dep), end='', flush=True)
+        removed = []
         for d in curr_deps:
             if d in a:
+                removed.append(d)
                 a.remove (d)
-            if d in b:
+            elif d in b:
+                removed.append(d)
                 b.remove (d)
         a.add (dep)
+
+        if len(removed) > 1:
+            print ('Removes: ' + ' '.join(removed))
+        else:
+            print ()
+    print ()
     return list (a)
 
-def get_run_deps (bin_name):
-    required_shdeps = ex ("ldd {} | awk '!/vdso/{{print $(NF-1)}}'".format (bin_name),\
-            ret_stdout=True, echo=False)
-    all_deps = find_providers (required_shdeps.split ('\n'))
-    all_deps = prune_pkg_list (all_deps)
-    all_deps.sort()
-    return all_deps
-
 def gcc_used_system_includes (cmd):
-    def awk_escape (s):
-        return s.replace ('\n', '').replace ('{', '{{').replace ('}','}}')
-
     tmpfname = ex ('mktemp', ret_stdout=True, echo=False)
     arr = cmd.split()
     arr.insert (1, '-M -MF {}'.format(tmpfname))
@@ -548,7 +562,7 @@ def gcc_used_system_includes (cmd):
             if ($i ~ /^\//) {print $i}
     }
     """
-    awk_prg = awk_escape(awk_prg)
+    awk_prg = ex_escape(awk_prg)
     res = ex ("awk '{}' {} | sort | uniq".format(awk_prg, tmpfname), echo=False, ret_stdout=True)
     return res.split ('\n')
 
@@ -577,6 +591,15 @@ def pymk_default ():
     if '--get_run_deps' in builtin_completions and get_cli_option ('--get_run_deps'):
         # Look for all gcc commands that generate an executable and get the
         # packages that provide the shared libraries it uses.
+        #
+        # Note that shared libraries is not the only way a project can have a
+        # runtime dependency. These are some ways an executable may have a
+        # build dependency that won't be discovered by this code:
+        #   * Shared libraries that are conditionally loaded by the application
+        #     using dlopen().
+        #   * Any file opened by the application that is provided by other
+        #     project. For example configuration files like /etc/os-release
+        #     which is provided by systemd, or icon themes.
         #
         # First we try to get the executable using a dry run of the target, if
         # we can't find the output file then runs the target and try again. I'm
@@ -607,9 +630,18 @@ def pymk_default ():
                             # file. Skip it.
                             continue
                     elif file_is_elf (out_file):
-                        print ('Dependencies for: ' + out_file)
-                        deps = get_run_deps (out_file)
-                        print ('\n'.join (deps))
+                        info ('Runtime dependencies for: ' + out_file)
+                        cmd = ex_escape("ldd " + out_file + " | awk '!/vdso/{print $(NF-1)}'")
+                        required_shdeps = ex (cmd, ret_stdout=True, echo=False).split ('\n')
+                        deps = find_providers (required_shdeps)
+                        print (' '.join (deps))
+                        print ()
+
+                        deps = prune_pkg_list (deps)
+                        deps.sort()
+                        info ('Minimal runtime dependencies for: ' + out_file)
+                        print (' '.join (deps))
+                        print ()
             if use_dry_run == True:
                 # Calling the target wasn't necessary, we are done.
                 break
@@ -618,6 +650,18 @@ def pymk_default ():
     if '--get_build_deps' in builtin_completions and get_cli_option ('--get_build_deps'):
         # Call the target in dry run mode and for each gcc command find the
         # packages that provide the include files it needs.
+        #
+        # Note that included files are not the only way a project gets build
+        # dependencies. For instance using this script adds a dependency on
+        # python3 (this one we add by default). Other ways in which you may
+        # have build dependencies that won't be discovered by this code are:
+        #
+        #   * Build toolchain (gcc, llvm, ld, etc.).
+        #   * Any non default python module used in pymk.py.
+        #   * Any non standard command caled by the ex() function.
+        #   * Tools used to package the application (rpmbuild, debuild).
+        #   * Dependencies of statically linked libraries.
+
         if pkg_manager_type == '':
             exit ()
 
@@ -631,10 +675,15 @@ def pymk_default ():
 
         # Sort and print
         deps_list = list(deps)
+        deps_list.append ('python3')
+        deps_list.sort()
+        info ('Build dependencies for target: ' + t)
+        print (' '.join(deps_list), end='\n\n')
+
         deps_list = prune_pkg_list (deps_list)
         deps_list.sort()
-        print ('Dependencies for target: ' + t)
-        print ("\n".join (deps_list))
+        info ('Minimal build dependencies for target: ' + t)
+        print (" ".join (deps_list), end='\n\n')
         exit ()
 
     call_user_function (t)
