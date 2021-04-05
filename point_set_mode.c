@@ -843,7 +843,7 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
     struct gui_state_t *gui_st = &st->gui_st;
     if (!ps_mode) {
         st->ps_mode =
-            mem_pool_push_size_full (&st->memory, sizeof(struct point_set_mode_t), POOL_ZERO_INIT);
+            mem_pool_push_size_full (&st->memory, sizeof(struct point_set_mode_t), POOL_ZERO_INIT, NULL, NULL);
         ps_mode = st->ps_mode;
         ps_mode->math_memory_flush = mem_pool_begin_temporary_memory (&ps_mode->math_memory);
 

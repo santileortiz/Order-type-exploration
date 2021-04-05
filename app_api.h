@@ -30,7 +30,7 @@ struct app_state_t {
 
     // NOTE: This will be cleared at every frame start
     mem_pool_t temporary_memory;
-    mem_pool_temp_marker_t temporary_memory_flush;
+    mem_pool_marker_t temporary_memory_flush;
 };
 
 #define APP_API_H

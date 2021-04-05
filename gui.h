@@ -266,7 +266,7 @@ struct gui_state_t {
     // TODO: convert this into a work queue.
     pthread_t thread;
     mem_pool_t thread_pool;
-    mem_pool_temp_marker_t thread_mem_flush;
+    mem_pool_marker_t thread_mem_flush;
 
     char dragging[3];
     dvec2 ptr_delta;
@@ -1034,9 +1034,9 @@ void layout_boxes_end_frame (layout_box_t *layout_boxes, int len)
 void add_behavior (struct gui_state_t *gui_st, layout_box_t *box, enum behavior_type_t type, void *target)
 {
     struct behavior_t *new_behavior =
-        (struct behavior_t*)mem_pool_push_size_full (&gui_st->pool,
-                                                     sizeof(struct behavior_t),
-                                                     POOL_ZERO_INIT);
+        (struct behavior_t*)mem_pool_push_size (&gui_st->pool, sizeof(struct behavior_t));
+    *new_behavior = ZERO_INIT(struct behavior_t);
+
     new_behavior->next = gui_st->behaviors;
     gui_st->behaviors = new_behavior;
     new_behavior->type = type;

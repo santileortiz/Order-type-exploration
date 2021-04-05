@@ -9,6 +9,29 @@ struct config_t {
     char *database_location;
 };
 
+static inline
+char* consume_line (char *c)
+{
+    while (*c && *c != '\n') {
+           c++;
+    }
+
+    if (*c) {
+        c++;
+    }
+
+    return c;
+}
+
+static inline
+char* consume_spaces (char *c)
+{
+    while (is_space(c)) {
+           c++;
+    }
+    return c;
+}
+
 char* get_next_key (char *c, char **key, uint32_t *key_size, char **val, uint32_t *val_size, bool *success)
 {
     *success =  true;
@@ -96,21 +119,24 @@ struct config_t* read_config (mem_pool_t *pool)
     mem_pool_t local_pool = {0};
     struct config_t *res = pom_push_size (pool, sizeof (struct config_t));
 
-    ensure_dir_exists (CONFIG_DIR);
-    if (!path_exists (CONFIG_FILE)) {
+    char *config_dir_abs = sh_expand (CONFIG_DIR, &local_pool);
+    char *config_file_abs = sh_expand (CONFIG_FILE, &local_pool);
+
+    ensure_dir_exists_no_sh_expand (config_dir_abs);
+    if (!path_exists_no_sh_expand (config_file_abs)) {
         char *default_config = 
         "# Number of points. Can contain values between [3-10]\n"
         "N = 3,4,5,6,7,8,9,10\n"
         "\n"
         "# Where the database will be downloaded from\n"
-        "DatabaseSource = http://www.ist.tugraz.at/aichholzer/research/rp/triangulations/ordertypes/data/\n"
+        "DatabaseSource = "DEFAULT_DB_SOURCE"\n"
         "\n"
         "# Where the database will be downloaded into. If files are already there then\n"
         "# we don't download anything.\n"
         "DatabaseLocation = "CONFIG_DIR"\n";
-        full_file_write (default_config, strlen(default_config), CONFIG_FILE);
+        full_file_write (default_config, strlen(default_config), config_file_abs);
     }
-    char *conf_file = full_file_read (&local_pool, CONFIG_FILE);
+    char *conf_file = full_file_read_full (&local_pool, config_file_abs, NULL, false);
 
     bool success = true;
     if (conf_file) {
@@ -129,7 +155,8 @@ struct config_t* read_config (mem_pool_t *pool)
                 res->database_source = (char*)pom_strndup (pool, val, val_size);
 
             } else if (strneq(key, key_size, C_STR("DatabaseLocation"))) {
-                res->database_location = (char*)pom_strndup (pool, val, val_size);
+                char *location = (char*)pom_strndup (&local_pool, val, val_size);
+                res->database_location = sh_expand (location, pool);
             }
         }
     } else {
@@ -152,8 +179,8 @@ struct config_t* read_config (mem_pool_t *pool)
     }
 
     if (res->database_location == NULL) {
-        printf ("Using default configuration value: DatabaseLocation = %s\n", DEFAULT_DB_LOCATION);
-        res->database_location = (char*)pom_strndup (pool, C_STR(DEFAULT_DB_LOCATION));
+        printf ("Using default configuration value: DatabaseLocation = %s\n", CONFIG_DIR);
+        res->database_location = (char*)pom_strndup (pool, C_STR(config_dir_abs));
     }
 
     return res;

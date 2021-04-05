@@ -384,16 +384,16 @@ void seq_tree_extents (struct sequence_store_t *stor, uint32_t max_children, uin
             stor->children_count_stack =
                 mem_pool_push_size_full (&stor->temp_pool,
                                          (stor->max_len+1)*sizeof(stor->children_count_stack),
-                                         POOL_ZERO_INIT);
+                                         POOL_ZERO_INIT, NULL, NULL);
             if (stor->pool != NULL) {
                 stor->nodes_per_len =
                     mem_pool_push_size_full (stor->pool,
                                              (stor->max_len+1)*sizeof(*stor->nodes_per_len),
-                                             POOL_ZERO_INIT);
+                                             POOL_ZERO_INIT, NULL, NULL);
                 stor->leaves_per_len =
                     mem_pool_push_size_full (stor->pool,
                                              (stor->max_len+1)*sizeof(*stor->nodes_per_len),
-                                             POOL_ZERO_INIT);
+                                             POOL_ZERO_INIT, NULL, NULL);
             }
         }
     } else {
@@ -544,7 +544,7 @@ void get_nodes_per_len_helper (struct backtrack_node_t *n, uint64_t *res, int l)
 // TODO: Make the above not a necessary condition.
 uint64_t* get_nodes_per_len (struct backtrack_node_t *n, mem_pool_t *pool, int len)
 {
-    uint64_t *res = mem_pool_push_size_full (pool, sizeof(uint64_t)*(len+1), POOL_ZERO_INIT);
+    uint64_t *res = mem_pool_push_size_full (pool, sizeof(uint64_t)*(len+1), POOL_ZERO_INIT, NULL, NULL);
     get_nodes_per_len_helper (n, res, 0);
     return res;
 }

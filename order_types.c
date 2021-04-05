@@ -103,7 +103,7 @@ void ensure_full_database (char *db_source, char *db_location)
 int open_database (int n)
 {
     if (__g_db_data.location == NULL) {
-        __g_db_data.location = DEFAULT_DB_LOCATION;
+        __g_db_data.location = CONFIG_DIR;
     }
 
     if (__g_db_data.source == NULL) {

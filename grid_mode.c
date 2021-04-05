@@ -47,7 +47,7 @@ bool grid_mode (struct app_state_t *st, app_graphics_t *gr)
 {
     struct grid_mode_state_t *grid_mode = st->grid_mode;
     if (!st->grid_mode) {
-        st->grid_mode = mem_pool_push_size_full (&st->memory, sizeof(struct grid_mode_state_t), POOL_ZERO_INIT);
+        st->grid_mode = mem_pool_push_size_full (&st->memory, sizeof(struct grid_mode_state_t), POOL_ZERO_INIT, NULL, NULL);
 
         grid_mode = st->grid_mode;
         grid_mode->n = 3;

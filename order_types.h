@@ -3,8 +3,7 @@
  */
 #if !defined(ORDER_TYPES_H)
 
-#define DEFAULT_DB_LOCATION "http://www.ist.tugraz.at/aichholzer/research/rp/triangulations/ordertypes/data/"
-#define DEFAULT_DB_SOURCE "~/.ps_viewer/"
+#define DEFAULT_DB_SOURCE "http://www.ist.tugraz.at/aichholzer/research/rp/triangulations/ordertypes/data/"
 
 typedef struct {
     int n;

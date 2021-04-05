@@ -4,6 +4,7 @@
 
 #if !defined(COMMON_H)
 #include <stdio.h>
+#include <ctype.h>
 #include <unistd.h>
 #include <inttypes.h>
 #include <sys/stat.h>
@@ -14,9 +15,14 @@
 #include <string.h>
 #include <wordexp.h>
 #include <math.h>
+#include <stdarg.h>
+#include <dirent.h>
+#include <locale.h>
+#include <float.h>
 
 #ifdef __cplusplus
 #define ZERO_INIT(type) (type){}
+// TODO: Add the static assert and check it works in C++.
 #else
 #define ZERO_INIT(type) (type){0}
 typedef enum {false, true} bool;
@@ -36,6 +42,10 @@ typedef enum {false, true} bool;
 #define CLAMP(a,lower,upper) ((a)>(upper)?(upper):((a)<(lower)?(lower):(a)))
 #endif
 
+#if !defined(SIGN)
+#define SIGN(a) ((a)<0?-1:1)
+#endif
+
 #define WRAP(a,lower,upper) ((a)>(upper)?(lower):((a)<(lower)?(upper):(a)))
 
 #define LOW_CLAMP(a,lower) ((a)<(lower)?(lower):(a))
@@ -48,6 +58,56 @@ typedef enum {false, true} bool;
 #define terabyte(val) (gigabyte(val)*1024LL)
 
 #define invalid_code_path assert(0)
+
+// These macros simplify the process of creating functions that receive format
+// string like print does
+#if __GNUC__ > 2
+#define GCC_PRINTF_FORMAT(fmt_idx, arg_idx) __attribute__((format (printf, fmt_idx, arg_idx)))
+#else
+#define GCC_PRINTF_FORMAT(fmt_idx, arg_idx)
+#endif
+
+// A printf like function works in 3 stages: 1) compute the size of the
+// resulting string, 2) allocate the char array for the string, 3) populate the
+// array with the resulting string. The following macros implement the 1st and
+// 3rd stages. The 2nd stage will be implemented by the user.
+//
+// This macro corresponds to the 1st stage. It takes as argument _format_ the
+// name of the variable with format string. It then creates 2 new variables
+// named _size_ and _args_. The first one contains the size of the resulting
+// string including the null byte the second one is used by the 3rd stage.
+#define PRINTF_INIT(format, size, args)                   \
+va_list args;                                             \
+size_t size;                                              \
+{                                                         \
+    va_list args_copy;                                    \
+    va_start (args, format);                              \
+    va_copy (args_copy, args);                            \
+                                                          \
+    size = vsnprintf (NULL, 0, format, args_copy) + 1;    \
+    va_end (args_copy);                                   \
+}
+
+// This is the 3rd stage of a printf like function. It takes the same arguments
+// as vsnprintf(). As a convenience the _args_ variable is the one created in
+// the 1st stage.
+#define PRINTF_SET(str, size, format, args)               \
+{                                                         \
+    vsnprintf (str, size, format, args);                  \
+    va_end (args);                                        \
+}
+
+// Console color escape sequences
+// TODO: Maybe add a way to detect if the output is a terminal so we don't do
+// anything in that case.
+#define ECMA_RED(str) "\033[1;31m\033[K"str"\033[m\033[K"
+#define ECMA_GREEN(str) "\033[1;32m\033[K"str"\033[m\033[K"
+#define ECMA_YELLOW(str) "\033[1;33m\033[K"str"\033[m\033[K"
+#define ECMA_BLUE(str) "\033[1;34m\033[K"str"\033[m\033[K"
+#define ECMA_MAGENTA(str) "\033[1;35m\033[K"str"\033[m\033[K"
+#define ECMA_CYAN(str) "\033[1;36m\033[K"str"\033[m\033[K"
+#define ECMA_WHITE(str) "\033[1;37m\033[K"str"\033[m\033[K"
+#define ECMA_BOLD(str) "\033[1m\033[K"str"\033[m\033[K"
 
 ////////////
 // STRINGS
@@ -166,13 +226,17 @@ typedef union {
 #pragma pack(pop)
 
 #define str_is_small(string) (!((string)->len_small&0x01))
-#define str_len(string) (str_is_small(string)?(string)->len_small/2-1:(string)->len)
-#define str_data(string) (str_is_small(string)?(string)->str_small:(string)->str)
+#define str_len(string) (str_is_small(string)?(string)->len_small/2:(string)->len)
+static inline
+char* str_data(string_t *str)
+{
+    return (str_is_small(str)?(str)->str_small:(str)->str);
+}
 
 static inline
 char* str_small_alloc (string_t *str, size_t len)
 {
-    str->len_small = 2*(len+1); // Guarantee LSB == 0
+    str->len_small = 2*len; // Guarantee LSB == 0
     return str->str_small;
 }
 
@@ -334,6 +398,7 @@ void str_debug_print (string_t *str)
 
 #endif
 
+#define str_dup(str) strn_new(str_data(str), str_len(str))
 #define str_new(data) strn_new((data),((data)!=NULL?strlen(data):0))
 string_t strn_new (const char *c_str, size_t len)
 {
@@ -413,57 +478,235 @@ void strn_cat_c (string_t *dest, const char *src, size_t len)
     dest_data[total_len] = '\0';
 }
 
+void str_cat_indented (string_t *str1, string_t *str2, int num_spaces)
+{
+    if (str_len(str2) == 0) {
+        return;
+    }
+
+    char *c = str_data(str2);
+    for (int i=0; i<num_spaces; i++) {
+        strn_cat_c (str1, " ", 1);
+    }
+
+    while (c && *c) {
+        if (*c == '\n' && *(c+1) != '\n' && *(c+1) != '\0') {
+            strn_cat_c (str1, "\n", 1);
+            for (int i=0; i<num_spaces; i++) {
+                strn_cat_c (str1, " ", 1);
+            }
+
+        } else {
+            strn_cat_c (str1, c, 1);
+        }
+        c++;
+    }
+}
+
+void str_cat_indented_c (string_t *str1, char *c_str, int num_spaces)
+{
+    if (*c_str == '\0') return;
+
+    for (int i=0; i<num_spaces; i++) {
+        strn_cat_c (str1, " ", 1);
+    }
+
+    while (c_str && *c_str) {
+        if (*c_str == '\n' && *(c_str+1) != '\n' && *(c_str+1) != '\0') {
+            strn_cat_c (str1, "\n", 1);
+            for (int i=0; i<num_spaces; i++) {
+                strn_cat_c (str1, " ", 1);
+            }
+
+        } else {
+            strn_cat_c (str1, c_str, 1);
+        }
+        c_str++;
+    }
+}
+
+void printf_indented (char *str, int num_spaces)
+{
+    char *c = str;
+
+    for (int i=0; i<num_spaces; i++) {
+        printf (" ");
+    }
+
+    while (c && *c) {
+        if (*c == '\n' && *(c+1) != '\n' && *(c+1) != '\0') {
+            printf ("\n");
+            for (int i=0; i<num_spaces; i++) {
+                printf (" ");
+            }
+
+        } else {
+            // Use putc?
+            printf ("%c", *c);
+        }
+        c++;
+    }
+}
+
 char str_last (string_t *str)
 {
     return str_data(str)[str_len(str)-1];
 }
 
+GCC_PRINTF_FORMAT(3, 4)
+void str_put_printf (string_t *str, size_t pos, const char *format, ...)
+{
+    va_list args1, args2;
+    va_start (args1, format);
+    va_copy (args2, args1);
+
+    size_t size = vsnprintf (NULL, 0, format, args1) + 1;
+    va_end (args1);
+
+    char *tmp_str = malloc (size);
+    vsnprintf (tmp_str, size, format, args2);
+    va_end (args2);
+
+    strn_put_c (str, pos, tmp_str, size - 1);
+
+    free (tmp_str);
+}
+
+// These string functions use the printf syntax, this lets code be more concise.
+#define _define_str_printf_func(FUNC_NAME,STRN_FUNC_NAME)       \
+GCC_PRINTF_FORMAT(2, 3)                                         \
+void FUNC_NAME (string_t *str, const char *format, ...)         \
+{                                                               \
+    va_list args1, args2;                                       \
+    va_start (args1, format);                                   \
+    va_copy (args2, args1);                                     \
+                                                                \
+    size_t size = vsnprintf (NULL, 0, format, args1) + 1;       \
+    va_end (args1);                                             \
+                                                                \
+    char *tmp_str = malloc (size);                              \
+    vsnprintf (tmp_str, size, format, args2);                   \
+    va_end (args2);                                             \
+                                                                \
+    STRN_FUNC_NAME (str, tmp_str, size - 1);                    \
+                                                                \
+    free (tmp_str);                                             \
+}
+
+_define_str_printf_func(str_set_printf, strn_set)
+_define_str_printf_func(str_cat_printf, strn_cat_c)
+
+#undef _define_str_printf_func
+
 //////////////////////
 // PARSING UTILITIES
 //
 // These are some small functions useful when parsing text files
+//
+// FIXME: (API BREAK) Applications using consume_line() and consume_spaces()
+// will break!, to make them work again copy the deprecated code into the
+// application.
+//
+// Even thought this seemed like a good idea for a simple parsing API that does
+// not require any state but a pointer to the current position, turns out it's
+// impossible to program it in a way that allows to be used by people that want
+// const AND non-const strings.
+//
+// If people are using a const string we must declare the function as:
+//
+//      const char* consume_line (const char *c);
+//
+// This will keep the constness of the original string. But, if people are using
+// a non const string even though it will be casted to const without problem, we
+// will still return a const pointer that will be most likely assigned to the
+// same non const variable sent in the first place, here the const qualifier
+// will be discarded and the compiler will complain. There is no way to say "if
+// we are sent const return const, if it's non-const return non-const". Maybe in
+// C++ with templates this can be done.
+//
+// Because we want to cause the least ammount of friction when using this
+// library, making the user think about constdness defeats this purpose, so
+// better just not use this.
+//
+// We could try to declare functions as:
+//
+//      bool consume_line (const char **c);
+//
+// But in C, char **c won't cast implicitly to const char **c. Also this has the
+// problem that now it will unconditionally update c, wheras before the user had
+// the choice either to update it immediately, or store it in a variable and
+// update it afterwards, if necessary.
+//
+// Maybe what's needed is a proper scanner API that stores state inside a struct
+// with more clear semantics. I'm still experimenting with different
+// alternatives.
+
+//static inline
+//char* consume_line (char *c)
+//{
+//    while (*c && *c != '\n') {
+//           c++;
+//    }
+//
+//    if (*c) {
+//        c++;
+//    }
+//
+//    return c;
+//}
+//
+//static inline
+//char* consume_spaces (char *c)
+//{
+//    while (is_space(c)) {
+//           c++;
+//    }
+//    return c;
+//}
 
 static inline
-char *consume_line (char *c)
-{
-    while (*c && *c != '\n') {
-           c++;
-    }
-
-    if (*c) {
-        c++;
-    }
-
-    return c;
-}
-
-static inline
-bool is_space (char *c)
+bool is_space (const char *c)
 {
     return *c == ' ' ||  *c == '\t';
 }
 
 static inline
-char *consume_spaces (char *c)
+bool is_end_of_line_or_file (const char *c)
 {
     while (is_space(c)) {
            c++;
     }
-    return c;
-}
-
-static inline
-bool is_end_of_line_or_file (char *c)
-{
-    c = consume_spaces (c);
     return *c == '\n' || *c == '\0';
 }
 
 static inline
-bool is_end_of_line (char *c)
+bool is_end_of_line (const char *c)
 {
-    c = consume_spaces (c);
+    while (is_space(c)) {
+           c++;
+    }
     return *c == '\n';
+}
+
+// Set POSIX locale while storing the previous one. Useful while calling strtod
+// and you know the decimal separator will always be '.', and you don't want it
+// to break if the user changes locale.
+// NOTE: Must be followed by a call to end_posix_locale() to avoid memory leaks
+char* begin_posix_locale ()
+{
+    char *old_locale = NULL;
+    old_locale = strdup (setlocale (LC_ALL, NULL));
+    assert (old_locale != NULL);
+    setlocale (LC_ALL, "POSIX");
+
+    return old_locale;
+}
+
+// Restore the previous locale returned by begin_posix_locale
+void end_posix_locale (char *old_locale)
+{
+    setlocale (LC_ALL, old_locale);
+    free (old_locale);
 }
 
 #define VECT_X 0
@@ -1247,48 +1490,132 @@ void swap_n_bytes (void *a, void*b, uint32_t n)
     }
 }
 
-// Templetized merge sort
+// Templetized merge sort for arrays
+//
 // IS_A_LT_B is an expression where a and b are pointers
 // to _arr_ true when *a<*b.
-#define templ_sort(FUNCNAME,TYPE,IS_A_LT_B)                     \
-void FUNCNAME ## _user_data (TYPE *arr, int n, void *user_data) \
-{                                                               \
-    if (n==1) {                                                 \
-        return;                                                 \
-    } else if (n == 2) {                                        \
-        TYPE *a = &arr[1];                                      \
-        TYPE *b = &arr[0];                                      \
-        int c = IS_A_LT_B;                                      \
-        if (c) {                                                \
-            swap_n_bytes (&arr[0], &arr[1], sizeof(TYPE));      \
-        }                                                       \
-    } else {                                                    \
-        TYPE res[n];                                            \
-        FUNCNAME ## _user_data (arr, n/2, user_data);           \
-        FUNCNAME ## _user_data (&arr[n/2], n-n/2, user_data);   \
-                                                                \
-        int i;                                                  \
-        int h=0;                                                \
-        int k=n/2;                                              \
-        for (i=0; i<n; i++) {                                   \
-            TYPE *a = &arr[h];                                  \
-            TYPE *b = &arr[k];                                  \
-            if (k==n || (h<n/2 && (IS_A_LT_B))) {               \
-                res[i] = arr[h];                                \
-                h++;                                            \
-            } else {                                            \
-                res[i] = arr[k];                                \
-                k++;                                            \
-            }                                                   \
-        }                                                       \
-        for (i=0; i<n; i++) {                                   \
-            arr[i] = res[i];                                    \
-        }                                                       \
-    }                                                           \
-}                                                               \
-\
-void FUNCNAME(TYPE *arr, int n) {                               \
-    FUNCNAME ## _user_data (arr,n,NULL);                        \
+// NOTE: IS_A_LT_B as defined, will sort the array in ascending order.
+#define templ_sort(FUNCNAME,TYPE,IS_A_LT_B)                                       \
+void FUNCNAME ## _user_data (TYPE *arr, int n, void *user_data)                   \
+{                                                                                 \
+    if (arr == NULL || n<=1) {                                                    \
+        return;                                                                   \
+    } else if (n == 2) {                                                          \
+        TYPE *a = &arr[1];                                                        \
+        TYPE *b = &arr[0];                                                        \
+        int c = IS_A_LT_B;                                                        \
+        if (c) {                                                                  \
+            swap_n_bytes (&arr[0], &arr[1], sizeof(TYPE));                        \
+        }                                                                         \
+    } else {                                                                      \
+        TYPE res[n];                                                              \
+        FUNCNAME ## _user_data (arr, n/2, user_data);                             \
+        FUNCNAME ## _user_data (&arr[n/2], n-n/2, user_data);                     \
+                                                                                  \
+        /* Merge halfs until one of them runs out*/                               \
+        int i;                                                                    \
+        int h=0;                                                                  \
+        int k=n/2;                                                                \
+        for (i=0; k<n && h<n/2; i++) {                                            \
+            TYPE *a = &arr[h];                                                    \
+            TYPE *b = &arr[k];                                                    \
+            int c = IS_A_LT_B;                                                    \
+            if (c) {                                                              \
+                res[i] = arr[h];                                                  \
+                h++;                                                              \
+            } else {                                                              \
+                res[i] = arr[k];                                                  \
+                k++;                                                              \
+            }                                                                     \
+        }                                                                         \
+                                                                                  \
+        /* If there are elements remaining in one half copy them. Separating
+         * loop this way avoids evaluating CMP_A_TO_B for invalid elements (past
+         * the maximum value for h).
+         */                                                                       \
+        int rest_idx = k==n ? h : k;                                              \
+        for (; i<n; i++) {                                                        \
+            res[i] = arr[rest_idx];                                               \
+            rest_idx++;                                                           \
+        }                                                                         \
+                                                                                  \
+        /* Copy the sorted array back from the temporary array. */                \
+        for (i=0; i<n; i++) {                                                     \
+            arr[i] = res[i];                                                      \
+        }                                                                         \
+    }                                                                             \
+}                                                                                 \
+                                                                                  \
+void FUNCNAME(TYPE *arr, int n) {                                                 \
+    FUNCNAME ## _user_data (arr,n,NULL);                                          \
+}
+
+// Stable templetized merge sort for arrays
+//
+// CMP_A_TO_B is an expression where a and b are pointers to _arr_, it's equal
+// to -1, 0 or 1 if *a and *b compare as less than, equal to or grater than
+// respectively.
+//
+// The reasoning behind this being separate from templ_sort() is that a stable
+// sort requires a 3-way comparison, which makes it a little more inconvinient
+// to instantiate. Writing a IS_A_LT_B expression is much more straightforward
+// than a CMP_A_TO_B expression.
+//
+// NOTE: CMP_A_TO_B as defined, will sort the array in ascending order.
+#define templ_sort_stable(FUNCNAME,TYPE,CMP_A_TO_B)                               \
+void FUNCNAME ## _user_data (TYPE *arr, int n, void *user_data)                   \
+{                                                                                 \
+    if (arr == NULL || n<=1) {                                                    \
+        return;                                                                   \
+    } else if (n == 2) {                                                          \
+        TYPE *a = &arr[1];                                                        \
+        TYPE *b = &arr[0];                                                        \
+        int c = CMP_A_TO_B;                                                       \
+        if (c == -1) {                                                            \
+            swap_n_bytes (&arr[0], &arr[1], sizeof(TYPE));                        \
+        }                                                                         \
+                                                                                  \
+    } else {                                                                      \
+        TYPE res[n];                                                              \
+        FUNCNAME ## _user_data (arr, n/2, user_data);                             \
+        FUNCNAME ## _user_data (&arr[n/2], n-n/2, user_data);                     \
+                                                                                  \
+        /* Merge halfs until one of them runs out*/                               \
+        int i;                                                                    \
+        int h=0;                                                                  \
+        int k=n/2;                                                                \
+        for (i=0; k<n && h<n/2; i++) {                                            \
+            TYPE *a = &arr[h];                                                    \
+            TYPE *b = &arr[k];                                                    \
+            int c = CMP_A_TO_B;                                                   \
+            if (c < 1) {                                                          \
+                res[i] = arr[h];                                                  \
+                h++;                                                              \
+            } else {                                                              \
+                res[i] = arr[k];                                                  \
+                k++;                                                              \
+            }                                                                     \
+        }                                                                         \
+                                                                                  \
+        /* If there are elements remaining in one half copy them. Separating
+         * loop this way avoids evaluating CMP_A_TO_B for invalid elements, past
+         * the end of the array.
+         */                                                                       \
+        int rest_idx = k==n ? h : k;                                              \
+        for (; i<n; i++) {                                                        \
+            res[i] = arr[rest_idx];                                               \
+            rest_idx++;                                                           \
+        }                                                                         \
+                                                                                  \
+        /* Copy the sorted array back from the temporary array. */                \
+        for (i=0; i<n; i++) {                                                     \
+            arr[i] = res[i];                                                      \
+        }                                                                         \
+    }                                                                             \
+}                                                                                 \
+                                                                                  \
+void FUNCNAME(TYPE *arr, int n) {                                                 \
+    FUNCNAME ## _user_data (arr,n,NULL);                                          \
 }
 
 typedef struct {
@@ -1324,25 +1651,27 @@ void array_clear (int *arr, int n)
 
 void array_print_full (int *arr, int n, const char *sep, const char *start, const char *end)
 {
-    int i;
+    int i=0;
     if (start != NULL) {
         printf ("%s", start);
     }
 
-    if (sep != NULL) {
-        for (i=0; i<n-1; i++) {
-            printf ("%d%s", arr[i], sep);
+    if (n>0) {
+        if (sep != NULL) {
+            for (i=0; i<n-1; i++) {
+                printf ("%d%s", arr[i], sep);
+            }
+        } else {
+            for (i=0; i<n-1; i++) {
+                printf ("%d", arr[i]);
+            }
         }
-    } else {
-        for (i=0; i<n-1; i++) {
-            printf ("%d", arr[i]);
-        }
+
+        printf ("%d", arr[i]);
     }
 
     if (end != NULL) {
-        printf ("%d%s", arr[i], end);
-    } else {
-        printf ("%d", arr[i]);
+        printf ("%s", end);
     }
 }
 
@@ -1651,38 +1980,113 @@ void cont_buff_destroy (cont_buff_t *buff)
 }
 
 // Memory pool that grows as needed, and can be freed easily.
-#define MEM_POOL_MIN_BIN_SIZE 1024u
+#define MEM_POOL_DEFAULT_MIN_BIN_SIZE 1024u
 typedef struct {
     uint32_t min_bin_size;
     uint32_t size;
     uint32_t used;
     void *base;
 
-    uint32_t total_used;
+    // total_data is the total used memory minus the memory used for
+    // on_destroy_callback_info_t structs. We use this variable to compute the
+    // ammount of empty space left in previous bins.
+    uint32_t total_data;
     uint32_t num_bins;
 } mem_pool_t;
+
+// Sometimes we want to execute code when something we allocated in a pool gets
+// destroyed, that's what this callback is for. The alloceted argument will
+// point to the allocated memory when the callback was assigned.
+//
+// NOTE: When destroying a pool (or part of it when using temporary memory), ALL
+// destruction callbacks will be called BEFORE we free any memory from the pool.
+// The reasoning behind this is that maybe these callback functions would like
+// to use data inside things being destroyed. At the moment it seems like the
+// most sensible thing to do, but there may be cases where it isn't, maybe it
+// could increase cache misses? I don't know.
+//
+// NOTE: I reluctantly added closures to ON_DESTROY_CALLBACK. For
+// str_set_pooled() we need a way to pass the string to be freed. Heavy use of
+// closures here is a slippery slope. Expecting to be able to run any code from
+// here will be problematic and closures may give the wrong impression that
+// code here is always safe. It's easy to use freed memory from here. Whenever
+// you use these callbacks think carefully! this mechanism should be rareley be
+// used.
+#define ON_DESTROY_CALLBACK(name) void name(void *allocated, void *clsr)
+typedef ON_DESTROY_CALLBACK(mem_pool_on_destroy_callback_t);
+
+// TODO: As of now I've required the allocated pointer and the clsr pointer, but
+// I've never required them both at the same time. Maybe 2 pointers here is too
+// much overhead for allocating callbacks?, only time will tell... If it turns
+// out it's too much then we will need to think better about it. It's a tradeoff
+// between flexibility of the API and space overhead in the pool. For now, we
+// choose more flexibility at the cost of space overhead in the pool.
+struct on_destroy_callback_info_t {
+    mem_pool_on_destroy_callback_t *cb;
+    void *allocated;
+    void *clsr;
+
+    struct on_destroy_callback_info_t *prev;
+};
 
 struct _bin_info_t {
     void *base;
     uint32_t size;
     struct _bin_info_t *prev_bin_info;
+
+    struct on_destroy_callback_info_t *last_cb_info;
 };
 
 typedef struct _bin_info_t bin_info_t;
 
+// TODO: I hardly ever use these, instead I use ZERO_INIT, remove them?
 enum alloc_opts {
     POOL_UNINITIALIZED,
     POOL_ZERO_INIT
 };
 
-#define mem_pool_push_struct(pool, type) mem_pool_push_size(pool, sizeof(type))
-#define mem_pool_push_array(pool, n, type) mem_pool_push_size(pool, (n)*sizeof(type))
-#define mem_pool_push_size(pool, size) mem_pool_push_size_full(pool, size, POOL_UNINITIALIZED)
-void* mem_pool_push_size_full (mem_pool_t *pool, uint32_t size, enum alloc_opts opts)
+// TODO: We should make this API more "generic" in the sense that any of the
+// push modes (size,struct,array) should be able to receive either the options
+// enum or a callback, with or without closure. Maybe create macros for all
+// these configuration combinations that evaluate to a 'config' struct, then
+// make a *_full version of these that receives this struct as the last
+// parameter.
+//
+// The reasoning behind this is that we don't want users to be bothered with
+// filling all 3 arguments for the current _full version, when they may only
+// want one of those. Right now I've seen myself prefering a mem_pool_push_* call
+// followed by a ZERO_INIT just because using the options will force me to write
+// explicitly the allocation using the 'push_size' variation, and remember de
+// order of the last arguments in the _full version of it. Making all options a
+// single argument at the end simplifies memorizing the API a LOT.
+//
+// This is something that would be much much nicer if C had default values for
+// function arguments.
+#define mem_pool_push_cb(pool,cb,clsr) mem_pool_push_size_full(pool,0,POOL_UNINITIALIZED,cb,clsr)
+
+#define mem_pool_push_size_cb(pool,size,cb) mem_pool_push_size_full(pool,size,POOL_UNINITIALIZED,cb,NULL)
+#define mem_pool_push_size(pool,size) mem_pool_push_size_full(pool,size,POOL_UNINITIALIZED,NULL,NULL)
+#define mem_pool_push_struct(pool,type) ((type*)mem_pool_push_size(pool,sizeof(type)))
+#define mem_pool_push_array(pool,n,type) mem_pool_push_size(pool,(n)*sizeof(type))
+void* mem_pool_push_size_full (mem_pool_t *pool, uint32_t size, enum alloc_opts opts,
+                               mem_pool_on_destroy_callback_t *cb, void *clsr)
 {
-    if (pool->used + size >= pool->size) {
+    assert (pool != NULL);
+
+    uint32_t required_size = cb == NULL ? size : size + sizeof(struct on_destroy_callback_info_t);
+
+    if (required_size == 0) return NULL;
+
+    // If not enough space left in the current bin, grow the pool by adding a
+    // new one.
+    if (pool->used + required_size > pool->size) {
         pool->num_bins++;
-        int new_bin_size = MAX (MAX (MEM_POOL_MIN_BIN_SIZE, pool->min_bin_size), size);
+
+        if (pool->min_bin_size == 0) {
+            pool->min_bin_size = MEM_POOL_DEFAULT_MIN_BIN_SIZE;
+        }
+
+        int new_bin_size = MAX(pool->min_bin_size, required_size);
         void *new_bin;
         bin_info_t *new_info;
         if ((new_bin = malloc (new_bin_size + sizeof(bin_info_t)))) {
@@ -1694,6 +2098,7 @@ void* mem_pool_push_size_full (mem_pool_t *pool, uint32_t size, enum alloc_opts 
 
         new_info->base = new_bin;
         new_info->size = new_bin_size;
+        new_info->last_cb_info = NULL;
 
         if (pool->base == NULL) {
             new_info->prev_bin_info = NULL;
@@ -1708,8 +2113,20 @@ void* mem_pool_push_size_full (mem_pool_t *pool, uint32_t size, enum alloc_opts 
     }
 
     void *ret = (uint8_t*)pool->base + pool->used;
-    pool->used += size;
-    pool->total_used += size;
+    if (cb != NULL) {
+        struct on_destroy_callback_info_t *cb_info =
+            (struct on_destroy_callback_info_t*)(pool->base + pool->used + size);
+        cb_info->allocated = size > 0 ? ret : NULL;
+        cb_info->clsr = clsr;
+        cb_info->cb = cb;
+
+        bin_info_t *bin_info = pool->base + pool->size;
+        cb_info->prev = bin_info->last_cb_info;
+        bin_info->last_cb_info = cb_info;
+    }
+
+    pool->used += required_size;
+    pool->total_data += size;
 
     if (opts == POOL_ZERO_INIT) {
         memset (ret, 0, size);
@@ -1725,6 +2142,19 @@ void mem_pool_destroy (mem_pool_t *pool)
     if (pool->base != NULL) {
         bin_info_t *curr_info = (bin_info_t*)((uint8_t*)pool->base + pool->size);
 
+        // Call all on_destroy callbacks
+        while (curr_info != NULL) {
+            struct on_destroy_callback_info_t *cb_info = curr_info->last_cb_info;
+            while (cb_info != NULL) {
+                cb_info->cb(cb_info->allocated, cb_info->clsr);
+                cb_info = cb_info->prev;
+            }
+
+            curr_info = curr_info->prev_bin_info;
+        }
+
+        // Free all allocated bins
+        curr_info = (bin_info_t*)((uint8_t*)pool->base + pool->size);
         void *to_free = curr_info->base;
         curr_info = curr_info->prev_bin_info;
         while (curr_info != NULL) {
@@ -1749,21 +2179,53 @@ uint32_t mem_pool_allocated (mem_pool_t *pool)
     return allocated;
 }
 
+// Computes how much memory of the pool is used to store
+// on_destroy_callback_info_t structutres.
+uint32_t mem_pool_callback_info (mem_pool_t *pool)
+{
+    uint64_t callback_info_size = 0;
+    if (pool->base != NULL) {
+        bin_info_t *curr_info = (bin_info_t*)((uint8_t*)pool->base + pool->size);
+        while (curr_info != NULL) {
+            struct on_destroy_callback_info_t *callback_info =
+                curr_info->last_cb_info;
+            while (callback_info != NULL) {
+                callback_info_size += sizeof(struct on_destroy_callback_info_t);
+                callback_info = callback_info->prev;
+            }
+            curr_info = curr_info->prev_bin_info;
+        }
+    }
+    return callback_info_size;
+}
+
+// NOTE: This isn't supposed to be called often, we traverse all bins at least
+// twice. Once in the call to mem_pool_allocated() and again in the call to
+// mem_pool_callback_info().
 void mem_pool_print (mem_pool_t *pool)
 {
     uint32_t allocated = mem_pool_allocated(pool);
     printf ("Allocated: %u bytes\n", allocated);
-    printf ("Available: %u bytes\n", pool->size-pool->used);
-    printf ("Used: %u bytes (%.2f%%)\n", pool->total_used, ((double)pool->total_used*100)/allocated);
+
+    uint32_t available = pool->size-pool->used;
+    printf ("Available: %u bytes (%.2f%%)\n", available, ((double)available*100)/allocated);
+
+    printf ("Data: %u bytes (%.2f%%)\n", pool->total_data, ((double)pool->total_data*100)/allocated);
+
+    uint32_t callback_info_size = mem_pool_callback_info (pool);
+    printf ("Callback Info: %u bytes (%.2f%%)\n", callback_info_size, ((double)callback_info_size*100)/allocated);
+
     uint64_t info_size = pool->num_bins*sizeof(bin_info_t);
     printf ("Info: %lu bytes (%.2f%%)\n", info_size, ((double)info_size*100)/allocated);
 
-    // NOTE: This is the amount of space left empty in previous bins
+    // NOTE: This is the amount of space left empty in previous bins. It's
+    // different from 'available' space in that 'left_empty' space is
+    // effectively wasted and won't be used in future allocations.
     uint64_t left_empty;
     if (pool->num_bins>0)
-        left_empty = (allocated - pool->size - sizeof(bin_info_t))- /*allocated except last bin*/
-                     (pool->total_used - pool->used)-               /*total_used except last bin*/
-                     (pool->num_bins-1)*sizeof(bin_info_t);         /*size used in bin_info_t*/
+        left_empty = (allocated - pool->size - sizeof(bin_info_t))          /*allocated except last bin*/
+                     - (pool->total_data + callback_info_size - pool->used) /*total_data except last bin*/
+                     - (pool->num_bins-1)*sizeof(bin_info_t);               /*size used in bin_info_t*/
     else {
         left_empty = 0;
     }
@@ -1775,23 +2237,50 @@ typedef struct {
     mem_pool_t *pool;
     void* base;
     uint32_t used;
-    uint32_t total_used;
-} mem_pool_temp_marker_t;
+    uint32_t total_data;
+} mem_pool_marker_t;
 
-mem_pool_temp_marker_t mem_pool_begin_temporary_memory (mem_pool_t *pool)
+mem_pool_marker_t mem_pool_begin_temporary_memory (mem_pool_t *pool)
 {
-    mem_pool_temp_marker_t res;
-    res.total_used = pool->total_used;
+    mem_pool_marker_t res;
+    res.total_data = pool->total_data;
     res.used = pool->used;
     res.base = pool->base;
     res.pool = pool;
     return res;
 }
 
-void mem_pool_end_temporary_memory (mem_pool_temp_marker_t mrkr)
+void mem_pool_end_temporary_memory (mem_pool_marker_t mrkr)
 {
     if (mrkr.base != NULL) {
+        // Call all on_destroy callbacks for bins that will be freed, starting
+        // from the last bin.
         bin_info_t *curr_info = (bin_info_t*)((uint8_t*)mrkr.pool->base + mrkr.pool->size);
+        while (curr_info->base != mrkr.base) {
+            struct on_destroy_callback_info_t *cb_info = curr_info->last_cb_info;
+            while (cb_info != NULL) {
+                cb_info->cb(cb_info->allocated, cb_info->clsr);
+                cb_info = cb_info->prev;
+            }
+
+            curr_info = curr_info->prev_bin_info;
+        }
+
+        // Call affected on_destroy callbacks in the new last bin (the one that
+        // will stay allocated but may be partially freed).
+        struct on_destroy_callback_info_t *cb_info = curr_info->last_cb_info;
+        while (cb_info != NULL && (void*)cb_info >= mrkr.base + mrkr.used) {
+            cb_info->cb(cb_info->allocated, cb_info->clsr);
+            cb_info = cb_info->prev;
+        }
+
+        // Update last_cb_info in the bin_info of the last bin. This bin will
+        // not be freed, future allocations will overwrite the end of it if
+        // there's enough space.
+        curr_info->last_cb_info = cb_info;
+
+        // Free necessary bins
+        curr_info = (bin_info_t*)((uint8_t*)mrkr.pool->base + mrkr.pool->size);
         while (curr_info->base != mrkr.base) {
             void *to_free = curr_info->base;
             curr_info = curr_info->prev_bin_info;
@@ -1801,7 +2290,8 @@ void mem_pool_end_temporary_memory (mem_pool_temp_marker_t mrkr)
         mrkr.pool->size = curr_info->size;
         mrkr.pool->base = mrkr.base;
         mrkr.pool->used = mrkr.used;
-        mrkr.pool->total_used = mrkr.total_used;
+        mrkr.pool->total_data = mrkr.total_data;
+
     } else {
         // NOTE: Here mrkr was created before the pool was initialized, so we
         // destroy everything.
@@ -1811,17 +2301,27 @@ void mem_pool_end_temporary_memory (mem_pool_temp_marker_t mrkr)
         mrkr.pool->size = 0;
         mrkr.pool->base = NULL;
         mrkr.pool->used = 0;
-        mrkr.pool->total_used = 0;
+        mrkr.pool->total_data = 0;
     }
 }
+
+// The idea of this is to allow chaining multiple pools so we only need to
+// delete the parent one.
+ON_DESTROY_CALLBACK(pool_chain_destroy)
+{
+    mem_pool_destroy(clsr);
+}
+
+#define mem_pool_add_child(pool,child_pool) mem_pool_push_cb(pool, pool_chain_destroy, child_pool)
 
 // pom == pool or malloc
 #define pom_push_struct(pool, type) pom_push_size(pool, sizeof(type))
 #define pom_push_array(pool, n, type) pom_push_size(pool, (n)*sizeof(type))
 #define pom_push_size(pool, size) (pool==NULL? malloc(size) : mem_pool_push_size(pool,size))
 
+#define pom_strdup(pool,str) pom_strndup(pool,str,((str)!=NULL?strlen(str):0))
 static inline
-void* pom_strndup (mem_pool_t *pool, void *str, uint32_t str_len)
+char* pom_strndup (mem_pool_t *pool, const char *str, uint32_t str_len)
 {
     char *res = (char*)pom_push_size (pool, str_len+1);
     memcpy (res, str, str_len);
@@ -1837,6 +2337,59 @@ void* pom_dup (mem_pool_t *pool, void *data, uint32_t size)
     return res;
 }
 
+GCC_PRINTF_FORMAT(2, 3)
+char* pprintf (mem_pool_t *pool, const char *format, ...)
+{
+    va_list args1, args2;
+    va_start (args1, format);
+    va_copy (args2, args1);
+
+    size_t size = vsnprintf (NULL, 0, format, args1) + 1;
+    va_end (args1);
+
+    char *str = pom_push_size (pool, size);
+
+    vsnprintf (str, size, format, args2);
+    va_end (args2);
+
+    return str;
+}
+
+// These functions implement pooled string_t structures. This means strings
+// created using strn_new_pooled() will be automatically freed when the passed
+// pool gets destroyed.
+ON_DESTROY_CALLBACK (destroy_pooled_str)
+{
+    string_t *str;
+    if (clsr != NULL) {
+        assert (allocated == NULL);
+        str = (string_t*)clsr;
+    } else {
+        str = (string_t*)allocated;
+    }
+
+    //printf ("Deleted pooled string: '%s'\n", str_data(str));
+    str_free (str);
+}
+#define str_new_pooled(pool,c_str) strn_new_pooled((pool),(c_str),((c_str)!=NULL?strlen(c_str):0))
+string_t* strn_new_pooled (mem_pool_t *pool, const char *c_str, size_t len)
+{
+    assert (pool != NULL && c_str != NULL);
+    string_t *str = mem_pool_push_size_cb (pool, sizeof(string_t), destroy_pooled_str);
+    *str = strn_new (c_str, len);
+    return str;
+}
+
+#define str_set_pooled(pool,str,c_str) strn_set_pooled((pool),(str),(c_str),((c_str)!=NULL?strlen(c_str):0))
+void strn_set_pooled (mem_pool_t *pool, string_t *str, const char *c_str, size_t len)
+{
+    assert (pool != NULL && str != NULL);
+    str_set (str, "");
+    mem_pool_push_cb (pool, destroy_pooled_str, str);
+    strn_set (str, c_str, len);
+}
+
+#define str_pool(pool,str) mem_pool_push_cb(pool,destroy_pooled_str,str)
 
 // Flatten an array of null terminated strings into a single string allocated
 // into _pool_ or heap.
@@ -1896,6 +2449,43 @@ char* sh_expand (const char *str, mem_pool_t *pool)
     return res;
 }
 
+char* abs_path (const char *path, mem_pool_t *pool)
+{
+    mem_pool_t l_pool = {0};
+
+    char *expanded_path = sh_expand (path, &l_pool);
+
+    char *absolute_path_m = realpath (expanded_path, NULL);
+    if (absolute_path_m == NULL) {
+        // NOTE: realpath() fails if the file does not exist.
+        printf ("Error: %s (%d)\n", strerror(errno), errno);
+    }
+    char *absolute_path = pom_strdup (pool, absolute_path_m);
+    free (absolute_path_m);
+
+    mem_pool_destroy (&l_pool);
+
+    return absolute_path;
+}
+
+//:sh_expand_was_a_bad_idea
+char* abs_path_no_sh_expand (const char *path, mem_pool_t *pool)
+{
+    mem_pool_t l_pool = {0};
+
+    char *absolute_path_m = realpath (path, NULL);
+    if (absolute_path_m == NULL) {
+        // NOTE: realpath() fails if the file does not exist.
+        printf ("Error: %s (%d)\n", strerror(errno), errno);
+    }
+    char *absolute_path = pom_strdup (pool, absolute_path_m);
+    free (absolute_path_m);
+
+    mem_pool_destroy (&l_pool);
+
+    return absolute_path;
+}
+
 void file_write (int file, void *pos,  ssize_t size)
 {
     if (write (file, pos, size) < size) {
@@ -1913,12 +2503,16 @@ void file_read (int file, void *pos,  ssize_t size)
     }
 }
 
-bool full_file_write (void *data, ssize_t size, char *path)
+// NOTE: If path does not exist, it will be created. If it does, it will be
+// overwritten.
+bool full_file_write (const void *data, ssize_t size, const char *path)
 {
     bool failed = false;
     char *dir_path = sh_expand (path, NULL);
 
-    int file = open (dir_path, O_WRONLY | O_CREAT, 0666);
+    // TODO: If writing fails, we will leave a blank file behind. We should make
+    // a backup in case things go wrong.
+    int file = open (dir_path, O_WRONLY | O_CREAT | O_TRUNC, 0666);
     if (file != -1) {
         int bytes_written = 0;
         do {
@@ -1930,52 +2524,118 @@ bool full_file_write (void *data, ssize_t size, char *path)
             }
             bytes_written += status;
         } while (bytes_written != size);
+        close (file);
+
     } else {
-        printf ("Error opening %s: %s\n", path, strerror(errno));
+        failed = true;
+        if (errno != EACCES) {
+            // If we don't have permissions fail silently so that the caller can
+            // detect this with errno and maybe retry.
+            printf ("Error opening %s: %s\n", path, strerror(errno));
+        }
     }
 
-    close (file);
     free (dir_path);
     return failed;
 }
 
-char* full_file_read (mem_pool_t *pool, const char *path)
+// TODO: Go back to the more user friendly name full_file_read() instead of
+// full_file_read_full() and remove the do_sh_expand parameter defaulting to
+// false. This needs to be done after we are sure no applications are expecting
+// sh_expand() to be called here.
+char* full_file_read_full (mem_pool_t *pool, const char *path, uint64_t *len, bool do_sh_expand)
 {
-    char *retval = NULL;
-    char *dir_path = sh_expand (path, NULL);
+    bool success = true;
+    const char *dir_path = path;
+    char *expanded_path = NULL;
+    if (do_sh_expand) {
+        expanded_path = sh_expand (path, NULL);
+        dir_path = expanded_path;
+    }
 
+    mem_pool_marker_t mrk;
+    if (pool != NULL) {
+        mrk = mem_pool_begin_temporary_memory (pool);
+    }
+
+    char *loaded_data = NULL;
     struct stat st;
     if (stat(dir_path, &st) == 0) {
-        retval = (char*)pom_push_size (pool, st.st_size + 1);
+        loaded_data = (char*)pom_push_size (pool, st.st_size + 1);
 
         int file = open (dir_path, O_RDONLY);
         if (file != -1) {
             int bytes_read = 0;
             do {
-                int status = read (file, retval+bytes_read, st.st_size-bytes_read);
+                int status = read (file, loaded_data+bytes_read, st.st_size-bytes_read);
                 if (status == -1) {
+                    success = false;
                     printf ("Error reading %s: %s\n", path, strerror(errno));
                     break;
                 }
                 bytes_read += status;
             } while (bytes_read != st.st_size);
-            retval[st.st_size] = '\0';
+            loaded_data[st.st_size] = '\0';
+
+            if (len != NULL) {
+                *len = st.st_size;
+            }
+
             close (file);
         } else {
+            success = false;
             printf ("Error opening %s: %s\n", path, strerror(errno));
         }
+
     } else {
+        success = false;
         printf ("Could not read %s: %s\n", path, strerror(errno));
     }
 
-    free (dir_path);
+    char *retval = NULL;
+    if (success) {
+        retval = loaded_data;
+    } else if (loaded_data != NULL) {
+        if (pool != NULL) {
+            mem_pool_end_temporary_memory (mrk);
+        } else {
+            free (loaded_data);
+        }
+    }
+
+    if (expanded_path != NULL) {
+        free (expanded_path);
+    }
     return retval;
 }
+
+//DEPRECATED
+// This will cause an API break. I now think calling sh_expand() inside of
+// full_file_read() is a mistake. It's prone to let the user invoke bash
+// unknowingly. A better solution is to require the caller to always use
+// absolute paths.
+//
+// We should also allow the caller to get the length of the file by default, and
+// support NULL if they don't care about it.
+//
+// Changing this causes an API break so for now we create this wrapper, but we
+// should replace
+//
+//   full_file_read(pool, path) -> full_file_read_full(pool, path, NULL, false)
+//
+// A quick fix is to uncomment the following wrapper, but the real solution is
+// to perform the refactoring above so the code does not assume sh_expand() will
+// be called when loading the file.
+//
+//:sh_expand_was_a_bad_idea
+//char* full_file_read (mem_pool_t *pool, const char *path)
+//{
+//    return full_file_read_full (pool, path, NULL, true);
+//}
 
 char* full_file_read_prefix (mem_pool_t *out_pool, const char *path, char **prefix, int len)
 {
     mem_pool_t pool = {0};
-    char *retval = NULL;
     string_t pfx_s = {0};
     string_t path_s = str_new (path);
     char *dir_path = sh_expand (path, &pool);
@@ -1996,66 +2656,302 @@ char* full_file_read_prefix (mem_pool_t *out_pool, const char *path, char **pref
     str_free (&pfx_s);
     str_free (&path_s);
 
+    mem_pool_marker_t mrk;
+    if (out_pool != NULL) {
+        mrk = mem_pool_begin_temporary_memory (out_pool);
+    }
+
+    bool success = true;
+    char *loaded_data = NULL;
     if (status == 0) {
-        retval = (char*)pom_push_size (out_pool, st.st_size + 1);
+        loaded_data = (char*)pom_push_size (out_pool, st.st_size + 1);
 
         int file = open (dir_path, O_RDONLY);
         int bytes_read = 0;
         do {
-            int status = read (file, retval+bytes_read, st.st_size-bytes_read);
+            int status = read (file, loaded_data+bytes_read, st.st_size-bytes_read);
             if (status == -1) {
+                success = false;
                 printf ("Error reading %s: %s\n", path, strerror(errno));
                 break;
             }
             bytes_read += status;
         } while (bytes_read != st.st_size);
-        retval[st.st_size] = '\0';
+        loaded_data[st.st_size] = '\0';
     } else {
+        success = false;
         printf ("Could not locate %s in any folder.\n", path);
+    }
+
+    char *retval = NULL;
+    if (success) {
+        retval = loaded_data;
+    } else if (loaded_data != NULL) {
+        if (out_pool != NULL) {
+            mem_pool_end_temporary_memory (mrk);
+        } else {
+            free (loaded_data);
+        }
     }
 
     mem_pool_destroy (&pool);
     return retval;
 }
 
-bool path_exists (char *path)
+// TODO: Always calling sh_expand() turns out to be a very bad idea, because it's very
+// common to have paths that contain () in them. I think a better default is to
+// just assume paths are absolute at this point. Users can call sh_expand()
+// explicitly but we don't hide that inside of these calls.
+//:sh_expand_was_a_bad_idea
+bool path_exists_no_sh_expand (char *path)
 {
     bool retval = true;
-    char *dir_path = sh_expand (path, NULL);
 
     struct stat st;
     int status;
-    if ((status = stat(dir_path, &st)) == -1) {
+    if ((status = stat(path, &st)) == -1) {
         retval = false;
         if (errno != ENOENT) {
             printf ("Error checking existance of %s: %s\n", path, strerror(errno));
         }
     }
-    free (dir_path);
     return retval;
 }
 
-// NOTE: Returns false if there was an error creating the directory.
-bool ensure_dir_exists (char *path)
+//DEPRECATED
+//:sh_expand_was_a_bad_idea
+//bool path_exists (char *path)
+//{
+//    bool retval = true;
+//    char *dir_path = sh_expand (path, NULL);
+//
+//    struct stat st;
+//    int status;
+//    if ((status = stat(dir_path, &st)) == -1) {
+//        retval = false;
+//        if (errno != ENOENT) {
+//            printf ("Error checking existance of %s: %s\n", path, strerror(errno));
+//        }
+//    }
+//    free (dir_path);
+//    return retval;
+//}
+
+//:sh_expand_was_a_bad_idea
+bool dir_exists_no_sh_expand (char *path)
 {
     bool retval = true;
-    char *dir_path = sh_expand (path, NULL);
+
+    struct stat st;
+    int status;
+    if ((status = stat(path, &st)) == -1) {
+        retval = false;
+        if (errno != ENOENT) {
+            printf ("Error checking existance of %s: %s\n", path, strerror(errno));
+        }
+
+    } else {
+        if (!S_ISDIR(st.st_mode)) {
+            return false;
+        }
+    }
+
+    return retval;
+}
+
+//DEPRECATED
+//:sh_expand_was_a_bad_idea
+//bool dir_exists (char *path)
+//{
+//    bool retval = true;
+//    char *dir_path = sh_expand (path, NULL);
+//
+//    struct stat st;
+//    int status;
+//    if ((status = stat(dir_path, &st)) == -1) {
+//        retval = false;
+//        if (errno != ENOENT) {
+//            printf ("Error checking existance of %s: %s\n", path, strerror(errno));
+//        }
+//
+//    } else {
+//        if (!S_ISDIR(st.st_mode)) {
+//            return false;
+//        }
+//    }
+//
+//    free (dir_path);
+//    return retval;
+//}
+
+// NOTE: Returns false if there was an error creating the directory.
+bool ensure_dir_exists_no_sh_expand (char *path)
+{
+    bool retval = true;
 
     struct stat st;
     int success = 0;
-    if (stat(dir_path, &st) == -1 && errno == ENOENT) {
-        success = mkdir (dir_path, 0777);
+    if (stat(path, &st) == -1 && errno == ENOENT) {
+        success = mkdir (path, 0777);
     }
 
     if (success == -1) {
         char *expl = strerror (errno);
-        printf ("Could not create %s: %s\n", dir_path, expl);
+        printf ("Could not create %s: %s\n", path, expl);
         free (expl);
         retval = false;
     }
 
-    free (dir_path);
     return retval;
+}
+
+//DEPRECATED
+//:sh_expand_was_a_bad_idea
+//bool ensure_dir_exists (char *path)
+//{
+//    bool retval = true;
+//    char *dir_path = sh_expand (path, NULL);
+//
+//    struct stat st;
+//    int success = 0;
+//    if (stat(dir_path, &st) == -1 && errno == ENOENT) {
+//        success = mkdir (dir_path, 0777);
+//    }
+//
+//    if (success == -1) {
+//        char *expl = strerror (errno);
+//        printf ("Could not create %s: %s\n", dir_path, expl);
+//        free (expl);
+//        retval = false;
+//    }
+//
+//    free (dir_path);
+//    return retval;
+//}
+
+// Checks if path exists (either as a file or directory). If it doesn't it tries
+// to create all directories required for it to exist. If path ends in / then
+// all components are checked, otherwise the last part after / is assumed to be
+// a filename and is not created as a directory.
+bool ensure_path_exists (const char *path)
+{
+    bool success = true;
+    char *dir_path = sh_expand (path, NULL);
+
+    char *c = dir_path;
+    if (*c == '/') {
+        c++;
+    }
+
+    struct stat st;
+    if (stat(dir_path, &st) == -1) {
+        if (errno == ENOENT) {
+            while (*c && success) {
+                while (*c && *c != '/') {
+                    c++;
+                }
+
+                if (*c != '\0') {
+                    *c = '\0';
+                    if (stat(dir_path, &st) == -1 && errno == ENOENT) {
+                        if (mkdir (dir_path, 0777) == -1) {
+                            success = false;
+                            printf ("Error creating %s: %s\n", dir_path, strerror (errno));
+                        }
+                    }
+
+                    *c = '/';
+                    c++;
+                }
+            }
+        } else {
+            success = false;
+            printf ("Error ensuring path for %s: %s\n", path, strerror(errno));
+        }
+    } else {
+        // Path exists. Maybe check if it's the same type as on path, either
+        // file or directory?.
+    }
+
+    free (dir_path);
+    return success;
+}
+
+bool read_dir (DIR *dirp, struct dirent **res)
+{
+    errno = 0;
+    *res = readdir (dirp);
+    if (*res == NULL) {
+        if (errno != 0) {
+            printf ("Error while reading directory: %s", strerror (errno));
+        }
+        return false;
+    }
+    return true;
+}
+
+////////////////////////////
+// Recursive folder iterator
+//
+// Usage:
+//  iterate_dir (path, callback_name, data);
+//
+// The function _callback_name_ will be called for each file under _path_. The
+// function iterate_dir_printf() is an example callback. To define a new
+// callback called my_cb use:
+//
+// ITERATE_DIR_CB (my_cb)
+// {
+//     // The pointer _data_ from iterate_dir will be passed here as data.
+//     ....
+// }
+//
+// TODO: Make a non-recursive version of this and maybe don't even use a
+// callback but use a macro that hides a while or for loop behind. Making code
+// much more readable, and not requiring closures.
+#define ITERATE_DIR_CB(name) void name(char *fname, bool is_dir, void *data)
+typedef ITERATE_DIR_CB(iterate_dir_cb_t);
+
+ITERATE_DIR_CB (iterate_dir_printf)
+{
+    printf ("%s\n", fname);
+}
+
+void iterate_dir_helper (string_t *path,  iterate_dir_cb_t *callback, void *data)
+{
+    int path_len = str_len (path);
+
+    struct stat st;
+    callback (str_data(path), true, data);
+    DIR *d = opendir (str_data(path));
+    struct dirent *entry_info;
+    while (read_dir (d, &entry_info)) {
+        if (entry_info->d_name[0] != '.') { // file is not hidden
+            str_put_c (path, path_len, entry_info->d_name);
+            if (stat(str_data(path), &st) == 0) {
+                if (S_ISREG(st.st_mode)) {
+                    callback (str_data(path), false, data);
+
+                } else if (S_ISDIR(st.st_mode)) {
+                    str_cat_c (path, "/");
+                    iterate_dir_helper (path, callback, data);
+                }
+            }
+        }
+    }
+    closedir (d);
+}
+
+void iterate_dir (char *path, iterate_dir_cb_t *callback, void *data)
+{
+    string_t path_str = str_new (path);
+    if (str_last (&path_str) != '/') {
+        str_cat_c (&path_str, "/");
+    }
+
+    iterate_dir_helper (&path_str, callback, data);
+
+    str_free (&path_str);
 }
 
 //////////////////////////////
@@ -2070,12 +2966,15 @@ char* change_extension (mem_pool_t *pool, char *path, char *new_ext)
         i--;
     }
 
-    char *res = (char*)mem_pool_push_size (pool, path_len+strlen(new_ext)+1);
+    char *res = (char*)pom_push_size (pool, path_len+strlen(new_ext)+1);
     strcpy (res, path);
     strcpy (&res[i], new_ext);
     return res;
 }
 
+// NOTE: This correctly handles a filename like hi.autosave.repl where there are
+// multiple parts that would look like an extensions. Only the last one will be
+// removed.
 char* remove_extension (mem_pool_t *pool, char *path)
 {
     size_t end_pos = strlen(path)-1;
@@ -2088,16 +2987,28 @@ char* remove_extension (mem_pool_t *pool, char *path)
         return NULL;
     }
 
-    char *res = (char*)mem_pool_push_size (pool, end_pos+1);
-    memmove (res, path, end_pos);
-    res[end_pos] = '\0';
-    return res;
+    return pom_strndup (pool, path, end_pos);
+}
+
+char* remove_multiple_extensions (mem_pool_t *pool, char *path, int num)
+{
+    char *retval;
+    if (num > 1) {
+        char *next_path = remove_extension (NULL, path);
+        retval = remove_multiple_extensions (pool, next_path, num-1);
+        free (next_path);
+
+    } else {
+        retval = remove_extension (pool, path);
+    }
+
+    return retval;
 }
 
 char* add_extension (mem_pool_t *pool, char *path, char *new_ext)
 {
     size_t path_len = strlen(path);
-    char *res = (char*)mem_pool_push_size (pool, path_len+strlen(new_ext)+2);
+    char *res = (char*)pom_push_size (pool, path_len+strlen(new_ext)+2);
     strcpy (res, path);
     res[path_len++] = '.';
     strcpy (&res[path_len], new_ext);
@@ -2119,6 +3030,26 @@ char* get_extension (char *path)
     }
 
     return &path[i+1];
+}
+
+void path_split (mem_pool_t *pool, char *path, char **dirname, char **basename)
+{
+    if (path == NULL) {
+        return;
+    }
+
+    size_t end = strlen (path);
+    while (path[end] != '/') {
+        end--;
+    }
+
+    if (dirname != NULL) {
+        *dirname = pom_strndup (pool, path, end);
+    }
+
+    if (basename != NULL) {
+        *basename = pom_strdup (pool, &path[end+1]);
+    }
 }
 
 #ifdef __CURL_CURL_H
@@ -2270,6 +3201,372 @@ void end_mutex (volatile int *lock) {
     *lock = 0;
 }
 
+///////////////////////
+//
+//   SHARED VARIABLE
+//
+//   These macros ease the creation of variables on shared memory. Useful when
+//   trying to pass data to child processes.
+
+#define NEW_SHARED_VARIABLE_NAMED(TYPE,SYMBOL,VALUE,NAME)                                         \
+TYPE *(SYMBOL);                                                                                   \
+{                                                                                                 \
+    int shared_fd = shm_open (NAME, O_CREAT | O_EXCL | O_RDWR, S_IRWXU | S_IRWXG);                \
+    if (shared_fd == -1 && errno == EEXIST) {                                                     \
+        printf ("Shared variable name %s exists, missing call to UNLINK_SHARED_VARIABLE*.\n",     \
+                NAME);                                                                            \
+        UNLINK_SHARED_VARIABLE_NAMED (NAME)                                                       \
+                                                                                                  \
+        shared_fd = shm_open (NAME,                                                               \
+                              O_CREAT | O_EXCL | O_RDWR, S_IRWXU | S_IRWXG);                      \
+    }                                                                                             \
+    assert (shared_fd != -1 && "Error on shm_open() while creating shared variable.");            \
+                                                                                                  \
+    int set_size_status = ftruncate (shared_fd, sizeof (TYPE));                                   \
+    assert (set_size_status == 0 && "Error on ftruncate() while creating shared variable.");      \
+                                                                                                  \
+    (SYMBOL) = (TYPE*) mmap (NULL, sizeof(TYPE), PROT_READ | PROT_WRITE, MAP_SHARED, shared_fd, 0); \
+                                                                                                  \
+    *(SYMBOL) = (VALUE);                                                                            \
+}
+
+#define UNLINK_SHARED_VARIABLE_NAMED(NAME)                                \
+if (shm_unlink (NAME) == -1) {                                            \
+    printf ("Error unlinking shared variable '%s': %s\n", NAME, strerror(errno));      \
+}
+
+///////////////////
+//
+//  LINKED LIST
+//
+//  These macros are a low level implementation of common liked list operations.
+//  I've seen these be more useful than an actual liked list struct with a node
+//  type and head. These make it easy to convert any struct into a linked list
+//  and operate on it as such.
+//
+//  How to use:
+//
+//  struct my_struct_t {
+//      int a;
+//      float f;
+//
+//      struct my_struct_t *next;
+//  };
+//
+//  {
+//      mem_pool_t pool = {0};
+//      struct my_struct_t *list = NULL;
+//
+//      LINKED_LIST_PUSH_NEW (&pool, struct my_struct_t, list, new_my_struct);
+//      new_my_struct->a = 10;
+//      new_my_struct->f = 5;
+//
+//      struct my_struct_t *head = LINKED_LIST_POP (new_my_struct);
+//
+//      ...
+//
+//      mem_pool_destroy (&pool);
+//  }
+//
+//  Keep in mind:
+//
+//    - LINKED_LIST_APPEND() requires the existance of a variable with the same
+//      name as the head but suffixed by _end. It's unlikely that the user wants
+//      O(n) appending, so we make the user do this so they get a O(1)
+//      implementation.
+//
+//  TODO: Allow users to pass the 'next' symbol name and the '_end' suffix.
+
+// Maybe we want people to do this manually? so that they know exactly what it
+// means storage wise to have a linked list?. It's also possible that you want
+// to save up on the number of pointers and the end pointer will be computed
+// before appending, or not used if they are only calling push.
+#define LINKED_LIST_DECLARE(type,head_name) \
+    type *head_name;                        \
+    type *head_name ## _end;
+
+#define LINKED_LIST_APPEND(head_name,node)                   \
+{                                                            \
+    if (head_name ## _end == NULL) {                         \
+        head_name = node;                                    \
+    } else {                                                 \
+        head_name ## _end->next = node;                      \
+    }                                                        \
+    head_name ## _end = node;                                \
+}
+
+#define LINKED_LIST_PUSH(head_name,node)                     \
+{                                                            \
+    node->next = head_name;                                  \
+    head_name = node;                                        \
+}
+
+// This is O(n) and requres the _end pointer.
+//
+// Discussion:
+//  1) The only way to make this operation O(1) is to ask the user to pass the
+//     parent pointer. The user will either have to do a O(n) operation before
+//     to compute it, or complicate their code to keep track of the parent
+//     pointer. A better solution would be to use a doubly linked list that
+//     stores prev pointers in the nodes, instead of a linked list.
+//
+//  2) The _end pointer requirement should be optional, but there is no way we
+//     can know if the user defined it or not until build time. For now, I
+//     haven't needed this on lists without _end pointer. When I do, I will need
+//     to create an alternate macro for it.
+//
+// TODO: Take a look at the trick in
+// https://gist.github.com/santileortiz/9a5c60a545d01a70dc1d9a631b9fca40 see if
+// it's useful to make the _end pointer optional.
+#define LINKED_LIST_REMOVE(type,head,node)         \
+{                                                  \
+    /* Find the pointer to node */                 \
+    type **curr_node_ptr = &head;                  \
+    type *curr_node = head;                        \
+    type *prev_node = NULL;                        \
+    while (curr_node != NULL) {                    \
+        if (*curr_node_ptr == node) break;         \
+                                                   \
+        curr_node_ptr = &((*curr_node_ptr)->next); \
+        prev_node = curr_node;                     \
+        curr_node = curr_node->next;               \
+    }                                              \
+                                                   \
+    if (curr_node == node) {                       \
+        /* Update the _end pointer if necessary */ \
+        if ((curr_node)->next == NULL) {           \
+            head ## _end = prev_node;              \
+        }                                          \
+                                                   \
+        /* Remove the node */                      \
+        *curr_node_ptr = (curr_node)->next;        \
+        (curr_node)->next = NULL;                  \
+    }                                              \
+}
+
+// NOTE: This doesn't update the _end pointer if its being used. Use
+// LINKED_LIST_POP_END() in that case.
+#define LINKED_LIST_POP(head)                                \
+head;                                                        \
+{                                                            \
+    void *tmp = head->next;                                  \
+    head->next = NULL;                                       \
+    head = tmp;                                              \
+}
+
+// This requires _end pointer.
+// TODO: I'm not sure this is the right way of making the _end pointer
+// requirement optional. It's very easy to forget to use the right POP macro
+// version and mess up everything. I wish there was a way to conditionally add
+// or remove code if a symbols exists or not in the context.
+#define LINKED_LIST_POP_END(head)                            \
+head;                                                        \
+{                                                            \
+    if (head == head ## _end) {                              \
+        head ## _end = NULL;                                 \
+    }                                                        \
+                                                             \
+    void *tmp = head->next;                                  \
+    head->next = NULL;                                       \
+    head = tmp;                                              \
+}
+
+#define LINKED_LIST_REVERSE(type,head)                       \
+{                                                            \
+    type *curr_node = head;                                  \
+    type *prev_node = NULL;                                  \
+    while (curr_node != NULL) {                              \
+        type *next_node = curr_node->next;                   \
+        curr_node->next = prev_node;                         \
+                                                             \
+        prev_node = curr_node;                               \
+        curr_node = next_node;                               \
+    }                                                        \
+    head = prev_node;                                        \
+}
+
+// These require passing the type of the node struct and a pool.
+
+#define LINKED_LIST_APPEND_NEW(pool,type,head_name,new_node) \
+type *new_node;                                              \
+{                                                            \
+    new_node = mem_pool_push_struct(pool,type);              \
+    *new_node = ZERO_INIT(type);                             \
+                                                             \
+    LINKED_LIST_APPEND(head_name,new_node)                   \
+}
+
+#define LINKED_LIST_PUSH_NEW(pool,type,head_name,new_node)   \
+type *new_node;                                              \
+{                                                            \
+    new_node = mem_pool_push_struct(pool,type);              \
+    *new_node = ZERO_INIT(type);                             \
+                                                             \
+    LINKED_LIST_PUSH(head_name,new_node)                     \
+}
+
+#define LINKED_LIST_FOR(type, varname,headname)              \
+type *varname = headname;                                    \
+for (; varname != NULL; varname = varname->next)
+
+// Linked list sorting
+//
+// IS_A_LT_B is an expression where a and b are pointers of type TYPE and should
+// evaluate to true when a->val < b->val. NEXT_FIELD specifies the name of the
+// field where the next node pointer is found. The macro templ_sort_ll is
+// convenience for when this field's name is "next". Use n=-1 if the size is
+// unknown, in this case the full linked list will be iterated to compute it.
+// NOTE: IS_A_LT_B as defined, will sort the linked list in ascending order.
+// NOTE: The last node of the linked list is expected to have NEXT_FIELD field
+// set to NULL.
+// NOTE: It uses a pointer array of size n, and calls merge sort on that array.
+
+// We say a and b are pointers, for arrays it's well defined. When talking about
+// linked lists we could mean a pointer to a node, or a pointer to an element of
+// the pointer array generated internally (a double pointer to a node). I've
+// seen the first one to be the expected way, but passing IS_A_LT_B as is, will
+// have the second semantics. This macro injects some code that dereferences a
+// and b so that we can do a->val < b->val easily.
+#define _linked_list_A_B_dereference_injector(IS_A_LT_B,TYPE) \
+    0;                                                        \
+    TYPE* _a = *a;                                            \
+    TYPE* _b = *b;                                            \
+    {                                                         \
+        TYPE *a = _a;                                         \
+        TYPE *b = _b;                                         \
+        c = IS_A_LT_B;                                        \
+    }
+
+// NOTE: The generated sorting function returns the last node of the linked list
+// so the user can update it if needed.
+#define _linked_list_sort_implementation(FUNCNAME,TYPE,NEXT_FIELD)  \
+TYPE* FUNCNAME ## _user_data (TYPE **head, int n, void *user_data)  \
+{                                                                   \
+    if (head == NULL || n == 0) {                                   \
+        return NULL;                                                \
+    }                                                               \
+                                                                    \
+    if (n == -1) {                                                  \
+        n = 0;                                                      \
+        TYPE *node = *head;                                         \
+        while (node != NULL) {                                      \
+            n++;                                                    \
+            node = node->NEXT_FIELD;                                \
+        }                                                           \
+    }                                                               \
+                                                                    \
+    TYPE *node = *head;                                             \
+    TYPE *arr[n];                                                   \
+                                                                    \
+    int j = 0;                                                      \
+    while (node != NULL) {                                          \
+        arr[j] = node;                                              \
+        j++;                                                        \
+        node = node->NEXT_FIELD;                                    \
+    }                                                               \
+                                                                    \
+    FUNCNAME ## _arr_user_data (arr, n, user_data);                 \
+                                                                    \
+    *head = arr[0];                                                 \
+    for (j=0; j<n - 1; j++) {                                       \
+        arr[j]->NEXT_FIELD = arr[j+1];                              \
+    }                                                               \
+    arr[j]->NEXT_FIELD = NULL;                                      \
+                                                                    \
+    return arr[n-1];                                                \
+}                                                                   \
+                                                                    \
+TYPE* FUNCNAME(TYPE **head, int n) {                                \
+    return FUNCNAME ## _user_data (head,n,NULL);                    \
+}
+
+// Linked list sorting
+#define templ_sort_ll_next_field(FUNCNAME,TYPE,NEXT_FIELD,IS_A_LT_B)\
+templ_sort(FUNCNAME ## _arr, TYPE*,                                 \
+           _linked_list_A_B_dereference_injector(IS_A_LT_B,TYPE))   \
+_linked_list_sort_implementation(FUNCNAME,TYPE,NEXT_FIELD)
+
+#define templ_sort_ll(FUNCNAME,TYPE,IS_A_LT_B) \
+    templ_sort_ll_next_field(FUNCNAME,TYPE,next,IS_A_LT_B)
+
+// Stable linked list sorting
+#define templ_sort_stable_ll_next_field(FUNCNAME,TYPE,NEXT_FIELD,CMP_A_TO_B)\
+templ_sort_stable(FUNCNAME ## _arr, TYPE*,                                  \
+           _linked_list_A_B_dereference_injector(CMP_A_TO_B,TYPE))          \
+_linked_list_sort_implementation(FUNCNAME,TYPE,NEXT_FIELD)
+
+#define templ_sort_stable_ll(FUNCNAME,TYPE,CMP_A_TO_B) \
+    templ_sort_stable_ll_next_field(FUNCNAME,TYPE,next,CMP_A_TO_B)
+
+///////////////////
+//
+//  DYNAMIC ARRAY
+//
+ON_DESTROY_CALLBACK (pooled_free_call)
+{
+    free (*(void**)clsr);
+}
+
+#define DYNAMIC_ARRAY_DEFINE(type, name)             \
+    type *name;                                      \
+    int name ## _len;                                \
+    int name ## _size
+
+#define DYNAMIC_ARRAY_REALLOC(head_name,new_size)           \
+    if (new_size != 0) {                                    \
+        void *new_head =                                    \
+            realloc(head_name, new_size*sizeof(*head_name));\
+        if (new_head) {                                     \
+            head_name = new_head;                           \
+            head_name ## _size = new_size;                  \
+        }                                                   \
+    }
+
+#define DYNAMIC_ARRAY_INITIAL_SIZE 50
+
+#define DYNAMIC_ARRAY_INIT(pool,head_name,initial_size)                                 \
+{                                                                                       \
+    mem_pool_push_cb(pool, pooled_free_call, &head_name);                               \
+    head_name ## _size = initial_size == 0 ? DYNAMIC_ARRAY_INITIAL_SIZE : initial_size; \
+    DYNAMIC_ARRAY_REALLOC (head_name, head_name ## _size);                              \
+}
+
+#define DYNAMIC_ARRAY_APPEND(head_name,element)                             \
+{                                                                           \
+    size_t new_size = 0;                                                    \
+    if (0 == head_name ## _size) {                                          \
+        new_size = DYNAMIC_ARRAY_INITIAL_SIZE;                              \
+    } else if (head_name ## _size == head_name ## _len) {                   \
+        new_size = 2*(head_name ## _size);                                  \
+    }                                                                       \
+                                                                            \
+    DYNAMIC_ARRAY_REALLOC(head_name, new_size)                              \
+                                                                            \
+    (head_name)[(head_name ## _len)++] = element;                           \
+}
+
+// In some cases we can't assign to a type by assigning to it, for example in
+// the case we are storing string_t structures, if we assign an empty string the
+// allocated internal memory pointer will be leaked. In such cases we just want
+// to get a pointer to the appended value and then the caller will handle what
+// to do next.
+//
+// CAUTION: Do not store the pointers returned by this persistently! When the
+// array grows and is reallocated the pointer will become invalid!.
+// TODO: This is probably even useless, in cases where something like this is
+// necessary, we should really be using linked lists.
+#define DYNAMIC_ARRAY_APPEND_GET(head_name, type, name)                     \
+{                                                                           \
+    size_t new_size = 0;                                                    \
+    if (0 == head_name ## _size) {                                          \
+        new_size = DYNAMIC_ARRAY_INITIAL_SIZE;                              \
+    } else if (head_name ## _size == head_name ## _len) {                   \
+        new_size = 2*(head_name ## _size);                                  \
+    }                                                                       \
+                                                                            \
+    DYNAMIC_ARRAY_REALLOC(head_name, new_size)                              \
+}                                                                           \
+type name = (head_name) + ((head_name ## _len)++);
 
 #define COMMON_H
 #endif

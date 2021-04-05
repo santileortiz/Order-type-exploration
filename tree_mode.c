@@ -395,7 +395,7 @@ bool tree_mode (struct app_state_t *st, app_graphics_t *gr)
 
     int n = 4;
     if (!st->tree_mode) {
-        st->tree_mode = mem_pool_push_size_full (&st->memory, sizeof(struct tree_mode_state_t), POOL_ZERO_INIT);
+        st->tree_mode = mem_pool_push_size_full (&st->memory, sizeof(struct tree_mode_state_t), POOL_ZERO_INIT, NULL, NULL);
         tree_mode = st->tree_mode;
         tree_mode->root_pos = DVEC2 (100, 50);
         tree_mode->n = n;

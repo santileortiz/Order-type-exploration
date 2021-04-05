@@ -54,11 +54,6 @@ bool update_and_render (struct app_state_t *st, app_graphics_t *graphics, app_in
         st->end_execution = false;
         st->is_initialized = true;
 
-        if (!ensure_dir_exists ("~/.ps_viewer")) {
-            st->end_execution = true;
-            printf ("Couldn't create ~/.ps_viewer/ directory for configuration files.");
-        }
-
         default_gui_init (&st->gui_st);
         global_gui_st = &st->gui_st;
         st->temporary_memory_flush = mem_pool_begin_temporary_memory (&st->temporary_memory);
@@ -82,7 +77,7 @@ bool update_and_render (struct app_state_t *st, app_graphics_t *graphics, app_in
             mem_pool_t bootstrap_mem = {0};
             st->dl_st = mem_pool_push_size_full (&bootstrap_mem,
                                                  sizeof(struct database_download_t),
-                                                 POOL_ZERO_INIT);
+                                                 POOL_ZERO_INIT, NULL, NULL);
             st->dl_st->mem = bootstrap_mem;
             st->dl_st->num_to_download = num_to_download;
             int i;
@@ -161,7 +156,7 @@ struct x_state {
     xcb_timestamp_t last_timestamp; // Last server time received in an event.
     xcb_sync_counter_t counters[2];
     xcb_sync_int64_t counter_val;
-    mem_pool_temp_marker_t transient_pool_flush;
+    mem_pool_marker_t transient_pool_flush;
     mem_pool_t transient_pool;
 
     xcb_timestamp_t clipboard_ownership_timestamp;
@@ -1157,7 +1152,7 @@ int main (int argc, char ** argv)
     app_input.wheel = 1;
 
     mem_pool_t bootstrap = {0};
-    struct app_state_t *st = mem_pool_push_size_full (&bootstrap, sizeof(struct app_state_t), POOL_ZERO_INIT);
+    struct app_state_t *st = mem_pool_push_size_full (&bootstrap, sizeof(struct app_state_t), POOL_ZERO_INIT, NULL, NULL);
     st->memory = bootstrap;
 
     st->gui_st.set_clipboard_str = x11_set_clipboard;
