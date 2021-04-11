@@ -119,11 +119,11 @@ struct config_t* read_config (mem_pool_t *pool)
     mem_pool_t local_pool = {0};
     struct config_t *res = pom_push_size (pool, sizeof (struct config_t));
 
-    char *config_dir_abs = sh_expand (CONFIG_DIR, &local_pool);
-    char *config_file_abs = sh_expand (CONFIG_FILE, &local_pool);
+    char *config_dir_abs = resolve_user_path (CONFIG_DIR, &local_pool);
+    char *config_file_abs = resolve_user_path (CONFIG_FILE, &local_pool);
 
-    ensure_dir_exists_no_sh_expand (config_dir_abs);
-    if (!path_exists_no_sh_expand (config_file_abs)) {
+    ensure_dir_exists (config_dir_abs);
+    if (!path_exists (config_file_abs)) {
         char *default_config = 
         "# Number of points. Can contain values between [3-10]\n"
         "N = 3,4,5,6,7,8,9,10\n"
@@ -136,7 +136,7 @@ struct config_t* read_config (mem_pool_t *pool)
         "DatabaseLocation = "CONFIG_DIR"\n";
         full_file_write (default_config, strlen(default_config), config_file_abs);
     }
-    char *conf_file = full_file_read_full (&local_pool, config_file_abs, NULL, false);
+    char *conf_file = full_file_read (&local_pool, config_file_abs, NULL);
 
     bool success = true;
     if (conf_file) {
@@ -156,7 +156,7 @@ struct config_t* read_config (mem_pool_t *pool)
 
             } else if (strneq(key, key_size, C_STR("DatabaseLocation"))) {
                 char *location = (char*)pom_strndup (&local_pool, val, val_size);
-                res->database_location = sh_expand (location, pool);
+                res->database_location = resolve_user_path (location, pool);
             }
         }
     } else {

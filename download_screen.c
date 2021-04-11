@@ -100,7 +100,7 @@ bool download_database_screen (struct app_state_t *st, app_graphics_t *graphics)
         dl_st->lock = 0;
         dl_st->database_source = st->config->database_source;
         dl_st->database_location = st->config->database_location;
-        ensure_dir_exists_no_sh_expand (st->config->database_location);
+        ensure_dir_exists (st->config->database_location);
         pthread_create (&dl_st->thread, NULL, download_thread, dl_st);
     }
 
