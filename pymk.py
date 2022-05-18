@@ -35,25 +35,25 @@ modes = {
         'profile_debug': '-O2 -g -pg -Wall',
         'release': '-O2 -g -DNDEBUG -DRELEASE_BUILD -Wall'
         }
-cli_mode = get_cli_option('-M,--mode', modes.keys())
-FLAGS = modes[pers('mode', 'debug', cli_mode)]
+cli_mode = get_cli_arg_opt('-M,--mode', values=modes.keys())
+FLAGS = modes[store('mode', cli_mode, 'debug')]
 ensure_dir ("bin")
 
 def default():
-    target = pers ('last_target', 'point_set_viewer')
+    target = store_get('last_snip', 'point_set_viewer')
     call_user_function(target)
 
 def point_set_viewer ():
-    ex ('gcc {FLAGS} -o bin/point-set-viewer point_set_viewer.c {PANGO_FLAGS} {DEP_FLAGS}')
+    ex (f'gcc {FLAGS} -o bin/point-set-viewer point_set_viewer.c {PANGO_FLAGS} {DEP_FLAGS}')
 
 def search ():
-    ex ('gcc {FLAGS} -o bin/search search.c -lm')
+    ex (f'gcc {FLAGS} -o bin/search search.c -lm')
 
 def render_seq ():
-    ex ('gcc {FLAGS} -o bin/render_seq render_seq.c -lcairo -lm')
+    ex (f'gcc {FLAGS} -o bin/render_seq render_seq.c -lcairo -lm')
 
 def save_file_to_pdf ():
-    ex ('gcc {FLAGS} -o bin/save_file_to_pdf save_file_to_pdf.c {PANGO_FLAGS} -lcairo -lm')
+    ex (f'gcc {FLAGS} -o bin/save_file_to_pdf save_file_to_pdf.c {PANGO_FLAGS} -lcairo -lm')
 
 def install ():
     bin_path = pathlib.Path('bin/point-set-viewer')
@@ -61,7 +61,7 @@ def install ():
         print ('No binary, run: ./pymk.py point_set_viewer')
         return
 
-    destdir = get_cli_option('--destdir', has_argument=True)
+    destdir = get_cli_arg_opt('--destdir')
     installed_files = install_files (installation_info, destdir)
     if destdir == None or destdir == '/':
         for f in installed_files:
