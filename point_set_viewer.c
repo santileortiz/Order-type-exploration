@@ -37,6 +37,8 @@
 #define SEQUENCE_STORE_IMPL
 #include "sequence_store.h"
 
+#include "keycodes.h"
+
 // We do a unity build for now
 #include "order_types.c"
 #include "tree_mode.c"
@@ -99,7 +101,7 @@ bool update_and_render (struct app_state_t *st, app_graphics_t *graphics, app_in
         update_input (&st->gui_st, input);
 
         switch (st->gui_st.input.keycode) {
-            case 24: //KEY_Q
+            case KEY_Q:
                 st->end_execution = true;
                 // NOTE: We want modes to be called once after we end execution
                 // so they can do their own cleanup.
@@ -115,7 +117,7 @@ bool update_and_render (struct app_state_t *st, app_graphics_t *graphics, app_in
 #ifdef RELEASE_BUILD
         blit_needed = point_set_mode (st, graphics);
 #else
-        if (st->gui_st.input.keycode == 58) { //KEY_M
+        if (st->gui_st.input.keycode == KEY_M) {
             st->app_mode = (st->app_mode + 1)%NUM_APP_MODES;
             st->gui_st.input.force_redraw = true;
         }

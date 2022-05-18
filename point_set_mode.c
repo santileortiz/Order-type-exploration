@@ -837,6 +837,53 @@ void view_database_points (struct point_set_mode_t *ps_mode, app_graphics_t *gra
     }
 }
 
+bool keycode_is_digit(xcb_keycode_t  keycode)
+{
+    switch(keycode){
+        case KEY_1:
+        case KEY_2:
+        case KEY_3:
+        case KEY_4:
+        case KEY_5:
+        case KEY_6:
+        case KEY_7:
+        case KEY_8:
+        case KEY_9:
+        case KEY_0:
+            return true;
+        default:
+            return false;
+    }
+}
+
+int keycode_get_digit(xcb_keycode_t  keycode)
+{
+    switch(keycode){
+        case KEY_1:
+            return 1;
+        case KEY_2:
+            return 2;
+        case KEY_3:
+            return 3;
+        case KEY_4:
+            return 4;
+        case KEY_5:
+            return 5;
+        case KEY_6:
+            return 6;
+        case KEY_7:
+            return 7;
+        case KEY_8:
+            return 8;
+        case KEY_9:
+            return 9;
+        case KEY_0:
+            return 0;
+        default:
+            return -1;
+    }
+}
+
 bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
 {
     struct point_set_mode_t *ps_mode = st->ps_mode;
@@ -874,7 +921,7 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
 
     app_input_t input = st->gui_st.input;
     switch (input.keycode) {
-        case 33: //KEY_P
+        case KEY_P:
             print_order_type (ps_mode->ot);
             if (ps_mode->ot_arrangeable) {
                 printf ("Arranged points:\n");
@@ -885,11 +932,10 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
             }
             printf ("\n");
             break;
-        case 116://KEY_DOWN_ARROW
+        case KEY_DOWN_ARROW:
+        case KEY_UP_ARROW:
             break;
-        case 111://KEY_UP_ARROW
-            break;
-        case 23: //KEY_TAB
+        case KEY_TAB:
             if (XCB_KEY_BUT_MASK_SHIFT & input.modifiers) {
                 focus_prev (gui_st);
             } else {
@@ -897,14 +943,14 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
             }
             ps_mode->redraw_panel = true;
             break;
-        case 57: //KEY_N
-        case 113://KEY_LEFT_ARROW
-        case 114://KEY_RIGHT_ARROW
+        case KEY_N:
+        case KEY_LEFT_ARROW:
+        case KEY_RIGHT_ARROW:
             {
             layout_box_t *focused_box = gui_st->focus->dest;
             if (ps_mode->focus_list[foc_ot] == focused_box) {
-                if (XCB_KEY_BUT_MASK_SHIFT & input.modifiers
-                    || input.keycode == 113) {
+                if ((XCB_KEY_BUT_MASK_SHIFT & input.modifiers)
+                    || input.keycode == KEY_LEFT_ARROW) {
                     db_prev (ps_mode->ot);
 
                 } else {
@@ -921,8 +967,8 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
                     n_pos++;
                 }
 
-                if (XCB_KEY_BUT_MASK_SHIFT & input.modifiers
-                        || input.keycode == 113) {
+                if ((XCB_KEY_BUT_MASK_SHIFT & input.modifiers)
+                        || input.keycode == KEY_LEFT_ARROW) {
                     if (n_pos == 0) {
                         n_pos = st->config->num_n_values-1;
                     } else {
@@ -938,8 +984,8 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
                 set_n (ps_mode, st->config->n_values[n_pos], graphics);
             } else if (ps_mode->focus_list[foc_k] == focused_box) {
                 uint64_t max_k = ps_mode->triangle_it->size;
-                if (XCB_KEY_BUT_MASK_SHIFT & input.modifiers
-                        || input.keycode == 113) {
+                if ((XCB_KEY_BUT_MASK_SHIFT & input.modifiers)
+                        || input.keycode == KEY_LEFT_ARROW) {
                     if (ps_mode->k.i != 0) {
                         set_k (ps_mode, ps_mode->k.i-1);
                     }
@@ -951,8 +997,8 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
             } else if (ps_mode->focus_list[foc_ts] == focused_box) {
                 uint64_t id = ps_mode->ts_id.i;
                 uint64_t last_id = ps_mode->num_triangle_subsets-1;
-                if (XCB_KEY_BUT_MASK_SHIFT & input.modifiers
-                        || input.keycode == 113) {
+                if ((XCB_KEY_BUT_MASK_SHIFT & input.modifiers)
+                        || input.keycode == KEY_LEFT_ARROW) {
                     if (id == 0) {
                         id = last_id;
                     } else {
@@ -970,7 +1016,7 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
             ps_mode->redraw_panel = true;
             ps_mode->redraw_canvas = true;
             } break;
-        case 54: //KEY_C
+        case KEY_C:
             if (XCB_KEY_BUT_MASK_CONTROL & input.modifiers) {
                 if (gui_st->selection.dest != NULL) {
                     gui_st->set_clipboard_str (gui_st->selection.start,
@@ -978,7 +1024,7 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
                 }
             }
             break;
-        case 55: //KEY_V
+        case KEY_V:
             if (XCB_KEY_BUT_MASK_CONTROL & input.modifiers) {
                 gui_st->get_clipboard_str ();
             } else {
@@ -1113,16 +1159,16 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
                                     // selection made by a single click.
                                     //
                                     // Do Nothing.
-                                } else if (22 == input.keycode) { // KEY_BACKSPACE
+                                } else if (KEY_BACKSPACE == input.keycode) {
                                     unselect (gui_st);
                                     int_string_clear (beh->target.u64_str);
                                     ps_mode->redraw_panel = true;
 
-                                } else if (10 <= input.keycode && input.keycode < 20) { // KEY_0-9
+                                } else if (keycode_is_digit(input.keycode)) {
                                     unselect (gui_st);
 
                                     str_cpy (&ps_mode->bak_number.str, &beh->target.u64_str->str);
-                                    int digit = (input.keycode+1)%10;
+                                    int digit = keycode_get_digit(input.keycode);
                                     int_string_update (beh->target.u64_str, digit);
 
                                     ps_mode->redraw_panel = true;
@@ -1134,8 +1180,8 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
                                     ps_mode->redraw_panel = true;
                                     beh->state = 2;
 
-                                } else if (36 == input.keycode || // KEY_ENTER
-                                            9 == input.keycode || // KEY_ESC
+                                } else if (KEY_ENTER == input.keycode ||
+                                            KEY_ESC == input.keycode ||
                                             (gui_st->mouse_clicked[0] && lay_box->active_selectors & CSS_SEL_HOVER)) {
                                     unselect (gui_st);
 
@@ -1153,24 +1199,24 @@ bool point_set_mode (struct app_state_t *st, app_graphics_t *graphics)
                                     ps_mode->redraw_panel = true;
                                     beh->state = 1;
 
-                                } else if (22 == input.keycode) { // KEY_BACKSPACE
+                                } else if (KEY_BACKSPACE == input.keycode) {
                                     unselect (gui_st);
                                     int_string_delete_digit (beh->target.u64_str);
                                     ps_mode->redraw_panel = true;
 
-                                } else if (10 <= input.keycode && input.keycode < 20) { // KEY_0-9
-                                    int digit = (input.keycode+1)%10;
+                                } else if (keycode_is_digit(input.keycode)) {
+                                    int digit = keycode_get_digit(input.keycode);
                                     int_string_append_digit (beh->target.u64_str, digit);
                                     ps_mode->redraw_panel = true;
 
-                                } else if (36 == input.keycode || // KEY_ENTER
+                                } else if (KEY_ENTER == input.keycode ||
                                            !(lay_box->active_selectors & CSS_SEL_FOCUS)) {
                                     lay_box->content_changed = true;
                                     lay_box->content.str = str_data (&beh->target.u64_str->str);
                                     ps_mode->redraw_panel = true;
                                     beh->state = 0;
 
-                                } else if (9 == input.keycode) { // KEY_ESC
+                                } else if (KEY_ESC == input.keycode) {
                                     str_cpy (&beh->target.u64_str->str, &ps_mode->bak_number.str);
                                     ps_mode->redraw_panel = true;
                                     beh->state = 0;
