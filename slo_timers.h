@@ -11,10 +11,10 @@
 
 struct timespec proc_clock_info;
 struct timespec wall_clock_info;
-void  validate_clock (struct timespec *clock_info) {
+void  validate_clock (struct timespec *clock_info, char *name) {
     if (clock_info->tv_sec != 0 || clock_info->tv_nsec != 1) {
-        printf ("Error: We expect a 1ns resolution timer. %li s %li ns resolution instead.\n",
-                clock_info->tv_sec, clock_info->tv_nsec);
+        printf ("Warning: Expected a 1ns resolution %s clock. Got %lis %lins resolution instead.\n",
+                name, clock_info->tv_sec, clock_info->tv_nsec);
     }
 }
 
@@ -23,12 +23,12 @@ void setup_clocks ()
     if (-1 == clock_getres (CLOCK_PROCESS_CPUTIME_ID, &proc_clock_info)) {
         printf ("Error: could not get profiling clock resolution\n");
     }
-    validate_clock (&proc_clock_info);
+    validate_clock (&proc_clock_info, "profiling");
 
     if (-1 == clock_getres (CLOCK_MONOTONIC, &wall_clock_info)) {
         printf ("Error: could not get wall clock resolution\n");
     }
-    validate_clock (&wall_clock_info);
+    validate_clock (&wall_clock_info, "wall");
     return;
 }
 
